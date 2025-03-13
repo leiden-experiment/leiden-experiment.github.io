@@ -305,7 +305,7 @@ if (loginScreenEnabled) {
   const form = `
     <div id="login_screen">
       <div class="login-container">
-        <h2>Pizzicato Login</h2>
+        <h2>Experiment Login</h2>
         <div class="input-group">
           <input type="text" id="name" name="name" placeholder="Name" required>
         </div>
@@ -314,7 +314,6 @@ if (loginScreenEnabled) {
         </div>
         <div class="button-group">
           <button id="login_button" class="login-button">Login</button>
-          <button id="guest_button" class="guest-button">Play as Guest</button>
         </div>
       </div>
     </div>
@@ -327,10 +326,6 @@ if (loginScreenEnabled) {
   (<HTMLButtonElement>document.getElementById('login_button')).addEventListener(
     'click',
     login,
-  );
-  (<HTMLButtonElement>document.getElementById('guest_button')).addEventListener(
-    'click',
-    startGame,
   );
 } else {
   startGame();
