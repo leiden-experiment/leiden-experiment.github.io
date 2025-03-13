@@ -319,7 +319,7 @@ if (loginScreenEnabled) {
   const form = `
     <div id="login_screen">
       <div class="login-container">
-        <h2>Pizzicato Login</h2>
+        <h2>Experiment Login</h2>
         <div class="input-group">
           <input type="text" id="name" name="name" placeholder="Name" required>
         </div>
