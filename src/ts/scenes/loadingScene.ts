@@ -17,6 +17,7 @@ import {
 import webcam from '../objects/webcam';
 import handTracker from '../objects/handTracker';
 import { ConfigData } from '../core/interfaces';
+import { getWeekNumber } from '../core/game';
 
 export let background: Sprite;
 
@@ -90,6 +91,12 @@ export class LoadingScene extends Scene {
     if (!handTracker.found()) return;
 
     webcam.setVisibility(webcamDisplayOptions.visible);
+
+    await getWeekNumber()
+      .then((week: number) => {
+        console.info('INFO: Week number: ' + week.toString());
+      })
+      .catch(err => this.updateText(loadingText, err));
 
     // Launching instead of starting ensures background sprite is not destroyed.
     this.scene.launch(initialScene);

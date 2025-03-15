@@ -82,12 +82,19 @@ const database = getDatabase(app);
 export interface UserData {
   name?: string;
   config?: string;
+  phase?: string;
+  experimentStart?: string;
+  week?: number;
   lastLogin: string;
 }
 
 const newUserData: UserData = {
-  config: 'sonification_config',
-  lastLogin: 'Has not logged in yet',
+  name: '',
+  config: '',
+  phase: '',
+  experimentStart: '',
+  week: 0,
+  lastLogin: '',
 };
 
 const emailSuffix = '@pizzicato.com';
@@ -98,6 +105,16 @@ function addEmailSuffix(name: string): string {
 
 export function removeEmailSuffix(email: string): string {
   return email.replace(emailSuffix, '');
+}
+
+function removePhaseSuffix(string) {
+  if (string.endsWith('pre')) {
+    return string.slice(0, -3); // Remove "pre"
+  } else if (string.endsWith('post')) {
+    return string.slice(0, -4); // Remove "post"
+  } else {
+    return string;
+  }
 }
 
 export function getCurrentUserName(): string {
@@ -112,7 +129,7 @@ function getValidNameEmailPassword() {
   const name = (<HTMLInputElement>document.getElementById('name')).value;
   const password = (<HTMLInputElement>document.getElementById('password'))
     .value;
-  const email = addEmailSuffix(name);
+  const email = addEmailSuffix(removePhaseSuffix(name));
 
   // Validate input fields
   if (!validateName(name)) {
@@ -164,46 +181,179 @@ async function register(): Promise<void> {
 }
 */
 
+function extractParticipantInfo(participantString: string) {
+  const regex = /^participant(\d+)(pre|post)?$/;
+  const match = participantString.match(regex);
+
+  if (match) {
+    return {
+      number: parseInt(match[1], 10),
+      suffix: match[2] || 'training',
+    };
+  } else {
+    return null;
+  }
+}
+
+function getParticipantConfig(participantNumber: number) {
+  if (participantNumber < 0) {
+    throw new Error('Participant number cannot be negative.');
+  }
+
+  const remainder = participantNumber % 4;
+
+  switch (remainder) {
+    case 0:
+      return 'sonification';
+    case 1:
+      return 'synchronization';
+    case 2:
+      return 'both';
+    case 3:
+      return 'none';
+    default:
+      return 'unknown'; // Should not be reached for non-negative integers.
+  }
+}
+
+function calculateWeekNumber(
+  startDateString: string,
+  endDateString: string,
+): number | null {
+  try {
+    const startDateObj = new Date(startDateString);
+    const endDateObj = new Date(endDateString);
+
+    if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
+      return null;
+    }
+
+    const timeDifference: number =
+      endDateObj.getTime() - startDateObj.getTime(); // Explicitly typed as number
+    const daysPassed: number = Math.ceil(
+      timeDifference / (1000 * 60 * 60 * 24),
+    );
+
+    if (daysPassed <= 0) {
+      return 1;
+    }
+
+    const weekNumber: number = Math.ceil(daysPassed / 7);
+    return weekNumber;
+  } catch (error) {
+    console.error('Error calculating week number:', error);
+    return null;
+  }
+}
+
+function getCurrentDateAsString() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function throwError(error: string) {
+  alert(error);
+}
+
 // Login function
 async function login(): Promise<void> {
-  const [name, email, password] = getValidNameEmailPassword();
+  const [rawName, email, password] = getValidNameEmailPassword();
 
   signInWithEmailAndPassword(auth, email, password)
     .then(userCredential => {
+      const participantInfo = extractParticipantInfo(rawName);
+
+      if (participantInfo == null) {
+        throwError('Invalid participant info');
+        return;
+      }
+
+      const participantConfig = getParticipantConfig(participantInfo.number);
       // Signed up
       currentUser = userCredential.user;
 
       // Update user last login in Firebase Database
       const db = ref(database);
       const time = new Date().toUTCString();
-      const updates: UserData = { lastLogin: time };
+      const updates: UserData = { lastLogin: time, config: participantConfig };
 
       const user = `users/${currentUser.uid}`;
-      newUserData.name = name;
+      newUserData.name = removePhaseSuffix(rawName);
       newUserData.lastLogin = time;
+      newUserData.config = participantConfig;
+      newUserData.week = 0;
+
+      newUserData.phase = participantInfo.suffix;
+      updates.phase = participantInfo.suffix;
+
+      if (participantInfo.suffix == 'pre') {
+        newUserData.experimentStart = getCurrentDateAsString();
+        updates.experimentStart = getCurrentDateAsString();
+      }
 
       get(child(db, user))
         .then(snapshot => {
           if (snapshot.exists()) {
-            update(child(db, user), updates);
+            const data = snapshot.val() as UserData;
+            if (participantInfo.suffix != 'pre' && data.experimentStart == '') {
+              throwError(
+                'Cannot login with the provided credentials prior to experiment start being set',
+              );
+              return;
+            }
+            if (participantInfo.suffix == 'pre') {
+              updates.week = 0;
+            } else {
+              // Calculate current week of experiment.
+              let startTime: string | undefined = data.experimentStart;
+              if (startTime == undefined || startTime == '') {
+                startTime = updates.experimentStart;
+              }
+              const week = calculateWeekNumber(
+                startTime!,
+                getCurrentDateAsString(),
+              );
+              if (week == null) {
+                throwError('Failed to calculate experiment week number');
+                return;
+              }
+              updates.week = week!;
+            }
+            update(child(db, user), updates).then(() => {
+              startGame();
+            });
           } else {
-            update(child(db, user), newUserData);
+            if (newUserData.experimentStart == '') {
+              throwError(
+                'Cannot login with the provided credentials prior to experiment start being set',
+              );
+              return;
+            }
+            update(child(db, user), newUserData).then(() => {
+              startGame();
+            });
           }
         })
         .catch(err => {
           console.info('LOGIN ERROR: ' + err);
         });
-
-      //alert('User logged in successfully!');
-
-      startGame();
-      // ...
     })
     .catch(error => {
-      // const errorCode = error.code;
-      const errorMessage = error.message;
-      alert(errorMessage);
-      // ..
+      if (error.code === 'auth/invalid-credential') {
+        alert('Invalid username or password. Please try again.');
+      } else if (error.code === 'auth/user-disabled') {
+        alert('This user account has been disabled.');
+      } else if (error.code === 'auth/user-not-found') {
+        alert('User not found. Please check your credentials.');
+      } else if (error.code === 'auth/wrong-password') {
+        alert('Incorrect password. Please try again.');
+      } else {
+        // Handle other Firebase authentication errors
+        console.error('Firebase sign-in error:', error);
+      }
     });
 }
 
@@ -276,6 +426,24 @@ export async function getCurrentUserConfig(): Promise<[ConfigData, string]> {
           reject(
             'User id snapshot does not exist: resorting to default config',
           );
+        }
+      })
+      .catch(err => {
+        reject('Firebase get users failed: ' + err);
+      });
+  });
+}
+
+export async function getWeekNumber(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const db = ref(database);
+    get(child(db, `users/${currentUser!.uid}`))
+      .then(snapshot => {
+        if (snapshot.exists()) {
+          const userData: UserData = snapshot.val();
+          resolve(userData.week!);
+        } else {
+          reject('Failed to identify week number');
         }
       })
       .catch(err => {

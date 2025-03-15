@@ -6,7 +6,6 @@ import { Checkbox } from '../ui/checkbox';
 import {
   config,
   defaultConfig,
-  loadData,
   saveConfigData,
 } from '../managers/storageManager';
 import webcam from '../objects/webcam';

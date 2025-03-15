@@ -1,6 +1,6 @@
 {
   "configs": {
-    "sonification_config": {
+    "sonification": {
       "targetSize": 1.0,
       "fingerSize": 1.0,
       "enableSkipButton": false,
@@ -21,7 +21,7 @@
       "disableVisualMetronome": false,
       "autoSaveCSV": true
     },
-    "synchronization_config": {
+    "synchronization": {
       "targetSize": 1.0,
       "fingerSize": 1.0,
       "enableSkipButton": false,
@@ -42,7 +42,28 @@
       "disableVisualMetronome": false,
       "autoSaveCSV": true
     },
-    "no_music_config": {
+    "both": {
+      "targetSize": 1.0,
+      "fingerSize": 1.0,
+      "enableSkipButton": false,
+      "skipLoopThreshold": 1,
+      "enableAutoSkip": false,
+      "autoSkipThreshold": 1,
+      "singlePinchRequirement": true,
+      "disableSonification": false,
+      "disableLayerProgression": false,
+      "indexFingerOnly": false,
+      "sonificationLevel": 1.0,
+      "backgroundMusicLevel": 1.0,
+      "onTimeDuration": 500,
+      "lateTimeDuration": 500,
+      "enableCameraVisibility": false,
+      "cameraOpacity": 0.0,
+      "fancyEffectsDisabled": false,
+      "disableVisualMetronome": false,
+      "autoSaveCSV": true
+    },
+    "nosound": {
       "targetSize": 1.0,
       "fingerSize": 1.0,
       "enableSkipButton": false,
