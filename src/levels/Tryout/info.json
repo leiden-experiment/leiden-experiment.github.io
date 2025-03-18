@@ -1,0 +1,66 @@
+{
+  "displayName": "Birthday Vibes",
+  "bpm": [90, 115, 130],
+  "timeSignatureNumerator": 4,
+  "timeSignatureDenominator": 4,
+  "timeBasePPQ": 96,
+  "layers": [
+    {
+      "playable": false,
+      "id": "drums",
+      "lengthInBars": 16,
+      "soundLoopKeys": ["loop90", "loop115", "loop130"]
+    },
+    {
+      "playable": true,
+      "progressCount": 4,
+      "id": "chords",
+      "lengthInBars": 4,
+      "previewTime": {
+        "bar": 2
+      },
+      "spriteKeyOuter": "targetOuter",
+      "spriteKeyInner": "targetInner",
+      "soundLoopKeys": ["loop90", "loop115", "loop130"],
+      "backgroundLayers": ["drums"],
+      "nodes": [
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 1
+          },
+          "normalizedPosition": [0.25, 0.25],
+          "soundKey": "chord1"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 2,
+            "step": 1
+          },
+          "normalizedPosition": [0.75, 0.25],
+          "soundKey": "chord2"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 1
+          },
+          "normalizedPosition": [0.75, 0.75],
+          "soundKey": "chord3"
+        },
+        {
+          "finger": "pinky",
+          "timePosition": {
+            "bar": 4,
+            "step": 1
+          },
+          "normalizedPosition": [0.25, 0.75],
+          "soundKey": "chord4"
+        }
+      ]
+    }
+  ]
+}

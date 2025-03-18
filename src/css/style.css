@@ -105,6 +105,11 @@ canvas {
   margin-bottom: 25px;
 }
 
+.show-password-box {
+  padding-top: 1em;
+  text-align: center;
+}
+
 .input-group label {
   margin-bottom: 5px;
 }

@@ -1,0 +1,331 @@
+{
+  "displayName": "Slow Elegance",
+  "bpm": [90, 115, 130],
+  "timeSignatureNumerator": 4,
+  "timeSignatureDenominator": 4,
+  "timeBasePPQ": 96,
+  "layers": [
+    {
+      "playable": false,
+      "id": "drums",
+      "lengthInBars": 16,
+      "soundLoopKeys": ["loop90", "loop115", "loop130"]
+    },
+    {
+      "playable": true,
+      "progressCount": 4,
+      "id": "chords",
+      "lengthInBars": 8,
+      "previewTime": {
+        "bar": 2
+      },
+      "spriteKeyOuter": "targetOuter",
+      "spriteKeyInner": "targetInner",
+      "soundLoopKeys": ["loop90", "loop115", "loop130"],
+      "backgroundLayers": ["drums"],
+      "nodes": [
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 1
+          },
+          "normalizedPosition": [0.25, 0.25],
+          "soundKey": "chord1"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 2,
+            "step": 1
+          },
+          "normalizedPosition": [0.5, 0.25],
+          "soundKey": "chord278"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 1
+          },
+          "normalizedPosition": [0.75, 0.25],
+          "soundKey": "chord3"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 4,
+            "step": 1
+          },
+          "normalizedPosition": [0.5, 0.5],
+          "soundKey": "chord4"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 5,
+            "step": 1
+          },
+          "normalizedPosition": [0.25, 0.75],
+          "soundKey": "chord5"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 6,
+            "step": 1
+          },
+          "normalizedPosition": [0.5, 0.75],
+          "soundKey": "chord6"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 7,
+            "step": 1
+          },
+          "normalizedPosition": [0.75, 0.75],
+          "soundKey": "chord278"
+        }
+      ]
+    },
+    {
+      "playable": true,
+      "progressCount": 5,
+      "id": "lead",
+      "lengthInBars": 8,
+      "previewTime": {
+        "bar": 2
+      },
+      "spriteKeyOuter": "targetOuter",
+      "spriteKeyInner": "targetInner",
+      "soundLoopKeys": ["loop90", "loop115", "loop130"],
+      "backgroundLayers": ["drums", "chords"],
+      "nodes": [
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 9
+          },
+          "normalizedPosition": [0.25, 0.25],
+          "soundKey": "f"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 2,
+            "step": 9
+          },
+          "normalizedPosition": [0.5, 0.25],
+          "soundKey": "f"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 9
+          },
+          "normalizedPosition": [0.75, 0.25],
+          "soundKey": "dSharp"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 4,
+            "step": 9
+          },
+          "normalizedPosition": [0.75, 0.5],
+          "soundKey": "dSharp"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 5,
+            "step": 9
+          },
+          "normalizedPosition": [0.75, 0.75],
+          "soundKey": "gSharp"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 6,
+            "step": 9
+          },
+          "normalizedPosition": [0.5, 0.75],
+          "soundKey": "gSharp"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 7,
+            "step": 9
+          },
+          "normalizedPosition": [0.25, 0.75],
+          "soundKey": "f"
+        }
+      ]
+    },
+    {
+      "playable": true,
+      "progressCount": 8,
+      "id": "bass",
+      "lengthInBars": 8,
+      "previewTime": {
+        "bar": 0,
+        "step": 8
+      },
+      "spriteKeyOuter": "targetOuter",
+      "spriteKeyInner": "targetInner",
+      "soundLoopKeys": ["loop90", "loop115", "loop130"],
+      "backgroundLayers": ["drums", "chords", "lead"],
+      "nodes": [
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 5
+          },
+          "normalizedPosition": [0.25, 0.25],
+          "soundKey": "f_2"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 9
+          },
+          "normalizedPosition": [0.35, 0.25],
+          "soundKey": "f_6"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 2,
+            "step": 5
+          },
+          "normalizedPosition": [0.65, 0.25],
+          "soundKey": "f_2"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 2,
+            "step": 9
+          },
+          "normalizedPosition": [0.75, 0.25],
+          "soundKey": "f_6"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 5
+          },
+          "normalizedPosition": [0.75, 0.55],
+          "soundKey": "dSharp_2"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 9
+          },
+          "normalizedPosition": [0.65, 0.55],
+          "soundKey": "dSharp_6"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 4,
+            "step": 5
+          },
+          "normalizedPosition": [0.25, 0.55],
+          "soundKey": "dSharp_2"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 4,
+            "step": 9
+          },
+          "normalizedPosition": [0.35, 0.55],
+          "soundKey": "dSharp_6"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 5,
+            "step": 5
+          },
+          "normalizedPosition": [0.25, 0.25],
+          "soundKey": "gSharp_2"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 5,
+            "step": 9
+          },
+          "normalizedPosition": [0.25, 0.45],
+          "soundKey": "gSharp_6"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 6,
+            "step": 5
+          },
+          "normalizedPosition": [0.75, 0.25],
+          "soundKey": "gSharp_2"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 6,
+            "step": 9
+          },
+          "normalizedPosition": [0.75, 0.45],
+          "soundKey": "gSharp_6"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 7,
+            "step": 7
+          },
+          "normalizedPosition": [0.25, 0.75],
+          "soundKey": "f_2"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 7,
+            "step": 11
+          },
+          "normalizedPosition": [0.25, 0.55],
+          "soundKey": "f_6"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 8,
+            "step": 1
+          },
+          "normalizedPosition": [0.75, 0.75],
+          "soundKey": "f_2"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 8,
+            "step": 9
+          },
+          "normalizedPosition": [0.75, 0.55],
+          "soundKey": "f_6"
+        }
+      ]
+    }
+  ]
+}
