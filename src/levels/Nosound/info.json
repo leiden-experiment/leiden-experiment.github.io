@@ -1,0 +1,376 @@
+{
+  "displayName": "Birthday Vibes",
+  "bpm": [90, 115, 130],
+  "timeSignatureNumerator": 4,
+  "timeSignatureDenominator": 4,
+  "timeBasePPQ": 96,
+  "layers": [
+    {
+      "playable": false,
+      "id": "drums",
+      "lengthInBars": 16,
+      "soundLoopKeys": ["loop90", "loop115", "loop130"]
+    },
+    {
+      "playable": true,
+      "progressCount": 4,
+      "id": "chords",
+      "lengthInBars": 4,
+      "previewTime": {
+        "bar": 2
+      },
+      "spriteKeyOuter": "targetOuter",
+      "spriteKeyInner": "targetInner",
+      "soundLoopKeys": ["loop90", "loop115", "loop130"],
+      "backgroundLayers": ["drums"],
+      "nodes": [
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 1
+          },
+          "normalizedPosition": [0.25, 0.25],
+          "soundKey": "chord1"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 2,
+            "step": 1
+          },
+          "normalizedPosition": [0.75, 0.25],
+          "soundKey": "chord2"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 1
+          },
+          "normalizedPosition": [0.75, 0.75],
+          "soundKey": "chord3"
+        },
+        {
+          "finger": "pinky",
+          "timePosition": {
+            "bar": 4,
+            "step": 1
+          },
+          "normalizedPosition": [0.25, 0.75],
+          "soundKey": "chord4"
+        }
+      ]
+    },
+    {
+      "playable": true,
+      "progressCount": 8,
+      "id": "lead",
+      "lengthInBars": 4,
+      "previewTime": {
+        "bar": 2
+      },
+      "spriteKeyOuter": "targetOuter",
+      "spriteKeyInner": "targetInner",
+      "soundLoopKeys": ["loop90", "loop115", "loop130"],
+      "backgroundLayers": ["drums", "chords"],
+      "nodes": [
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 1
+          },
+          "normalizedPosition": [0.25, 0.25],
+          "soundKey": "aSharp"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 5
+          },
+          "normalizedPosition": [0.35, 0.25],
+          "soundKey": "f"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 9
+          },
+          "normalizedPosition": [0.45, 0.25],
+          "soundKey": "aSharp"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 12
+          },
+          "normalizedPosition": [0.55, 0.25],
+          "soundKey": "f"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 15
+          },
+          "normalizedPosition": [0.65, 0.25],
+          "soundKey": "aSharp"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 2,
+            "step": 1
+          },
+          "normalizedPosition": [0.75, 0.25],
+          "soundKey": "g"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 1
+          },
+          "normalizedPosition": [0.25, 0.75],
+          "soundKey": "d"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 5
+          },
+          "normalizedPosition": [0.35, 0.75],
+          "soundKey": "aSharp"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 9
+          },
+          "normalizedPosition": [0.45, 0.75],
+          "soundKey": "d"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 12
+          },
+          "normalizedPosition": [0.55, 0.75],
+          "soundKey": "aSharp"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 15
+          },
+          "normalizedPosition": [0.65, 0.75],
+          "soundKey": "d"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 4,
+            "step": 1
+          },
+          "normalizedPosition": [0.75, 0.75],
+          "soundKey": "c"
+        }
+      ]
+    },
+    {
+      "playable": true,
+      "progressCount": 8,
+      "id": "bass",
+      "lengthInBars": 4,
+      "previewTime": {
+        "bar": 0,
+        "step": 8
+      },
+      "spriteKeyOuter": "targetOuter",
+      "spriteKeyInner": "targetInner",
+      "soundLoopKeys": ["loop90", "loop115", "loop130"],
+      "backgroundLayers": ["drums", "chords", "lead"],
+      "nodes": [
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 1
+          },
+          "normalizedPosition": [0.25, 0.25],
+          "soundKey": "aSharp"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 7
+          },
+          "normalizedPosition": [0.45, 0.25],
+          "soundKey": "aSharp"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 11
+          },
+          "normalizedPosition": [0.65, 0.25],
+          "soundKey": "g"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 13
+          },
+          "normalizedPosition": [0.75, 0.25],
+          "soundKey": "aSharp"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 1,
+            "step": 15
+          },
+          "normalizedPosition": [0.75, 0.4],
+          "soundKey": "d"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 2,
+            "step": 1
+          },
+          "normalizedPosition": [0.75, 0.55],
+          "soundKey": "g"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 2,
+            "step": 3
+          },
+          "normalizedPosition": [0.75, 0.75],
+          "soundKey": "g"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 2,
+            "step": 7
+          },
+          "normalizedPosition": [0.65, 0.75],
+          "soundKey": "g"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 2,
+            "step": 11
+          },
+          "normalizedPosition": [0.55, 0.75],
+          "soundKey": "f"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 1
+          },
+          "normalizedPosition": [0.25, 0.25],
+          "soundKey": "d"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 7
+          },
+          "normalizedPosition": [0.4, 0.25],
+          "soundKey": "d"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 11
+          },
+          "normalizedPosition": [0.55, 0.25],
+          "soundKey": "aSharp"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 13
+          },
+          "normalizedPosition": [0.65, 0.25],
+          "soundKey": "d"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 3,
+            "step": 15
+          },
+          "normalizedPosition": [0.75, 0.25],
+          "soundKey": "dSharp"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 4,
+            "step": 1
+          },
+          "normalizedPosition": [0.75, 0.6],
+          "soundKey": "d"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 4,
+            "step": 4
+          },
+          "normalizedPosition": [0.75, 0.75],
+          "soundKey": "d"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 4,
+            "step": 7
+          },
+          "normalizedPosition": [0.6, 0.75],
+          "soundKey": "c"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 4,
+            "step": 10
+          },
+          "normalizedPosition": [0.425, 0.65],
+          "soundKey": "c"
+        },
+        {
+          "finger": "index",
+          "timePosition": {
+            "bar": 4,
+            "step": 13
+          },
+          "normalizedPosition": [0.25, 0.55],
+          "soundKey": "c"
+        }
+      ]
+    }
+  ]
+}
