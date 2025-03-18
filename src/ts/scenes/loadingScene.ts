@@ -15,7 +15,7 @@ import {
   getCurrentUserName,
   getWeekNumber,
 } from '../core/game';
-import { ConfigData } from '../core/interfaces';
+import { ConfigData, ContinueSceneData } from '../core/interfaces';
 import {
   defaultConfig,
   updateConfig,
@@ -24,7 +24,7 @@ import {
 
 export let background: Sprite;
 export const levels: Level[] = [];
-export let weekNumber: number = 0;
+export const weekNumber: number = 0;
 
 export class ElectronScene extends Scene {
   constructor() {
@@ -165,6 +165,7 @@ export class LoadingScene extends Scene {
 
     webcam.setVisibility(webcamDisplayOptions.visible);
 
+    let weekNumber: number = 0;
     await getWeekNumber()
       .then((week: number) => {
         console.info('INFO: Week number: ' + week.toString());
@@ -172,8 +173,14 @@ export class LoadingScene extends Scene {
       })
       .catch(err => this.updateText(loadingText, err));
 
+    const continueSceneData: ContinueSceneData = {
+      weekNumber: weekNumber,
+      index: 0,
+      incrementIndex: false,
+    };
+
     // Launching instead of starting ensures background sprite is not destroyed.
-    this.scene.launch(initialScene);
+    this.scene.launch(initialScene, continueSceneData);
 
     handTracker.precache(this.updateText.bind(this, loadingText));
 

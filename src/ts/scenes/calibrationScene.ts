@@ -13,6 +13,7 @@ import {
   handTooFarThreshold,
   undefinedText,
   escapeKey,
+  initialScene,
 } from '../core/config';
 import { PhaserText } from '../core/phaserTypes';
 import HandScene from '../scenes/handScene';
@@ -28,7 +29,7 @@ export default class Calibration extends HandScene {
   }
 
   private exit() {
-    this.scene.start('mainMenu');
+    this.scene.start(initialScene);
   }
 
   create() {
