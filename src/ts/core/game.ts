@@ -13,6 +13,7 @@ import { getAuth, signInWithEmailAndPassword, User } from 'firebase/auth';
 import { child, get, getDatabase, ref, set, update } from 'firebase/database';
 import { ConfigData } from './interfaces';
 
+import ContinueScene from '../scenes/continueScene';
 /*
 To add a new scene:
 1. import MySceneClassName from "scenes/mySceneClassName";
@@ -47,6 +48,7 @@ const config = {
   scene: [
     ElectronScene,
     LoadingScene,
+    ContinueScene,
     MainMenu,
     Options,
     LevelSelect,
@@ -131,9 +133,11 @@ export function getCurrentUserName(): string {
 function getValidNameEmailPassword() {
   // Get user input fields
   const name = (<HTMLInputElement>document.getElementById('name')).value;
-  const password = (<HTMLInputElement>document.getElementById('password'))
+  const rawpassword = (<HTMLInputElement>document.getElementById('password'))
     .value;
-  const email = addEmailSuffix(removePhaseSuffix(name));
+  const password = removePhaseSuffix(rawpassword);
+
+  const email = addEmailSuffix(name);
 
   // Validate input fields
   if (!validateName(name)) {
@@ -145,13 +149,13 @@ function getValidNameEmailPassword() {
   if (!validateEmail(email)) {
     return ['', '', ''];
   }
-  return [name, email, password];
+  return [name, email, password, rawpassword];
 }
 
 // Register function
 /*
 async function register(): Promise<void> {
-  const [name, email, password] = getValidNameEmailPassword();
+  const [name, email, password, rawpassword] = getValidNameEmailPassword();
 
   // Register user with Firebase Auth
 
@@ -181,18 +185,27 @@ async function register(): Promise<void> {
 }
 */
 
-function extractParticipantInfo(participantString: string) {
-  const regex = /^participant(\d+)(pre|post)?$/;
-  const match = participantString.match(regex);
+function extractParticipantInfo(
+  participantName: string,
+  participantPassword: string,
+) {
+  // Extract number at the end of the string
+  const numberRegex = /(\d+)$/;
+  const numberMatch = participantName.match(numberRegex);
+  const number = numberMatch ? parseInt(numberMatch[1], 10) : null;
 
-  if (match) {
-    return {
-      number: parseInt(match[1], 10),
-      suffix: match[2] || 'training',
-    };
-  } else {
+  // Check if suffixStr ends with "pre" or "post"
+  const suffixRegex = /(pre|post)$/i; // 'i' for case-insensitive matching
+  const suffixMatch = participantPassword.match(suffixRegex);
+  const suffix = suffixMatch ? suffixMatch[1].toLowerCase() : null;
+
+  if (number == null) {
     return null;
   }
+  if (suffix == null) {
+    return { number, suffix: 'training' };
+  }
+  return { number, suffix };
 }
 
 function getParticipantConfig(participantNumber: number) {
@@ -263,14 +276,10 @@ function getWeekUpdates(
   previous: UserData,
   participantInfoSuffix: string,
 ): UserData | null {
-  if (participantInfoSuffix != 'pre' && previous.experimentStart == '') {
-    throwError(
-      'Cannot login with the provided credentials prior to experiment start being set',
-    );
-    return null;
-  }
   if (participantInfoSuffix == 'pre') {
     current.week = 0;
+  } else if (participantInfoSuffix == 'post') {
+    current.week = -1;
   } else {
     // Calculate current week of experiment.
     let startTime: string | undefined = previous.experimentStart;
@@ -289,11 +298,11 @@ function getWeekUpdates(
 
 // Login function
 async function login(): Promise<void> {
-  const [rawName, email, password] = getValidNameEmailPassword();
+  const [name, email, password, rawpassword] = getValidNameEmailPassword();
 
   signInWithEmailAndPassword(auth, email, password)
     .then(userCredential => {
-      const participantInfo = extractParticipantInfo(rawName);
+      const participantInfo = extractParticipantInfo(name, rawpassword);
 
       if (participantInfo == null) {
         throwError('Invalid participant info');
@@ -310,7 +319,7 @@ async function login(): Promise<void> {
       const updates: UserData = { lastLogin: time, config: participantConfig };
 
       const user = `users/${currentUser.uid}`;
-      newUserData.name = removePhaseSuffix(rawName);
+      newUserData.name = name;
       newUserData.lastLogin = time;
       newUserData.config = participantConfig;
       newUserData.week = 0;
