@@ -1,7 +1,16 @@
 import { GameObject, MatterOverlapData, Vector2 } from '../core/phaserTypes';
+import Level from '../level/level';
 import { Track } from '../level/track';
 
 // Interfaces
+
+export interface ContinueSceneData {
+  weekNumber: number;
+  index: number;
+  incrementIndex: boolean;
+  nextScene?: string;
+  level?: Level;
+}
 
 export interface ConfigData {
   targetSize: number;
