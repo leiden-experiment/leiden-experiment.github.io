@@ -1,233 +1,196 @@
-import { absPath, listLevelDirectories } from '../core/common';
 import HandScene from '../scenes/handScene';
 import { Button } from '../ui/button';
 import Level from '../level/level';
-import { Sprite, Vector2 } from '../core/phaserTypes';
-import {
-  buttonPinchSoundKey,
-  buttonPinchSoundPath,
-  calibrationScene,
-  continueScene,
-  levelListPath,
-  levelScene,
-  levelSelectScene,
-  logoTextureKey,
-  logoTexturePath,
-  mainMenuButtonGap,
-  //mainMenuScene,
-  mainMenubuttonTopLevel,
-  menuCalibrateButtonTextureKey,
-  menuCalibrateButtonTexturePath,
-  menuSelectButtonTextureKey,
-  menuSelectButtonTexturePath,
-  playButtonTextureKey,
-  playButtonTexturePath,
-  //optionsButtonTextureKey,
-  //optionsButtonTexturePath,
-  standardButtonScale,
-  uiHoverColor,
-} from '../core/config';
-import { ContinueSceneData, PinchCallbacks } from '../core/interfaces';
+import { levels, weekNumber } from './loadingScene';
+import { PhaserText } from '../core/phaserTypes';
+import { assert } from '../core/common';
+import { currentUserNumber } from '../core/game';
+import { autoSaveToCSV, config } from '../managers/storageManager';
+
+export let incrementIndex: boolean = false;
+
+export function setIncrementIndex(increment: boolean) {
+  incrementIndex = increment;
+}
 
 export default class ContinueScene extends HandScene {
-  private menuLogo: Sprite | undefined;
-  private menuSelectLevel: Button;
-  private menuCalibrate: Button;
-  //private menuOptions: Button;
-
-  private levels: { [id: string]: Level } = {};
-
-  private continueData: ContinueSceneData;
+  private calibration: Button;
+  private start: Button;
+  private title: PhaserText;
+  private index: number = 0;
+  private sequence: string[] = [];
 
   constructor() {
-    super(continueScene);
-
-    this.levels = {};
+    super('continueScene');
   }
 
-  async preload() {
+  private getLevel(trackKey: string): Level {
+    const matching: Level[] = levels.filter(
+      (level: Level) => level.trackKey == trackKey,
+    );
+    assert(
+      matching.length != 0,
+      'Failed to find level with track key: ' + trackKey,
+    );
+    assert(
+      matching.length == 1,
+      'Found multiple levels identical track key: ' + trackKey,
+    );
+    return matching[0];
+  }
+
+  preload() {
     super.preload();
 
-    this.continueData = this.scene.settings.data as ContinueSceneData;
+    levels.forEach((level: Level) => {
+      level.preload(this);
+    });
 
-    this.load.audio(buttonPinchSoundKey, absPath(buttonPinchSoundPath));
-    this.load.image(logoTextureKey, absPath(logoTexturePath));
-    //this.load.image(optionsButtonTextureKey, absPath(optionsButtonTexturePath));
-    this.load.image(
-      menuSelectButtonTextureKey,
-      absPath(menuSelectButtonTexturePath),
-    );
-    this.load.image(
-      menuCalibrateButtonTextureKey,
-      absPath(menuCalibrateButtonTexturePath),
-    );
-    this.load.image(playButtonTextureKey, absPath(playButtonTexturePath));
-    this.load.image('startPretest', absPath('assets/ui/start_pretest.png'));
-    this.load.image('startPosttest', absPath('assets/ui/start_posttest.png'));
-    this.load.image('startTryout', absPath('assets/ui/start_tryout.png'));
-    this.load.image('startTraining', absPath('assets/ui/start_training.png'));
-    this.load.image(
-      'continuePretest',
-      absPath('assets/ui/continue_pretest.png'),
-    );
-    this.load.image(
-      'continuePosttest',
-      absPath('assets/ui/continue_posttest.png'),
-    );
+    this.sequence = this.getTestSequence();
+    assert(this.sequence.length == 2, 'Failed to identify test sequence');
+  }
 
-    this.levels['tryout'] = new Level('Tryout');
-    this.levels['trained'] = new Level('Trained');
-    this.levels['untrained'] = new Level('Untrained');
-    this.levels['nosound'] = new Level('Nosound');
-
-    for (const key in this.levels) {
-      this.levels[key].preloadTrack(this);
+  private getTestSequence(): string[] {
+    assert(
+      currentUserNumber != undefined,
+      'Failed to identify current user number',
+    );
+    const isEven = (i: number) => {
+      return i % 2 === 0;
+    };
+    if (isEven(currentUserNumber!)) {
+      return ['Trained', 'Untrained'];
+    } else {
+      return ['Untrained', 'Trained'];
     }
   }
 
-  create() {
+  create(data?: unknown) {
     super.create();
 
-    if (this.continueData.incrementIndex) {
-      this.continueData.index++;
+    const buttonsY: number = 800;
+    const buttonGapX: number = 330;
+
+    if (incrementIndex) {
+      if (config.autoSaveCSV) {
+        autoSaveToCSV((data as Level).score.levelStats);
+      }
+      this.index++;
     }
-    this.continueData.incrementIndex = true;
+    incrementIndex = false;
 
-    const windowWidth = window.innerWidth;
-    const windowHeight = window.innerHeight;
-    const horizontalCenter = 0.5 * windowWidth;
+    let startText: string | undefined = undefined;
 
-    let buttonTextureKey: string = playButtonTextureKey;
+    let level: Level | undefined;
 
-    let showButtons: boolean = true;
+    this.getLevel('Tryout').setBPM(0);
+    this.getLevel('Trained').setBPM(2);
+    this.getLevel('Untrained').setBPM(2);
+    this.getLevel('Nosound').setBPM(2);
 
-    this.continueData.nextScene = continueScene;
+    const setLevel = (name: string, suffix: string) => {
+      level = this.getLevel(name);
+      startText = 'START\n' + suffix.toUpperCase();
+    };
 
-    if (this.continueData.weekNumber == 0) {
-      // Pretest
-      if (this.continueData.index == 0) {
-        this.continueData.level = this.levels['tryout'];
-        this.continueData.level.setBPM(0);
-        buttonTextureKey = 'startTryout';
-      } else if (this.continueData.index == 1) {
-        // TODO: Randomize order based on user id.
-        this.continueData.level = this.levels['trained'];
-        this.continueData.level.setBPM(0);
-        buttonTextureKey = 'startPretest';
-      } else if (this.continueData.index == 2) {
-        this.continueData.level = this.levels['untrained'];
-        this.continueData.level.setBPM(2);
-        buttonTextureKey = 'continuePretest';
-      } else if (this.continueData.index >= 3) {
-        showButtons = false;
-      }
-    } else if (this.continueData.weekNumber == 1) {
-      // Training week 1
-      if (this.continueData.index == 0) {
-        this.continueData.level = this.levels['trained'];
-        buttonTextureKey = 'startTraining';
-      } else {
+    let suffix: string = 'Invalid Week';
+
+    if (weekNumber == 0) {
+      if (this.index == 0) {
+        suffix = 'TRYOUT';
+        config.skipLayersAutomaticallyAfterLoop = 2;
+        setLevel('Tryout', suffix);
+      } else if (this.index == 1) {
+        suffix = 'PRETEST 1';
+        setLevel(this.sequence[0], suffix);
+        config.skipLayersAutomaticallyAfterLoop = 4;
+      } else if (this.index == 2) {
+        suffix = 'PRETEST 2';
+        setLevel(this.sequence[1], suffix);
+        config.skipLayersAutomaticallyAfterLoop = 4;
+      } else if (this.index >= 3) {
+        suffix = 'PRETESTS COMPLETED';
         // TODO: Show pretest completed.
-        showButtons = false;
       }
-      if (this.continueData.level) {
-        this.continueData.level.setBPM(0);
-      }
-    } else if (this.continueData.weekNumber == 2) {
-      // Training week 2
-      if (this.continueData.index == 0) {
-        this.continueData.level = this.levels['trained'];
-        buttonTextureKey = 'startTraining';
+    } else if (weekNumber >= 1 && weekNumber <= 3) {
+      suffix = 'WEEK ' + weekNumber.toString() + ' TRAINING';
+      if (this.index == 0) {
+        config.skipLayersAutomaticallyAfterLoop = 16;
+        level = this.getLevel('Trained');
+        startText =
+          'START WEEK ' +
+          weekNumber.toString() +
+          '\n' +
+          'TRAINING'.toUpperCase();
       } else {
-        showButtons = false;
+        suffix = 'TRAINING SESSION COMPLETED';
+        // TODO: Show weekNumber.toString() training completed.
       }
-      if (this.continueData.level) {
-        this.continueData.level.setBPM(1);
+      if (level) {
+        switch (weekNumber) {
+          case 1:
+            level.setBPM(0);
+            break;
+          case 2:
+            level.setBPM(1);
+            break;
+          case 3:
+            level.setBPM(2);
+            break;
+          default:
+            break;
+        }
       }
-    } else if (this.continueData.weekNumber == 3) {
-      // Training week 3
-      if (this.continueData.index == 0) {
-        this.continueData.level = this.levels['trained'];
-        buttonTextureKey = 'startTraining';
+    } else if (weekNumber == -1) {
+      config.skipLayersAutomaticallyAfterLoop = 4;
+      if (this.index == 0) {
+        suffix = 'POSTTEST 1';
+        setLevel(this.sequence[0], suffix);
+      } else if (this.index == 1) {
+        suffix = 'POSTTEST 2';
+        setLevel(this.sequence[1], suffix);
+      } else if (this.index == 2) {
+        config.sonificationEnabled = false;
+        config.synchronizationEnabled = false;
+        config.pinchVolume = 0.0;
+        config.backgroundMusicVolume = 0.0;
+        suffix = 'POSTTEST 3';
+        setLevel('Nosound', suffix);
       } else {
-        // TODO: Show training for weekNumber completed.
-        showButtons = false;
-      }
-      if (this.continueData.level) {
-        this.continueData.level.setBPM(2);
-      }
-    } else if (this.continueData.weekNumber == -1) {
-      // Post test
-      if (this.continueData.index == 0) {
-        this.continueData.level = this.levels['trained'];
-        this.continueData.level.setBPM(0);
-        buttonTextureKey = 'startPosttest';
-      } else if (this.continueData.index == 1) {
-        this.continueData.level = this.levels['untrained'];
-        this.continueData.level.setBPM(2);
-        buttonTextureKey = 'continuePosttest';
-      } else if (this.continueData.index == 2) {
-        this.continueData.level = this.levels['nosound'];
-        // TODO: Set user config to nosound.
-        this.continueData.level.setBPM(2);
-        buttonTextureKey = 'continuePosttest';
-      } else {
+        suffix = 'POSTTESTS COMPLETED';
         // TODO: Show thanks for participating.
-        showButtons = false;
       }
     } else {
-      // TODO: Show thanks for participating.
-      // Invalid week number.
-      showButtons = false;
+      suffix = 'Thanks for participating!';
     }
 
-    if (showButtons) {
-      this.menuSelectLevel = new Button(
+    this.title = this.add
+      .text(this.center.x, 360, suffix, {
+        font: '110px Courier New',
+        color: 'white',
+      })
+      .setOrigin(0.5, 0.5);
+
+    if (startText) {
+      this.start = new Button(
         this,
-        new Vector2(
-          horizontalCenter + windowWidth * mainMenuButtonGap,
-          mainMenubuttonTopLevel * windowHeight,
-        ),
-        standardButtonScale,
-        buttonTextureKey,
-        buttonPinchSoundKey,
-        true,
+        startText,
+        this.center.x + buttonGapX,
+        buttonsY,
+        () => {
+          if (level) this.scene.start('level', level);
+        },
       );
 
-      this.menuSelectLevel.addPinchCallbacks({
-        startPinch: () => {
-          this.scene.start(levelScene, this.continueData);
-        },
-        startHover: () => {
-          this.menuSelectLevel.setTintFill(uiHoverColor);
-        },
-        endHover: () => {
-          this.menuSelectLevel.clearTint();
-        },
-      });
-      this.menuCalibrate = new Button(
+      this.calibration = new Button(
         this,
-        new Vector2(
-          horizontalCenter - windowWidth * mainMenuButtonGap,
-          mainMenubuttonTopLevel * windowHeight,
-        ),
-        standardButtonScale,
-        menuCalibrateButtonTextureKey,
-        buttonPinchSoundKey,
-        true,
+        'SETUP\nCAMERA',
+        this.center.x - buttonGapX,
+        buttonsY,
+        () => {
+          this.scene.start('calibration');
+        },
       );
-
-      this.menuCalibrate.addPinchCallbacks({
-        startPinch: () => {
-          this.scene.start(calibrationScene, this.continueData);
-        },
-        startHover: () => {
-          this.menuCalibrate.setTintFill(uiHoverColor);
-        },
-        endHover: () => {
-          this.menuCalibrate.clearTint();
-        },
-      });
     } else {
       // TODO: Add completed text of some kind.
     }
@@ -243,27 +206,6 @@ export default class ContinueScene extends HandScene {
     //   buttonPinchSoundKey,
     //   true,
     // );
-
-    this.menuLogo = this.add
-      .sprite(0, 0, logoTextureKey)
-      .setOrigin(0, 0)
-      .setScale(0.7, 0.7);
-    this.menuLogo.setPosition(
-      horizontalCenter - this.menuLogo.displayWidth / 2,
-      0.25 * windowHeight,
-    );
-
-    // this.menuOptions.addPinchCallbacks({
-    //   startPinch: () => {
-    //     this.scene.start(optionsScene);
-    //   },
-    //   startHover: () => {
-    //     this.menuOptions.setTintFill(uiHoverColor);
-    //   },
-    //   endHover: () => {
-    //     this.menuOptions.clearTint();
-    //   },
-    // });
   }
 
   update(time: number, delta: number): void {
