@@ -179,7 +179,9 @@ export default class Target extends MatterSprite {
       if (this.sound) {
         if (this.sound.isPlaying) {
           this.sound.on('complete', () => {
-            this.sound.destroy();
+            if (this.sound) {
+              this.sound.destroy();
+            }
           });
         } else {
           this.sound.destroy();

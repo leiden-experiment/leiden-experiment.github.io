@@ -56,13 +56,18 @@ export class DifficultyButton extends ToggleButton {
       if (this.sound) {
         if (this.sound.isPlaying) {
           this.sound.on('complete', () => {
-            this.sound.destroy();
+            if (this.sound) {
+              this.sound.destroy();
+            }
           });
         } else {
           this.sound.destroy();
         }
       }
-      if (this.text) this.text.destroy();
+      if (this.text) {
+        this.text.destroy();
+        this.text = undefined;
+      }
       if (this.bpmText) this.bpmText.destroy();
     });
   }
