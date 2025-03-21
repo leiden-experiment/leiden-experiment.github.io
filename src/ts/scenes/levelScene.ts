@@ -1,6 +1,7 @@
 import HandScene from '../scenes/handScene';
 import Level from '../level/level';
 import { escapeKey, initialScene, levelCompletionScene } from '../core/config';
+import { setIncrementIndex } from './continueScene';
 
 export default class LevelScene extends HandScene {
   private level: Level;
@@ -30,6 +31,7 @@ export default class LevelScene extends HandScene {
     this.level.start(
       () => {
         // Finished level callback.
+        setIncrementIndex(true);
         this.scene.start(levelCompletionScene, this.level);
       },
       () => {

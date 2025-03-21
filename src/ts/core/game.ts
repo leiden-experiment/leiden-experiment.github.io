@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { LoadingScene, ElectronScene } from '../scenes/loadingScene';
 import LevelScene from '../scenes/levelScene';
 import MainMenu from '../scenes/mainMenuScene';
+import ContinueScene from '../scenes/continueScene';
 import LevelSelect from '../scenes/levelSelectScene';
 import Options from '../scenes/optionsScene';
 import Scoreboard from '../scenes/scoreboardScene';
@@ -13,7 +14,6 @@ import { getAuth, signInWithEmailAndPassword, User } from 'firebase/auth';
 import { child, get, getDatabase, ref, set, update } from 'firebase/database';
 import { ConfigData } from './interfaces';
 
-import ContinueScene from '../scenes/continueScene';
 /*
 To add a new scene:
 1. import MySceneClassName from "scenes/mySceneClassName";
@@ -23,8 +23,9 @@ To add a new scene:
 4. (Optional) To start in your scene, set initialScene = "MySceneClassName" in config.ts.
 */
 
-const loginScreenEnabled: boolean = false;
+const loginScreenEnabled: boolean = true;
 
+export let currentUserNumber: number | undefined = undefined;
 export let currentUser: User | undefined = undefined;
 
 const config = {
@@ -48,8 +49,8 @@ const config = {
   scene: [
     ElectronScene,
     LoadingScene,
-    ContinueScene,
     MainMenu,
+    ContinueScene,
     Options,
     LevelSelect,
     LevelScene,
@@ -278,7 +279,7 @@ function getWeekUpdates(
 ): UserData | null {
   if (participantInfoSuffix == 'pre') {
     current.week = 0;
-  } else if (participantInfoSuffix == 'post') {
+  } else if (participantInfoSuffix == 'post' || previous.week == -1) {
     current.week = -1;
   } else {
     // Calculate current week of experiment.
@@ -309,11 +310,10 @@ async function login(): Promise<void> {
         return;
       }
 
-      const participantConfig = getParticipantConfig(participantInfo.number);
-      // Signed up
+      currentUserNumber = participantInfo.number;
+      const participantConfig = getParticipantConfig(currentUserNumber);
       currentUser = userCredential.user;
 
-      // Update user last login in Firebase Database
       const db = ref(database);
       const time = new Date().toUTCString();
       const updates: UserData = { lastLogin: time, config: participantConfig };
@@ -338,8 +338,17 @@ async function login(): Promise<void> {
               data,
               participantInfo.suffix,
             );
-            if (latestUpdates) {
-              update(child(db, user), updates).then(() => {
+            if (latestUpdates !== null) {
+              update(child(db, user), latestUpdates).then(() => {
+                if (participantInfo.suffix == 'training') {
+                  if (latestUpdates.week! == 0) {
+                    throwError('Cannot login before pretest');
+                    return;
+                  } else if (latestUpdates.week! == -1) {
+                    throwError('Cannot login after posttest');
+                    return;
+                  }
+                }
                 startGame();
               });
             }

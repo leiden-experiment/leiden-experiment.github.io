@@ -273,8 +273,8 @@ export const optionsSliderLabelOffset = new Vector2(32, -32);
 
 // Scene keys
 
-export const initialScene: string = 'mainMenu';
-export const levelCompletionScene: string = 'scoreboard';
+export const initialScene: string = 'continueScene';
+export const levelCompletionScene: string = initialScene;
 
 // Depths
 
