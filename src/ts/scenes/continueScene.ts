@@ -50,15 +50,13 @@ export default class ContinueScene extends HandScene {
     assert(this.sequence.length == 2, 'Failed to identify test sequence');
   }
 
-  private getTestSequence(): string[] {
+  getTestSequence(): string[] {
+    // Returns a sequence based on the current user number. The sequence switches every 4 numbers.
     assert(
       currentUserNumber != undefined,
       'Failed to identify current user number',
     );
-    const isEven = (i: number) => {
-      return i % 2 === 0;
-    };
-    if (isEven(currentUserNumber!)) {
+    if (Math.floor((currentUserNumber! - 1) / 4) % 2 === 0) {
       return ['Trained', 'Untrained'];
     } else {
       return ['Untrained', 'Trained'];
