@@ -145,7 +145,9 @@ export default class LevelSelect extends HandScene {
 
   private exit() {
     for (const button of this.difficultyButtons) {
-      button.destroy();
+      if (button) {
+        button.destroy();
+      }
     }
 
     this.stopAudio();
@@ -158,7 +160,9 @@ export default class LevelSelect extends HandScene {
 
   private createDifficultyButtons(level: Level) {
     for (const button of this.difficultyButtons) {
-      button.destroy();
+      if (button) {
+        button.destroy();
+      }
     }
     this.difficultyButtons = [];
 

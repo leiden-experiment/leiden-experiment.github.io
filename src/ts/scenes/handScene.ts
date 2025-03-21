@@ -77,16 +77,25 @@ export default class HandScene extends Scene {
     if (cameraOpacity == undefined) return;
     assert(cameraOpacity >= 0 && cameraOpacity <= 1);
     const backgroundOpacity: number = 1 - cameraOpacity;
-    background.setAlpha(backgroundOpacity);
-    //this.bg.style.backgroundColor = 'rgba(0, 0, 0,' + backgroundOpacity.toString() + ')';
-    this.bg.style.opacity = backgroundOpacity.toString();
+    if (background) {
+      background.setAlpha(backgroundOpacity);
+    }
+    if (this.bg) {
+      //this.bg.style.backgroundColor = 'rgba(0, 0, 0,' + backgroundOpacity.toString() + ')';
+      this.bg.style.opacity = backgroundOpacity.toString();
+    }
   }
 
   public setBackgroundTexture(textureKey: string) {
+    if (this.bg) {
+      this.bg.style.backgroundSize = '0 0';
+    }
+    if (!background) {
+      return;
+    }
     // TODO: Add assert that textureKey is loaded.
     background.setTexture(textureKey);
     background.setDisplaySize(this.width, this.height);
-    this.bg.style.backgroundSize = '0 0';
     background.setVisible(true);
   }
 }

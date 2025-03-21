@@ -78,7 +78,9 @@ export class PlayableLayer extends Layer {
   }
 
   public unload() {
-    this.infoHud.destroy();
+    if (this.infoHud) {
+      this.infoHud.destroy();
+    }
   }
 
   public start(delay: number) {
