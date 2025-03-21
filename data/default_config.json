@@ -9,6 +9,8 @@
   "mousePinchesEnabled": true,
   "sonificationEnabled": true,
   "synchronizationEnabled": false,
+  "playableBackingTracksEnabled": true,
+  "unplayableBackingTracksEnabled": true,
   "disableLayerProgression": false,
   "indexFingerOnly": false,
   "pinchVolume": 1.0,
