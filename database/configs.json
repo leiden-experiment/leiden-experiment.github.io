@@ -94,7 +94,7 @@
       "unplayableBackingTracksEnabled": false,
       "disableLayerProgression": false,
       "indexFingerOnly": false,
-      "pinchVolume": 1.0,
+      "pinchVolume": 0.0,
       "backgroundMusicVolume": 0.0,
       "onTimeDuration": 500,
       "lateTimeDuration": 500,

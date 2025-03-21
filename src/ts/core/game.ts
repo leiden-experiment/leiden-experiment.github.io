@@ -224,7 +224,7 @@ function getParticipantConfig(participantNumber: number) {
     case 2:
       return 'both';
     case 3:
-      return 'none';
+      return 'nosound';
     default:
       return 'unknown'; // Should not be reached for non-negative integers.
   }
