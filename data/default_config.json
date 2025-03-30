@@ -7,6 +7,7 @@
   "skipLayersAutomaticallyAfterLoop": 1,
   "ignoreMultifingerPinches": true,
   "mousePinchesEnabled": true,
+  "uiPinchesEnabled": true,
   "sonificationEnabled": true,
   "synchronizationEnabled": false,
   "playableBackingTracksEnabled": true,

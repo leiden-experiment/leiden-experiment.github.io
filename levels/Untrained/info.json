@@ -30,25 +30,25 @@
             "bar": 1,
             "step": 1
           },
-          "normalizedPosition": [0.25, 0.25],
+          "normalizedPosition": [0.75, 0.25],
           "soundKey": "chord1"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 2,
             "step": 1
           },
-          "normalizedPosition": [0.75, 0.75],
+          "normalizedPosition": [0.25, 0.25],
           "soundKey": "chord25"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 3,
             "step": 1
           },
-          "normalizedPosition": [0.5, 0.5],
+          "normalizedPosition": [0.75, 0.75],
           "soundKey": "chord3"
         },
         {
@@ -57,7 +57,7 @@
             "bar": 4,
             "step": 1
           },
-          "normalizedPosition": [0.75, 0.25],
+          "normalizedPosition": [0.25, 0.75],
           "soundKey": "chord4"
         },
         {
@@ -66,25 +66,25 @@
             "bar": 5,
             "step": 1
           },
-          "normalizedPosition": [0.25, 0.75],
+          "normalizedPosition": [0.75, 0.25],
           "soundKey": "chord25"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 6,
             "step": 1
           },
-          "normalizedPosition": [0.5, 0.5],
+          "normalizedPosition": [0.25, 0.25],
           "soundKey": "chord6"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 7,
             "step": 1
           },
-          "normalizedPosition": [0.75, 0.5],
+          "normalizedPosition": [0.75, 0.75],
           "soundKey": "chord7"
         },
         {
@@ -93,7 +93,7 @@
             "bar": 8,
             "step": 1
           },
-          "normalizedPosition": [0.25, 0.5],
+          "normalizedPosition": [0.25, 0.75],
           "soundKey": "chord8"
         }
       ]
@@ -117,7 +117,7 @@
             "bar": 1,
             "step": 5
           },
-          "normalizedPosition": [0.25, 0.5],
+          "normalizedPosition": [0.25, 0.25],
           "soundKey": "e_2"
         },
         {
@@ -126,7 +126,7 @@
             "bar": 1,
             "step": 7
           },
-          "normalizedPosition": [0.35, 0.5],
+          "normalizedPosition": [0.3, 0.25],
           "soundKey": "e_4"
         },
         {
@@ -135,43 +135,43 @@
             "bar": 1,
             "step": 11
           },
-          "normalizedPosition": [0.45, 0.5],
+          "normalizedPosition": [0.4, 0.25],
           "soundKey": "e_4"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 1,
             "step": 15
           },
-          "normalizedPosition": [0.6, 0.5],
+          "normalizedPosition": [0.5, 0.25],
           "soundKey": "f_6"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 2,
             "step": 5
           },
-          "normalizedPosition": [0.6, 0.75],
+          "normalizedPosition": [0.65, 0.25],
           "soundKey": "c_2"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 2,
             "step": 7
           },
-          "normalizedPosition": [0.5, 0.75],
+          "normalizedPosition": [0.7, 0.25],
           "soundKey": "c_4"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 2,
             "step": 11
           },
-          "normalizedPosition": [0.4, 0.75],
+          "normalizedPosition": [0.75, 0.25],
           "soundKey": "c_6"
         },
         {
@@ -184,30 +184,30 @@
           "soundKey": "a5_4"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 3,
             "step": 5
           },
-          "normalizedPosition": [0.25, 0.25],
+          "normalizedPosition": [0.35, 0.75],
           "soundKey": "d_2"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 3,
             "step": 7
           },
-          "normalizedPosition": [0.35, 0.25],
+          "normalizedPosition": [0.4, 0.75],
           "soundKey": "d_4"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 3,
             "step": 11
           },
-          "normalizedPosition": [0.45, 0.25],
+          "normalizedPosition": [0.5, 0.75],
           "soundKey": "d_4"
         },
         {
@@ -216,7 +216,7 @@
             "bar": 3,
             "step": 15
           },
-          "normalizedPosition": [0.6, 0.25],
+          "normalizedPosition": [0.6, 0.75],
           "soundKey": "b5_6"
         },
         {
@@ -225,115 +225,115 @@
             "bar": 4,
             "step": 5
           },
-          "normalizedPosition": [0.8, 0.75],
+          "normalizedPosition": [0.75, 0.75],
           "soundKey": "b5_4"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 4,
             "step": 9
           },
-          "normalizedPosition": [0.8, 0.65],
+          "normalizedPosition": [0.25, 0.5],
           "soundKey": "c_2"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 4,
             "step": 12
           },
-          "normalizedPosition": [0.8, 0.55],
+          "normalizedPosition": [0.3, 0.5],
           "soundKey": "d_2"
         },
         {
-          "finger": "index",
+          "finger": "pinky",
           "timePosition": {
             "bar": 4,
             "step": 15
           },
-          "normalizedPosition": [0.8, 0.45],
+          "normalizedPosition": [0.35, 0.5],
           "soundKey": "e_2"
         },
         {
-          "finger": "index",
+          "finger": "pinky",
           "timePosition": {
             "bar": 5,
             "step": 1
           },
-          "normalizedPosition": [0.8, 0.35],
+          "normalizedPosition": [0.4, 0.5],
           "soundKey": "f_6"
         },
         {
-          "finger": "index",
+          "finger": "pinky",
           "timePosition": {
             "bar": 5,
             "step": 7
           },
-          "normalizedPosition": [0.8, 0.2],
+          "normalizedPosition": [0.5, 0.5],
           "soundKey": "f_6"
         },
         {
-          "finger": "index",
+          "finger": "pinky",
           "timePosition": {
             "bar": 5,
             "step": 13
           },
-          "normalizedPosition": [0.2, 0.25],
+          "normalizedPosition": [0.6, 0.5],
           "soundKey": "a6_8"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 6,
             "step": 5
           },
-          "normalizedPosition": [0.1, 0.25],
+          "normalizedPosition": [0.7, 0.5],
           "soundKey": "a6_4"
         },
         {
-          "finger": "index",
+          "finger": "pinky",
           "timePosition": {
             "bar": 6,
             "step": 9
           },
-          "normalizedPosition": [0.1, 0.35],
+          "normalizedPosition": [0.25, 0.75],
           "soundKey": "b6_4"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 6,
             "step": 13
           },
-          "normalizedPosition": [0.1, 0.45],
+          "normalizedPosition": [0.35, 0.75],
           "soundKey": "a6_4"
         },
         {
-          "finger": "index",
+          "finger": "pinky",
           "timePosition": {
             "bar": 7,
             "step": 1
           },
-          "normalizedPosition": [0.1, 0.55],
+          "normalizedPosition": [0.45, 0.75],
           "soundKey": "b6_6"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 7,
             "step": 7
           },
-          "normalizedPosition": [0.1, 0.65],
+          "normalizedPosition": [0.55, 0.75],
           "soundKey": "a6_6"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 7,
             "step": 13
           },
-          "normalizedPosition": [0.1, 0.75],
+          "normalizedPosition": [0.65, 0.75],
           "soundKey": "g_6"
         },
         {
@@ -342,7 +342,7 @@
             "bar": 8,
             "step": 5
           },
-          "normalizedPosition": [0.1, 0.85],
+          "normalizedPosition": [0.75, 0.75],
           "soundKey": "e_12"
         }
       ]
@@ -367,25 +367,25 @@
             "bar": 1,
             "step": 5
           },
-          "normalizedPosition": [0.5, 0.5],
+          "normalizedPosition": [0.25, 0.75],
           "soundKey": "c_6"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 1,
             "step": 11
           },
-          "normalizedPosition": [0.25, 0.5],
+          "normalizedPosition": [0.35, 0.75],
           "soundKey": "e_4"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 1,
             "step": 15
           },
-          "normalizedPosition": [0.25, 0.4],
+          "normalizedPosition": [0.425, 0.75],
           "soundKey": "f_6"
         },
         {
@@ -394,7 +394,7 @@
             "bar": 2,
             "step": 5
           },
-          "normalizedPosition": [0.75, 0.25],
+          "normalizedPosition": [0.575, 0.75],
           "soundKey": "c_6"
         },
         {
@@ -403,187 +403,187 @@
             "bar": 2,
             "step": 11
           },
-          "normalizedPosition": [0.75, 0.5],
+          "normalizedPosition": [0.675, 0.75],
           "soundKey": "c_4"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 2,
             "step": 15
           },
-          "normalizedPosition": [0.65, 0.6],
+          "normalizedPosition": [0.75, 0.75],
           "soundKey": "d_6"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 3,
             "step": 5
           },
-          "normalizedPosition": [0.25, 0.75],
+          "normalizedPosition": [0.25, 0.5],
           "soundKey": "d_6"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 3,
             "step": 11
           },
-          "normalizedPosition": [0.5, 0.75],
+          "normalizedPosition": [0.35, 0.5],
           "soundKey": "d_4"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 3,
             "step": 15
           },
-          "normalizedPosition": [0.5, 0.65],
+          "normalizedPosition": [0.425, 0.5],
           "soundKey": "e_6"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 4,
             "step": 5
           },
-          "normalizedPosition": [0.5, 0.5],
+          "normalizedPosition": [0.525, 0.5],
           "soundKey": "e_6"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 4,
             "step": 11
           },
-          "normalizedPosition": [0.5, 0.25],
+          "normalizedPosition": [0.6375, 0.5],
           "soundKey": "e_6"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 5,
             "step": 1
           },
-          "normalizedPosition": [0.6, 0.25],
+          "normalizedPosition": [0.75, 0.5],
           "soundKey": "f_4"
         },
         {
-          "finger": "index",
+          "finger": "pinky",
           "timePosition": {
             "bar": 5,
             "step": 5
           },
-          "normalizedPosition": [0.75, 0.25],
+          "normalizedPosition": [0.25, 0.25],
           "soundKey": "a_2"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 5,
             "step": 7
           },
-          "normalizedPosition": [0.75, 0.35],
+          "normalizedPosition": [0.3, 0.25],
           "soundKey": "f_4"
         },
         {
-          "finger": "index",
+          "finger": "pinky",
           "timePosition": {
             "bar": 5,
             "step": 11
           },
-          "normalizedPosition": [0.75, 0.5],
+          "normalizedPosition": [0.4, 0.25],
           "soundKey": "a_2"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 5,
             "step": 13
           },
-          "normalizedPosition": [0.75, 0.6],
+          "normalizedPosition": [0.45, 0.25],
           "soundKey": "f_4"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 6,
             "step": 1
           },
-          "normalizedPosition": [0.6, 0.6],
+          "normalizedPosition": [0.55, 0.25],
           "soundKey": "g_2"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 6,
             "step": 3
           },
-          "normalizedPosition": [0.5, 0.5],
+          "normalizedPosition": [0.6, 0.25],
           "soundKey": "d_4"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 6,
             "step": 7
           },
-          "normalizedPosition": [0.4, 0.4],
+          "normalizedPosition": [0.7, 0.25],
           "soundKey": "d_2"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 6,
             "step": 9
           },
-          "normalizedPosition": [0.3, 0.3],
+          "normalizedPosition": [0.75, 0.25],
           "soundKey": "g_4"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 6,
             "step": 13
           },
-          "normalizedPosition": [0.2, 0.2],
+          "normalizedPosition": [0.25, 0.5],
           "soundKey": "g_4"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 7,
             "step": 1
           },
-          "normalizedPosition": [0.2, 0.5],
+          "normalizedPosition": [0.35, 0.5],
           "soundKey": "e_6"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 7,
             "step": 7
           },
-          "normalizedPosition": [0.2, 0.8],
+          "normalizedPosition": [0.5, 0.5],
           "soundKey": "e_6"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 7,
             "step": 13
           },
-          "normalizedPosition": [0.5, 0.8],
+          "normalizedPosition": [0.625, 0.5],
           "soundKey": "f_8"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 8,
             "step": 5
           },
-          "normalizedPosition": [0.8, 0.8],
+          "normalizedPosition": [0.75, 0.5],
           "soundKey": "e_8"
         }
       ]
