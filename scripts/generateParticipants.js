@@ -1,30 +1,36 @@
 const admin = require('firebase-admin');
+const fs = require('fs');
+const { Parser } = require('json2csv');
 
 // Initialize Firebase Admin SDK (replace with your service account key)
-const serviceAccount = require('./path/to/your/serviceAccountKey.json'); // Replace with your service account
+const serviceAccount = require('path/to/service.json'); // Replace with your service account
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
 async function createUsers() {
+  const userData = []; // Array to store user data for CSV
+
   for (let i = 1; i <= 100; i++) {
     const email = `participant${i}@pizzicato.com`;
     const password = generatePassword(6);
+    const participantName = `participant${i}`; // Extract participant name
 
-    await checkAndCreateUser(email, password); // Use the checkAndCreateUser function
+    await checkAndCreateUser(email, password, participantName, userData);
   }
+
+  // Generate and save CSV
+  generateAndSaveCSV(userData);
 }
 
-async function checkAndCreateUser(email, password) {
+async function checkAndCreateUser(email, password, participantName, userData) {
   try {
-    // Check if user exists by email
     const userRecord = await admin.auth().getUserByEmail(email);
     console.log(
       `User with email ${email} already exists (UID: ${userRecord.uid}). No action taken.`,
     );
   } catch (error) {
-    // If user does not exist, create them
     if (error.code === 'auth/user-not-found') {
       try {
         const newUserRecord = await admin.auth().createUser({
@@ -32,6 +38,14 @@ async function checkAndCreateUser(email, password) {
           password: password,
         });
         console.log(`User created: ${email} (UID: ${newUserRecord.uid})`);
+
+        // Add user data to the array
+        userData.push({
+          participantName: participantName,
+          email: email,
+          password: password,
+          uid: newUserRecord.uid,
+        });
       } catch (createUserError) {
         console.error(`Error creating user ${email}:`, createUserError);
       }
@@ -48,6 +62,21 @@ function generatePassword(length) {
     password += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return password;
+}
+
+function generateAndSaveCSV(userData) {
+  const fields = ['participantName', 'password'];
+  const opts = { fields };
+
+  try {
+    const parser = new Parser(opts);
+    const csv = parser.parse(userData);
+
+    fs.writeFileSync('participant_credentials.csv', csv);
+    console.log('Participant credentials saved to participant_credentials.csv');
+  } catch (err) {
+    console.error('Error generating or saving CSV:', err);
+  }
 }
 
 createUsers();

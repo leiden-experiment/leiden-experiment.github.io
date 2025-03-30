@@ -85,6 +85,7 @@ function addCSVToSheet(sheet, csvData) {
   sheet.getRange(startRow, startCol, numRows, numColumns).setValues(data);
 }
 
+// slice the word "participant" off the front.
 function removeParticipantPrefix(str) {
   if (typeof str !== 'string') {
     return str; // Return the input if it's not a string
@@ -97,10 +98,110 @@ function removeParticipantPrefix(str) {
   }
 }
 
+function formatDateString(dateString) {
+  const date = new Date(dateString);
+
+  if (isNaN(date.getTime())) {
+    return 'Invalid Date'; // Handle invalid date strings
+  }
+
+  const options = {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  };
+
+  return date.toLocaleString(undefined, options).replace(/,/g, '');
+}
+
+function formatDateWithoutCommas(date) {
+  const options = {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    timeZoneName: 'short', // or 'long' for more detail
+  };
+
+  return date.toLocaleString(undefined, options).replace(/,/g, '');
+}
+
+function centerSheetCells(sheet) {
+  var range = sheet.getDataRange();
+
+  range.setHorizontalAlignment('center');
+  range.setVerticalAlignment('middle');
+}
+
+function autoResizeColumns(sheet) {
+  var dataRange = sheet.getDataRange();
+  var lastColumn = dataRange.getLastColumn();
+
+  for (var i = 1; i <= lastColumn; i++) {
+    sheet.autoResizeColumn(i);
+  }
+}
+
+function rowColumnToCellAddress(row, column) {
+  if (row < 1 || column < 1) {
+    return 'Invalid row or column number';
+  }
+
+  let columnAddress = '';
+  let tempColumn = column;
+
+  while (tempColumn > 0) {
+    let remainder = (tempColumn - 1) % 26;
+    columnAddress = String.fromCharCode(65 + remainder) + columnAddress;
+    tempColumn = Math.floor((tempColumn - 1) / 26);
+  }
+
+  return columnAddress + row;
+}
+
+function insertSheetLink(ss, sheet, sheetLinkTo, row, column) {
+  const cellAddress = rowColumnToCellAddress(row, column);
+  var linksheet = ss.getSheetByName(sheetLinkTo);
+
+  if (!linksheet) {
+    Logger.log("Sheet '" + sheetLinkTo + "' not found.");
+    return;
+  }
+
+  var sheetId = linksheet.getSheetId();
+  var ssId = ss.getId();
+  var link = `=HYPERLINK("https://docs.google.com/spreadsheets/d/${ssId}/edit#gid=${sheetId}", "${sheetLinkTo}")`;
+
+  sheet.getRange(cellAddress).setFormula(link);
+}
+
+function createSheetLinksFromColumnA(ss, sheet) {
+  var lastRow = sheet.getLastRow();
+
+  for (var i = 2; i <= lastRow; i++) {
+    // Start from row 2 (skipping row 1)
+    var sheetName = sheet.getRange('A' + i).getValue(); // Get sheet name from column A
+    if (sheetName) {
+      // Check if the cell has a value
+      var targetSheet = ss.getSheetByName(sheetName);
+      if (targetSheet) {
+        var sheetId = targetSheet.getSheetId();
+        var ssId = ss.getId();
+        var link = `=HYPERLINK("https://docs.google.com/spreadsheets/d/${ssId}/edit#gid=${sheetId}", "${sheetName}")`;
+        sheet.getRange('A' + i).setFormula(link); // Set the cell's formula to the hyperlink
+      } else {
+        Logger.log("Sheet '" + sheetName + "' not found.");
+      }
+    }
+  }
+}
+
 function getAllPizzicatoData() {
   const databaseURL =
     'https://pizzicato-1f765-default-rtdb.europe-west1.firebasedatabase.app/';
-  const secret = 'INSERTSECRETKEYHERE';
+  const secret = 'REPLACEWITHSECRETKEY';
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -118,22 +219,45 @@ function getAllPizzicatoData() {
     }
   });
 
+  const overviewSheet = ss.insertSheet('Overview');
+
+  addCSVToSheet(
+    overviewSheet,
+    'Participant Number,Config,Experiment Start,Week,Last Login,Total Trainings Completed\n',
+  );
+
   for (var key in users) {
     const user = users[key];
     if (user.hasOwnProperty('name')) {
-      const userSheet = ss.insertSheet(removeParticipantPrefix(user.name)); // slice the word "participant" off the front.
+      const participantNumber = removeParticipantPrefix(user.name);
+      const userSheet = ss.insertSheet(participantNumber);
       let csv = 'Username:,' + user.name + '\n';
+      let overviewCSV = participantNumber + ',';
+      if (user.hasOwnProperty('config')) {
+        csv += 'Config:,' + user.config + '\n';
+        overviewCSV += user.config + ',';
+      }
       if (user.hasOwnProperty('experimentStart')) {
-        csv += 'Experiment Start:,' + user.experimentStart + '\n';
+        const startDate = formatDateString(user.experimentStart);
+        csv += 'Experiment Start:,' + startDate + '\n';
+        overviewCSV += startDate + ',';
       }
       if (user.hasOwnProperty('week')) {
         csv += 'Week:,' + user.week + '\n';
+        overviewCSV += user.week + ',';
       }
       if (user.hasOwnProperty('lastLogin')) {
-        csv += 'Last Login:,' + user.lastLogin + '\n';
+        const date = new Date(user.lastLogin);
+        const dateString = formatDateWithoutCommas(date);
+        csv += 'Last Login:,' + dateString + '\n';
+        overviewCSV += dateString + ',';
       }
-      if (user.hasOwnProperty('config')) {
-        csv += 'User Config:,' + user.config + '\n';
+      if (user.hasOwnProperty('trainingsCompleted')) {
+        csv += 'Total Trainings Completed:,' + user.trainingsCompleted + '\n';
+        overviewCSV += user.trainingsCompleted + '\n';
+      } else {
+        // TODO: Remove this?
+        overviewCSV += '0' + '\n';
       }
       if (user.hasOwnProperty('data')) {
         csv += '\n';
@@ -142,9 +266,15 @@ function getAllPizzicatoData() {
           csv += levelStatsToCSV(dataId, data);
         }
       }
+      addCSVToSheet(overviewSheet, overviewCSV);
       addCSVToSheet(userSheet, csv);
+      //centerSheetCells(userSheet);
     }
   }
+
+  centerSheetCells(overviewSheet);
+  autoResizeColumns(overviewSheet);
+  createSheetLinksFromColumnA(ss, overviewSheet);
 
   //var sheet = sheets.getSheetByName(name);
 
