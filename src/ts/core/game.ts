@@ -24,6 +24,8 @@ To add a new scene:
 */
 
 const loginScreenEnabled: boolean = true;
+const capMaximumTrainings: boolean = true;
+const maximumTrainings: number = 3;
 
 export let currentUserNumber: number | undefined = undefined;
 export let currentUser: User | undefined = undefined;
@@ -93,7 +95,8 @@ export interface UserData {
   config?: string;
   experimentStart?: string;
   week?: number;
-  lastLogin: string;
+  lastLogin?: string;
+  trainingsCompleted?: number;
 }
 
 const newUserData: UserData = {
@@ -102,6 +105,7 @@ const newUserData: UserData = {
   name: '',
   experimentStart: '',
   week: 0,
+  trainingsCompleted: 0,
 };
 
 const emailSuffix = '@pizzicato.com';
@@ -277,6 +281,7 @@ function getWeekUpdates(
   previous: UserData,
   participantInfoSuffix: string,
 ): UserData | null {
+  current.trainingsCompleted = previous.trainingsCompleted;
   if (participantInfoSuffix == 'pre') {
     current.week = 0;
   } else if (participantInfoSuffix == 'post' || previous.week == -1) {
@@ -323,6 +328,7 @@ async function login(): Promise<void> {
       newUserData.lastLogin = time;
       newUserData.config = participantConfig;
       newUserData.week = 0;
+      newUserData.trainingsCompleted = 0;
 
       if (participantInfo.suffix == 'pre') {
         newUserData.experimentStart = getCurrentDateAsString();
@@ -346,6 +352,18 @@ async function login(): Promise<void> {
                     return;
                   } else if (latestUpdates.week! == -1) {
                     throwError('Cannot login after posttest');
+                    return;
+                  } else if (
+                    latestUpdates.trainingsCompleted !== undefined &&
+                    capMaximumTrainings &&
+                    latestUpdates.trainingsCompleted! >=
+                      maximumTrainings * latestUpdates.week!
+                  ) {
+                    throwError(
+                      'Maximum of ' +
+                        maximumTrainings.toString() +
+                        ' trainings per week',
+                    );
                     return;
                   }
                 }
@@ -424,6 +442,35 @@ export async function writeDataToCurrentUser(
       })
       .catch(err => {
         reject('Data not found for user "' + getCurrentUserName() + '":' + err);
+      });
+  });
+}
+
+export async function incrementCurrentUserTrainings(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const db = ref(database);
+    const user = `users/${currentUser!.uid}`;
+    get(child(db, user))
+      .then(snapshot => {
+        if (snapshot.exists()) {
+          const userData: UserData = snapshot.val();
+          if (userData.trainingsCompleted) {
+            ++userData.trainingsCompleted!;
+          } else {
+            userData.trainingsCompleted = 1;
+          }
+          update(child(db, user), userData).then(() => {
+            resolve(
+              'Updated user completed trainings to ' +
+                userData.trainingsCompleted!.toString(),
+            );
+          });
+        } else {
+          reject('User id snapshot does not exist');
+        }
+      })
+      .catch(err => {
+        reject('Firebase get users failed: ' + err);
       });
   });
 }

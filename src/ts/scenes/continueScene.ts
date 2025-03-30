@@ -4,7 +4,11 @@ import Level from '../level/level';
 import { levels, weekNumber } from './loadingScene';
 import { PhaserText } from '../core/phaserTypes';
 import { assert } from '../core/common';
-import { currentUserNumber } from '../core/game';
+import {
+  currentUser,
+  currentUserNumber,
+  incrementCurrentUserTrainings,
+} from '../core/game';
 import { autoSaveToCSV, config } from '../managers/storageManager';
 
 export let incrementIndex: boolean = false;
@@ -93,19 +97,23 @@ export default class ContinueScene extends HandScene {
 
     let suffix: string = 'Invalid Week';
 
+    const tryoutLoops: number = 2;
+    const testLoops: number = 8;
+    const trainingLoops: number = 16;
+
     if (weekNumber == 0) {
       if (this.index == 0) {
         suffix = 'TRYOUT';
-        config.skipLayersAutomaticallyAfterLoop = 2;
+        config.skipLayersAutomaticallyAfterLoop = tryoutLoops;
         setLevel('Tryout', suffix);
       } else if (this.index == 1) {
         suffix = 'PRETEST 1';
         setLevel(this.sequence[0], suffix);
-        config.skipLayersAutomaticallyAfterLoop = 4;
+        config.skipLayersAutomaticallyAfterLoop = testLoops;
       } else if (this.index == 2) {
         suffix = 'PRETEST 2';
         setLevel(this.sequence[1], suffix);
-        config.skipLayersAutomaticallyAfterLoop = 4;
+        config.skipLayersAutomaticallyAfterLoop = testLoops;
       } else if (this.index >= 3) {
         suffix = 'PRETESTS COMPLETED';
         // TODO: Show pretest completed.
@@ -113,7 +121,7 @@ export default class ContinueScene extends HandScene {
     } else if (weekNumber >= 1 && weekNumber <= 3) {
       suffix = 'WEEK ' + weekNumber.toString() + ' TRAINING';
       if (this.index == 0) {
-        config.skipLayersAutomaticallyAfterLoop = 16;
+        config.skipLayersAutomaticallyAfterLoop = trainingLoops;
         level = this.getLevel('Trained');
         startText =
           'START WEEK ' +
@@ -122,6 +130,15 @@ export default class ContinueScene extends HandScene {
           'TRAINING'.toUpperCase();
       } else {
         suffix = 'TRAINING SESSION COMPLETED';
+        if (currentUser) {
+          incrementCurrentUserTrainings()
+            .then((result: string) => {
+              console.info('INFO: ' + result);
+            })
+            .catch(err => {
+              console.info('ERROR: ' + err);
+            });
+        }
         // TODO: Show weekNumber.toString() training completed.
       }
       if (level) {
@@ -140,7 +157,7 @@ export default class ContinueScene extends HandScene {
         }
       }
     } else if (weekNumber == -1) {
-      config.skipLayersAutomaticallyAfterLoop = 4;
+      config.skipLayersAutomaticallyAfterLoop = testLoops;
       if (this.index == 0) {
         suffix = 'POSTTEST 1';
         setLevel(this.sequence[0], suffix);

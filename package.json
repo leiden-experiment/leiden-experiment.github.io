@@ -32,6 +32,7 @@
     "@mediapipe/tasks-vision": "^0.10.8",
     "file-saver": "^2.0.5",
     "firebase": "^11.2.0",
+    "firebase-admin": "^13.2.0",
     "phaser": "^3.60.0",
     "touch-cli": "^0.0.1",
     "workbox-precaching": "^7.0.0"
