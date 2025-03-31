@@ -15,7 +15,7 @@
       "playable": true,
       "progressCount": 4,
       "id": "chords",
-      "lengthInBars": 4,
+      "lengthInBars": 8,
       "previewTime": {
         "bar": 2
       },
@@ -25,7 +25,7 @@
       "backgroundLayers": ["drums"],
       "nodes": [
         {
-          "finger": "index",
+          "finger": "pinky",
           "timePosition": {
             "bar": 1,
             "step": 1
@@ -34,31 +34,58 @@
           "soundKey": "chord1"
         },
         {
-          "finger": "index",
+          "finger": "ring",
           "timePosition": {
             "bar": 2,
             "step": 1
           },
-          "normalizedPosition": [0.75, 0.25],
-          "soundKey": "chord2"
+          "normalizedPosition": [0.5, 0.25],
+          "soundKey": "chord278"
         },
         {
-          "finger": "index",
+          "finger": "middle",
           "timePosition": {
             "bar": 3,
             "step": 1
           },
-          "normalizedPosition": [0.75, 0.75],
+          "normalizedPosition": [0.75, 0.25],
           "soundKey": "chord3"
         },
         {
-          "finger": "pinky",
+          "finger": "index",
           "timePosition": {
             "bar": 4,
             "step": 1
           },
-          "normalizedPosition": [0.25, 0.75],
+          "normalizedPosition": [0.5, 0.5],
           "soundKey": "chord4"
+        },
+        {
+          "finger": "pinky",
+          "timePosition": {
+            "bar": 5,
+            "step": 1
+          },
+          "normalizedPosition": [0.25, 0.75],
+          "soundKey": "chord5"
+        },
+        {
+          "finger": "ring",
+          "timePosition": {
+            "bar": 6,
+            "step": 1
+          },
+          "normalizedPosition": [0.5, 0.75],
+          "soundKey": "chord6"
+        },
+        {
+          "finger": "middle",
+          "timePosition": {
+            "bar": 7,
+            "step": 1
+          },
+          "normalizedPosition": [0.75, 0.75],
+          "soundKey": "chord278"
         }
       ]
     }
