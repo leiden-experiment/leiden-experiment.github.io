@@ -17,7 +17,7 @@
       "id": "chords",
       "lengthInBars": 8,
       "previewTime": {
-        "bar": 2
+        "bar": 1
       },
       "spriteKeyOuter": "targetOuter",
       "spriteKeyInner": "targetInner",
@@ -104,7 +104,7 @@
       "id": "lead",
       "lengthInBars": 8,
       "previewTime": {
-        "bar": 2
+        "bar": 1
       },
       "spriteKeyOuter": "targetOuter",
       "spriteKeyInner": "targetInner",
@@ -117,7 +117,7 @@
             "bar": 1,
             "step": 5
           },
-          "normalizedPosition": [0.25, 0.25],
+          "normalizedPosition": [0.225, 0.25],
           "soundKey": "e_2"
         },
         {
@@ -153,7 +153,7 @@
             "bar": 2,
             "step": 5
           },
-          "normalizedPosition": [0.65, 0.25],
+          "normalizedPosition": [0.625, 0.25],
           "soundKey": "c_2"
         },
         {
@@ -171,7 +171,7 @@
             "bar": 2,
             "step": 11
           },
-          "normalizedPosition": [0.75, 0.25],
+          "normalizedPosition": [0.775, 0.25],
           "soundKey": "c_6"
         },
         {
@@ -180,7 +180,7 @@
             "bar": 3,
             "step": 1
           },
-          "normalizedPosition": [0.25, 0.75],
+          "normalizedPosition": [0.225, 0.75],
           "soundKey": "a5_4"
         },
         {
@@ -189,7 +189,7 @@
             "bar": 3,
             "step": 5
           },
-          "normalizedPosition": [0.35, 0.75],
+          "normalizedPosition": [0.325, 0.75],
           "soundKey": "d_2"
         },
         {
@@ -234,7 +234,7 @@
             "bar": 4,
             "step": 9
           },
-          "normalizedPosition": [0.25, 0.5],
+          "normalizedPosition": [0.225, 0.5],
           "soundKey": "c_2"
         },
         {
@@ -252,7 +252,7 @@
             "bar": 4,
             "step": 15
           },
-          "normalizedPosition": [0.35, 0.5],
+          "normalizedPosition": [0.375, 0.5],
           "soundKey": "e_2"
         },
         {
@@ -261,7 +261,7 @@
             "bar": 5,
             "step": 1
           },
-          "normalizedPosition": [0.4, 0.5],
+          "normalizedPosition": [0.45, 0.5],
           "soundKey": "f_6"
         },
         {
@@ -270,7 +270,7 @@
             "bar": 5,
             "step": 7
           },
-          "normalizedPosition": [0.5, 0.5],
+          "normalizedPosition": [0.55, 0.5],
           "soundKey": "f_6"
         },
         {
@@ -279,7 +279,7 @@
             "bar": 5,
             "step": 13
           },
-          "normalizedPosition": [0.6, 0.5],
+          "normalizedPosition": [0.65, 0.5],
           "soundKey": "a6_8"
         },
         {
@@ -288,7 +288,7 @@
             "bar": 6,
             "step": 5
           },
-          "normalizedPosition": [0.7, 0.5],
+          "normalizedPosition": [0.75, 0.5],
           "soundKey": "a6_4"
         },
         {
@@ -353,8 +353,7 @@
       "id": "bass",
       "lengthInBars": 8,
       "previewTime": {
-        "bar": 0,
-        "step": 8
+        "bar": 1
       },
       "spriteKeyOuter": "targetOuter",
       "spriteKeyInner": "targetInner",
@@ -475,7 +474,7 @@
             "bar": 5,
             "step": 5
           },
-          "normalizedPosition": [0.25, 0.25],
+          "normalizedPosition": [0.2, 0.25],
           "soundKey": "a_2"
         },
         {
@@ -484,7 +483,7 @@
             "bar": 5,
             "step": 7
           },
-          "normalizedPosition": [0.3, 0.25],
+          "normalizedPosition": [0.275, 0.25],
           "soundKey": "f_4"
         },
         {
@@ -493,7 +492,7 @@
             "bar": 5,
             "step": 11
           },
-          "normalizedPosition": [0.4, 0.25],
+          "normalizedPosition": [0.375, 0.25],
           "soundKey": "a_2"
         },
         {
@@ -520,7 +519,7 @@
             "bar": 6,
             "step": 3
           },
-          "normalizedPosition": [0.6, 0.25],
+          "normalizedPosition": [0.625, 0.25],
           "soundKey": "d_4"
         },
         {
@@ -538,7 +537,7 @@
             "bar": 6,
             "step": 9
           },
-          "normalizedPosition": [0.75, 0.25],
+          "normalizedPosition": [0.8, 0.25],
           "soundKey": "g_4"
         },
         {

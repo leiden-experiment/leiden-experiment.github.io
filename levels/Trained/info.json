@@ -17,7 +17,8 @@
       "id": "chords",
       "lengthInBars": 4,
       "previewTime": {
-        "bar": 2
+        "bar": 0,
+        "step": 6
       },
       "spriteKeyOuter": "targetOuter",
       "spriteKeyInner": "targetInner",
@@ -68,7 +69,8 @@
       "id": "lead",
       "lengthInBars": 4,
       "previewTime": {
-        "bar": 2
+        "bar": 0,
+        "step": 6
       },
       "spriteKeyOuter": "targetOuter",
       "spriteKeyInner": "targetInner",
@@ -191,8 +193,8 @@
       "id": "bass",
       "lengthInBars": 4,
       "previewTime": {
-        "bar": 1,
-        "step": 8
+        "bar": 0,
+        "step": 6
       },
       "spriteKeyOuter": "targetOuter",
       "spriteKeyInner": "targetInner",
