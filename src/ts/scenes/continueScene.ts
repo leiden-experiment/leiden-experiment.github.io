@@ -99,7 +99,7 @@ export default class ContinueScene extends HandScene {
 
     const tryoutLoops: number = 2;
     const testLoops: number = 8;
-    const trainingLoops: number = 16;
+    const trainingLoops: number = 4;
 
     if (weekNumber == 0) {
       if (this.index == 0) {
@@ -120,14 +120,16 @@ export default class ContinueScene extends HandScene {
       }
     } else if (weekNumber >= 1 && weekNumber <= 3) {
       suffix = 'WEEK ' + weekNumber.toString() + ' TRAINING';
-      if (this.index == 0) {
+
+      if (this.index == 0 || this.index == 1 || this.index == 2) {
         config.skipLayersAutomaticallyAfterLoop = trainingLoops;
         level = this.getLevel('Trained');
         startText =
           'START WEEK ' +
           weekNumber.toString() +
           '\n' +
-          'TRAINING'.toUpperCase();
+          'TRAINING '.toUpperCase() +
+          (this.index + 1).toString();
       } else {
         suffix = 'TRAINING SESSION COMPLETED';
         if (currentUser) {
@@ -139,7 +141,6 @@ export default class ContinueScene extends HandScene {
               console.info('ERROR: ' + err);
             });
         }
-        // TODO: Show weekNumber.toString() training completed.
       }
       if (level) {
         switch (weekNumber) {
