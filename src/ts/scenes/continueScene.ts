@@ -6,6 +6,7 @@ import { PhaserText } from '../core/phaserTypes';
 import { assert } from '../core/common';
 import {
   currentUser,
+  currentUserData,
   currentUserNumber,
   incrementCurrentUserTrainings,
 } from '../core/game';
@@ -98,8 +99,8 @@ export default class ContinueScene extends HandScene {
     let suffix: string = 'Invalid Week';
 
     const tryoutLoops: number = 2;
-    const testLoops: number = 8;
-    const trainingLoops: number = 4;
+    const testLoops: number = 2;
+    const trainingLoops: number = 2;
 
     if (weekNumber == 0) {
       if (this.index == 0) {
@@ -119,7 +120,16 @@ export default class ContinueScene extends HandScene {
         // TODO: Show pretest completed.
       }
     } else if (weekNumber >= 1 && weekNumber <= 3) {
-      suffix = 'WEEK ' + weekNumber.toString() + ' TRAINING';
+      let attempt: number = 1;
+
+      if (currentUserData) {
+        if (currentUserData.trainingsCompleted) {
+          attempt = currentUserData.trainingsCompleted + 1;
+        }
+      }
+
+      suffix =
+        'WEEK ' + weekNumber.toString() + ' SESSION ' + attempt.toString();
 
       if (this.index == 0 || this.index == 1 || this.index == 2) {
         config.skipLayersAutomaticallyAfterLoop = trainingLoops;
@@ -129,9 +139,16 @@ export default class ContinueScene extends HandScene {
           weekNumber.toString() +
           '\n' +
           'TRAINING '.toUpperCase() +
+          +attempt.toString() +
+          '.' +
           (this.index + 1).toString();
       } else {
-        suffix = 'TRAINING SESSION COMPLETED';
+        suffix =
+          'WEEK ' +
+          weekNumber.toString() +
+          ' SESSION ' +
+          attempt.toString() +
+          ' COMPLETED';
         if (currentUser) {
           incrementCurrentUserTrainings()
             .then((result: string) => {

@@ -29,6 +29,7 @@ const maximumTrainings: number = 3;
 
 export let currentUserNumber: number | undefined = undefined;
 export let currentUser: User | undefined = undefined;
+export let currentUserData: UserData | undefined = undefined;
 
 const config = {
   type: Phaser.WEBGL, // PHASER.CANVAS, PHASER.AUTO
@@ -284,6 +285,7 @@ function getWeekUpdates(
   current.trainingsCompleted = previous.trainingsCompleted;
   if (participantInfoSuffix == 'pre') {
     current.week = 0;
+    current.trainingsCompleted = 0;
   } else if (participantInfoSuffix == 'post' || previous.week == -1) {
     current.week = -1;
   } else {
@@ -333,6 +335,10 @@ async function login(): Promise<void> {
       if (participantInfo.suffix == 'pre') {
         newUserData.experimentStart = getCurrentDateAsString();
         updates.experimentStart = getCurrentDateAsString();
+        updates.trainingsCompleted = 0;
+        newUserData.trainingsCompleted = 0;
+        newUserData.week = 0;
+        updates.week = 0;
       }
 
       get(child(db, user))
@@ -345,6 +351,7 @@ async function login(): Promise<void> {
               participantInfo.suffix,
             );
             if (latestUpdates !== null) {
+              currentUserData = latestUpdates;
               update(child(db, user), latestUpdates).then(() => {
                 if (participantInfo.suffix == 'training') {
                   if (latestUpdates.week! == 0) {
@@ -377,6 +384,7 @@ async function login(): Promise<void> {
               );
               return;
             }
+            currentUserData = newUserData;
             update(child(db, user), newUserData).then(() => {
               startGame();
             });
