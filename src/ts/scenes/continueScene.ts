@@ -99,8 +99,8 @@ export default class ContinueScene extends HandScene {
     let suffix: string = 'Invalid Week';
 
     const tryoutLoops: number = 2;
-    const testLoops: number = 2;
-    const trainingLoops: number = 2;
+    const testLoops: number = 6;
+    const trainingLoops: number = 6;
 
     if (weekNumber == 0) {
       if (this.index == 0) {
