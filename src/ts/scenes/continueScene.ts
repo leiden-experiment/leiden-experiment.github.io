@@ -119,7 +119,8 @@ export default class ContinueScene extends HandScene {
         suffix = 'PRETESTS COMPLETED';
         // TODO: Show pretest completed.
       }
-    } else if (weekNumber >= 1 && weekNumber <= 3) {
+    } else if (weekNumber >= 1 && weekNumber <= 100) {
+      const week = Math.min(Math.max(weekNumber, 1), 3);
       let attempt: number = 1;
 
       if (currentUserData) {
@@ -128,15 +129,14 @@ export default class ContinueScene extends HandScene {
         }
       }
 
-      suffix =
-        'WEEK ' + weekNumber.toString() + ' SESSION ' + attempt.toString();
+      suffix = 'WEEK ' + week.toString() + ' SESSION ' + attempt.toString();
 
       if (this.index == 0 || this.index == 1 || this.index == 2) {
         config.skipLayersAutomaticallyAfterLoop = trainingLoops;
         level = this.getLevel('Trained');
         startText =
           'START WEEK ' +
-          weekNumber.toString() +
+          week.toString() +
           '\n' +
           'TRAINING '.toUpperCase() +
           +attempt.toString() +
@@ -145,7 +145,7 @@ export default class ContinueScene extends HandScene {
       } else {
         suffix =
           'WEEK ' +
-          weekNumber.toString() +
+          week.toString() +
           ' SESSION ' +
           attempt.toString() +
           ' COMPLETED';
@@ -160,7 +160,7 @@ export default class ContinueScene extends HandScene {
         }
       }
       if (level) {
-        switch (weekNumber) {
+        switch (week) {
           case 1:
             level.setBPM(0);
             break;
