@@ -2,8 +2,19 @@ const admin = require('firebase-admin');
 const fs = require('fs');
 const { Parser } = require('json2csv');
 
-// Initialize Firebase Admin SDK (replace with your service account key)
-const serviceAccount = require('path/to/service.json'); // Replace with your service account
+// Instructions:
+// 0. Install dependencies in console:
+// npm init -y
+// npm i firebase-admin json2csv
+// 1. Acquire service account json file:
+// In Firebase, navigate to Project Settings -> Service Accounts -> Firebase Admin SDK -> Admin SDK configuration snippet (select Node.js) and click "Generate new private key"
+// 2. Replace the path below with the one to your service account key.
+// 3. Run with this file with Node in the console:
+// node generateParticipants.js
+
+// Initialize Firebase Admin SDK.
+// Replace with your service account json file (with the weird long name).
+const serviceAccount = require('path/to/generated/service/account/file.json');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
