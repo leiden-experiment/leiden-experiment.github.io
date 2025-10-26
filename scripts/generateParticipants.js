@@ -9,10 +9,10 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
-async function createUsers() {
+async function createUsers(start, end) {
   const userData = []; // Array to store user data for CSV
 
-  for (let i = 1; i <= 100; i++) {
+  for (let i = start; i <= end; i++) {
     const email = `participant${i}@pizzicato.com`;
     const password = generatePassword(6);
     const participantName = `participant${i}`; // Extract participant name
@@ -79,4 +79,4 @@ function generateAndSaveCSV(userData) {
   }
 }
 
-createUsers();
+createUsers(101, 200);
