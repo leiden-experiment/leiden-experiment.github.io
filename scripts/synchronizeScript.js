@@ -7,9 +7,12 @@ function levelStatsToCSV(id, levelStats) {
     return '';
   }
 
+  // Row labels.
   let csvContent = id + '\n';
 
-  // Row labels.
+  // Comment out to get data to appear.
+  return csvContent;
+
   csvContent +=
     'layerID,noteID,pinchType,loopNumber,playerTime,correctTime,classification,normalizedTargetRadius,normalizedTargetPositionX,normalizedTargetPositionY,normalizedFingerRadius,normalizedPinkyFingerPositionX,normalizedPinkyFingerPositionY,normalizedRingFingerPositionX,normalizedRingFingerPositionY,normalizedMiddleFingerPositionX,normalizedMiddleFingerPositionY,normalizedIndexFingerPositionX,normalizedIndexFingerPositionY,normalizedThumbFingerPositionX,normalizedThumbFingerPositionY\n';
 
@@ -20,25 +23,8 @@ function levelStatsToCSV(id, levelStats) {
     if (!layerStats.hasOwnProperty('hits')) {
       continue;
     }
+    let layerCSV = '';
     for (const hitInfo of layerStats.hits) {
-      if (
-        !hitInfo.hasOwnProperty('noteID') ||
-        !hitInfo.hasOwnProperty('pinchType') ||
-        !hitInfo.hasOwnProperty('loopNumber') ||
-        !hitInfo.hasOwnProperty('playerTime') ||
-        !hitInfo.hasOwnProperty('correctTime') ||
-        !hitInfo.hasOwnProperty('classification') ||
-        !hitInfo.hasOwnProperty('normalizedTargetRadius') ||
-        !hitInfo.hasOwnProperty('normalizedTargetPosition') ||
-        !hitInfo.hasOwnProperty('normalizedFingerRadius') ||
-        !hitInfo.hasOwnProperty('normalizedPinkyFingerPosition') ||
-        !hitInfo.hasOwnProperty('normalizedRingFingerPosition') ||
-        !hitInfo.hasOwnProperty('normalizedMiddleFingerPosition') ||
-        !hitInfo.hasOwnProperty('normalizedIndexFingerPosition') ||
-        !hitInfo.hasOwnProperty('normalizedThumbFingerPosition')
-      ) {
-        continue;
-      }
       const fingerRadius = hitInfo.normalizedFingerRadius
         ? hitInfo.normalizedFingerRadius
         : null;
@@ -61,9 +47,10 @@ function levelStatsToCSV(id, levelStats) {
 
       const row = `${layerID},${hitInfo.noteID},${hitInfo.pinchType},${hitInfo.loopNumber},${millisecondsToSeconds(hitInfo.playerTime)},${millisecondsToSeconds(hitInfo.correctTime)},${hitInfo.classification},${hitInfo.normalizedTargetRadius},${targetX},${targetY},${fingerRadius},${pinkyX},${pinkyY},${ringX},${ringY},${middleX},${middleY},${indexX},${indexY},${thumbX},${thumbY}\n`;
 
-      csvContent += row;
+      layerCSV += row;
       addedRows++;
     }
+    csvContent += layerCSV;
   }
   if (addedRows == 0) {
     return '';
@@ -198,6 +185,63 @@ function createSheetLinksFromColumnA(ss, sheet) {
   }
 }
 
+function sortParticipantsToArray(participantsObject) {
+  try {
+    const participantsArray = Object.values(participantsObject);
+
+    participantsArray.sort((participantA, participantB) => {
+      const nameA = participantA.name || '';
+      const nameB = participantB.name || '';
+
+      const matchA = nameA.match(/participant(\d+)/);
+      const matchB = nameB.match(/participant(\d+)/);
+
+      const numA = matchA ? parseInt(matchA[1], 10) : Infinity;
+      const numB = matchB ? parseInt(matchB[1], 10) : Infinity;
+
+      return numA - numB;
+    });
+
+    return JSON.stringify(participantsArray, null, 2);
+  } catch (error) {
+    console.error('Error parsing JSON:', error);
+    return null;
+  }
+}
+
+// Reads data from Firebase Database that is >50Mb
+// Splits up the read calls based on data keys
+function readBulkDataFromFirebase(url, secret, split, start = null) {
+  //console.log(`Searching for next ${split} from [${start}]`);
+
+  let base = FirebaseApp.getDatabaseByUrl(url, secret);
+
+  let queryParams = { orderBy: '$key', limitToFirst: split + 1 };
+
+  if (start !== null) {
+    queryParams.startAfter = start;
+  } else {
+    // First query will return 1 more item than others because it does not start after a key.
+    queryParams.limitToFirst -= 1;
+  }
+
+  let data = base.getData('users', queryParams);
+
+  if (!data) {
+    return null;
+  }
+
+  let keys = Object.keys(data);
+
+  //console.log("Found keys:", keys);
+
+  let nextStart = keys[keys.length - 1]; // The last key we grabbed plus space " "
+  return {
+    ...data,
+    ...readBulkDataFromFirebase(url, secret, split, nextStart),
+  };
+}
+
 function getAllPizzicatoData() {
   const databaseURL =
     'https://pizzicato-1f765-default-rtdb.europe-west1.firebasedatabase.app/';
@@ -207,88 +251,111 @@ function getAllPizzicatoData() {
 
   var sheets = ss.getSheets();
 
-  // 4. Get the database reference
-  const db = FirebaseApp.getDatabaseByUrl(databaseURL, secret); // Use databaseURL
+  const existingSheetNames = sheets.map(sheet => sheet.getName());
 
-  const userData = JSON.parse(JSON.stringify(db.getData()));
-  const users = userData['users'];
+  const fetchUsersAtATime = 10;
 
-  sheets.forEach(function (sheet) {
-    if (sheet.getName() != 'BaseSheet') {
-      ss.deleteSheet(sheet);
+  const dbData = readBulkDataFromFirebase(
+    databaseURL,
+    secret,
+    fetchUsersAtATime,
+  );
+
+  if (!dbData) {
+    console.error('Failed to find user data');
+    return;
+  }
+
+  const users = Object.values(dbData);
+
+  const participantCount = Object.keys(dbData).length;
+
+  console.log(`INFO: Found ${participantCount} participants`);
+
+  if (!existingSheetNames.includes('Overview')) {
+    ss.insertSheet('Overview');
+  }
+
+  for (let i = 1; i <= participantCount; i++) {
+    const sheetName = String(i);
+    if (!existingSheetNames.includes(sheetName)) {
+      try {
+        ss.insertSheet(sheetName);
+        console.log(`INFO: Sheet "${sheetName}" created.`);
+      } catch (error) {
+        Logger.log(`Error creating sheet "${sheetName}": ${error}`);
+      }
+    } else {
+      // console.log(`INFO: Sheet "${sheetName}" already exists.`);
     }
+  }
+
+  console.log('INFO: Sorting users...');
+
+  users.sort((participantA, participantB) => {
+    const nameA = participantA.name || '';
+    const nameB = participantB.name || '';
+
+    const matchA = nameA.match(/participant(\d+)/);
+    const matchB = nameB.match(/participant(\d+)/);
+
+    const numA = matchA ? parseInt(matchA[1], 10) : Infinity;
+    const numB = matchB ? parseInt(matchB[1], 10) : Infinity;
+
+    return numA - numB;
   });
 
-  const overviewSheet = ss.insertSheet('Overview');
+  console.log('INFO: Sorting completed!');
+
+  const overviewSheet = ss.getSheetByName('Overview');
+  overviewSheet.getDataRange().clearContent();
+
+  console.log('INFO: Cleared overview sheet');
 
   addCSVToSheet(
     overviewSheet,
     'Participant Number,Config,Experiment Start,Week,Last Login,Total Trainings Completed\n',
   );
 
-  for (var key in users) {
-    const user = users[key];
-    if (user.hasOwnProperty('name')) {
-      const participantNumber = removeParticipantPrefix(user.name);
-      const userSheet = ss.insertSheet(participantNumber);
-      let csv = 'Username:,' + user.name + '\n';
-      let overviewCSV = participantNumber + ',';
-      if (user.hasOwnProperty('config')) {
-        csv += 'Config:,' + user.config + '\n';
-        overviewCSV += user.config + ',';
-      }
-      if (user.hasOwnProperty('experimentStart')) {
-        const startDate = formatDateString(user.experimentStart);
-        csv += 'Experiment Start:,' + startDate + '\n';
-        overviewCSV += startDate + ',';
-      }
-      if (user.hasOwnProperty('week')) {
-        csv += 'Week:,' + user.week + '\n';
-        overviewCSV += user.week + ',';
-      }
-      if (user.hasOwnProperty('lastLogin')) {
-        const date = new Date(user.lastLogin);
-        const dateString = formatDateWithoutCommas(date);
-        csv += 'Last Login:,' + dateString + '\n';
-        overviewCSV += dateString + ',';
-      }
-      if (user.hasOwnProperty('trainingsCompleted')) {
-        csv += 'Total Trainings Completed:,' + user.trainingsCompleted + '\n';
-        overviewCSV += user.trainingsCompleted + '\n';
-      } else {
-        // TODO: Remove this?
-        overviewCSV += '0' + '\n';
-      }
-      if (user.hasOwnProperty('data')) {
-        csv += '\n';
-        for (var dataId in user.data) {
-          const data = user.data[dataId];
-          csv += levelStatsToCSV(dataId, data);
-        }
-      }
-      addCSVToSheet(overviewSheet, overviewCSV);
-      addCSVToSheet(userSheet, csv);
-      //centerSheetCells(userSheet);
+  console.log('INFO: Adding user sheets...');
+
+  for (var index in users) {
+    const user = users[index];
+    const participantNumber = removeParticipantPrefix(user.name);
+    const userSheet = ss.getSheetByName(participantNumber);
+    userSheet.getDataRange().clearContent();
+    let csv = 'Username:,' + user.name + '\n';
+    let overviewCSV = participantNumber + ',';
+    csv += 'Config:,' + user.config + '\n';
+    overviewCSV += user.config + ',';
+    const startDate = formatDateString(user.experimentStart);
+    csv += 'Experiment Start:,' + startDate + '\n';
+    overviewCSV += startDate + ',';
+    csv += 'Week:,' + user.week + '\n';
+    overviewCSV += user.week + ',';
+    const date = new Date(user.lastLogin);
+    const dateString = formatDateWithoutCommas(date);
+    csv += 'Last Login:,' + dateString + '\n';
+    overviewCSV += dateString + ',';
+    csv += 'Total Trainings Completed:,' + user.trainingsCompleted + '\n';
+    overviewCSV += user.trainingsCompleted + '\n';
+    csv += '\n';
+    let layerCSV = '';
+    for (var dataId in user.data) {
+      const data = user.data[dataId];
+      layerCSV += levelStatsToCSV(dataId, data);
     }
+    csv += layerCSV;
+    addCSVToSheet(overviewSheet, overviewCSV);
+    addCSVToSheet(userSheet, csv);
+    //centerSheetCells(userSheet);
   }
+
+  console.log('INFO: Script completed!');
 
   centerSheetCells(overviewSheet);
   autoResizeColumns(overviewSheet);
   createSheetLinksFromColumnA(ss, overviewSheet);
-
-  //var sheet = sheets.getSheetByName(name);
-
-  // if (yourNewSheet != null) {
-  //     activeSpreadsheet.deleteSheet(yourNewSheet);
-  // }
-
-  // yourNewSheet = activeSpreadsheet.insertSheet();
-  // yourNewSheet.setName(name);
-
-  // for (i = 0; i < users.length; i++) {
-  //   userData[i];
-  // }
-  // sheet.getRange("A1").setNumberFormat('@STRING@').setValue(userData);
 }
 
 function onOpen() {
@@ -344,3 +411,5 @@ function onOpen() {
 //   //Use the syncMasterSheet function defined before to push this data to the "masterSheet" key in the firebase database
 //   syncMasterSheet(data)
 // }
+
+//getAllPizzicatoData();
