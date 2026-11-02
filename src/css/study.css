@@ -257,5 +257,26 @@
 .study-admin-dashboard .study-level-row > .study-btn { height:40px!important; min-height:40px!important; box-sizing:border-box; }
 .study-admin-dashboard .study-list-card .study-row .study-remove-study,
 .study-admin-dashboard .study-level-row .study-remove-level { height:40px!important; min-height:40px!important; width:40px!important; min-width:40px!important; padding:5px!important; line-height:1!important; }
-.study-admin-dashboard .study-level-upload input[type=file] { height:42px!important; padding:0 10px!important; line-height:40px!important; }
-.study-admin-dashboard .study-level-upload input[type=file]::file-selector-button { height:32px; min-height:32px; margin-top:4px; margin-right:10px; vertical-align:middle; padding:4px 10px; border:1px solid #666; border-radius:0; background:#333; color:#eee; cursor:pointer; }
+
+/* Consistent file picker alignment, independent of the OS/browser native button. */
+.study-admin-dashboard .study-level-upload .study-file-picker {
+  position:relative; box-sizing:border-box; display:flex; align-items:center; gap:10px;
+  width:100%; height:42px; padding:0 9px; border:1px solid #555;
+  background:#1e1e1e; color:#e5e5e5; overflow:hidden; cursor:pointer;
+}
+.study-admin-dashboard .study-level-upload .study-file-picker-button {
+  display:inline-flex; flex:0 0 auto; align-items:center; justify-content:center;
+  box-sizing:border-box; height:32px; padding:0 11px;
+  border:1px solid #777; background:#343434; line-height:normal;
+}
+.study-admin-dashboard .study-level-upload .study-file-picker-name {
+  display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  line-height:normal;
+}
+.study-admin-dashboard .study-level-upload .study-file-picker input[type=file] {
+  position:absolute!important; inset:0; width:100%!important; height:100%!important;
+  padding:0!important; margin:0!important; opacity:0; cursor:pointer;
+}
+.study-admin-dashboard .study-level-upload .study-file-picker:focus-within {
+  outline:2px solid #ccc; outline-offset:1px;
+}

@@ -35,8 +35,9 @@ export async function callBackend<T>(name: string, data: object): Promise<T> {
 export const studyApi = {
   listModerators: () => callBackend<{ moderators: Account[] }>('listModerators', {}),
   listStudies: () => callBackend<{ studies: StudySummary[] }>('listStudies', {}),
-  saveStudy: (id: string, settings: StudySettings, databaseURL?: string) =>
-    callBackend<{ id: string }>('saveStudy', { id, settings, ...(databaseURL ? { databaseURL } : {}) }),
+  saveStudy: (id: string, settings: StudySettings, databaseURL?: string, confirmClearTimeline = false) =>
+    callBackend<{ id: string }>('saveStudy', { id, settings, ...(databaseURL ? { databaseURL } : {}),
+      ...(confirmClearTimeline ? { confirmClearTimeline: true } : {}) }),
   listParticipants: (studyId: string) => callBackend<{ accounts: Account[] }>('listParticipants', { studyId }),
   provisionAccount: (studyId: string, username: string, password: string, role: 'participant' | 'moderator', group = '', startDate = '', customConfig?: Record<string, unknown>) =>
     callBackend<{ uid: string }>('provisionAccount', { studyId, username, password, role, group, startDate, ...(customConfig ? { customConfig } : {}) }),

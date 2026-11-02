@@ -1,9 +1,8 @@
-import { StudyStep, StudySettings, isLevelStep, isSelectionStep, Assignment } from './types';
+import { StudyStep, StudySettings, isLevelStep, isSelectionStep, normalizeStudyWeeks } from './types';
 
 /** Dependency-free study slide timeline with live, explicit drag insertion previews. */
 export function createFlowBoard(parent: HTMLElement, source: StudySettings['weeks'], changed: (weeks: StudySettings['weeks']) => void, weekly = true) {
-  let weeks: StudySettings['weeks'] = source && typeof source === 'object'
-    ? JSON.parse(JSON.stringify(source)) : { '1': [] };
+  let weeks: StudySettings['weeks'] = JSON.parse(JSON.stringify(normalizeStudyWeeks(source)));
   let isWeekly = weekly;
   let availableLevels: { id: string; name: string }[] = [
     ...['Birthday Vibes', 'Cheerful Bliss', 'Slow Elegance', 'Trained', 'Untrained', 'Tryout', 'Nosound']
@@ -213,8 +212,8 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
   return {
     getWeeks: () => JSON.parse(JSON.stringify(weeks)) as StudySettings['weeks'],
     setAvailableLevels: (levels: { id: string; name: string }[]) => { availableLevels = [...availableLevels.filter(x => x.id.startsWith('legacy:')), ...levels]; edit(); },
-    setWeeks: (value: StudySettings['weeks']) => { weeks = value && typeof value === 'object'
-      ? JSON.parse(JSON.stringify(value)) : { '1': [] }; selected = null; trigger(); render(); },
+    setWeeks: (value: StudySettings['weeks']) => { weeks = JSON.parse(JSON.stringify(normalizeStudyWeeks(value)));
+      selected = null; trigger(); render(); },
     setWeekly: (value: boolean) => { if (isWeekly !== value) { isWeekly = value; selected = null; render(); } },
   };
 }

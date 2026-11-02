@@ -1,5 +1,5 @@
 import { studyApi, callBackend } from './firebaseClient';
-import { Account, StudySettings, StudySummary, defaultStudySettings, validateSettings, isLevelStep } from './types';
+import { Account, StudySettings, StudySummary, defaultStudySettings, validateSettings, isLevelStep, normalizeStudyWeeks } from './types';
 import { createFlowBoard } from './flowBoard';
 import { LevelConverter } from '../util/levelConverter';
 import { downloadFile } from './offline';
@@ -203,7 +203,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     };
     weekly.addEventListener('change', sync); dateEnabled.addEventListener('change', sync); perParticipant.addEventListener('change', sync);
     const timelineHost = section(page, 'Study timeline'); timelineHost.classList.add('study-subsection');
-    const board = createFlowBoard(timelineHost, data.weeks && !Array.isArray(data.weeks) ? data.weeks : { '1': [] }, () => {}, weekly.checked);
+    const board = createFlowBoard(timelineHost, normalizeStudyWeeks(data.weeks), () => {}, weekly.checked);
     void studyApi.listLevels().then(({ levels }) => {
       if (timelineHost.isConnected) board.setAvailableLevels(levels.map(l => ({ id: `library:${l.id}`, name: `Uploaded: ${l.name}` })));
     }).catch(() => { /* Bundled levels and saved IDs remain usable. */ });
@@ -256,11 +256,15 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         enabled: true,
         ...(perParticipant.checked ? { durationWeeks: Number(duration.value),
           participantStartMode: startMode.value as 'manual' | 'first-login' } : {}),
-        weeks: board.getWeeks() && typeof board.getWeeks() === 'object' ? board.getWeeks() : { '1': [] },
+        weeks: normalizeStudyWeeks(board.getWeeks()),
         defaultConfig: defaultEnabled.checked ? readDefaults() : {}, groupConfigs,
       };
       const errors = validateSettings(settings); if (errors.length) throw new Error(errors.join('\n'));
-      await studyApi.saveStudy(id || newId('study'), settings, db.value.trim() || undefined);
+      const originallyPopulated = Object.values(normalizeStudyWeeks(data.weeks)).some(slides => slides.length > 0);
+      const nowEmpty = Object.values(settings.weeks).every(slides => slides.length === 0);
+      const confirmClearTimeline = !!id && originallyPopulated && nowEmpty;
+      if (confirmClearTimeline && !confirm('This will delete ALL slides in this study timeline. Are you sure?')) return;
+      await studyApi.saveStudy(id || newId('study'), settings, db.value.trim() || undefined, confirmClearTimeline);
       history.length = 0; navigate('Studies', showStudies, false);
     }, 'primary');
     saveStudyButton.classList.add('study-block-button');
@@ -439,7 +443,15 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     node('p', page, 'Upload a JSON level once, then assign it to any study. IDs are created automatically.');
     const editor = node('div', page); editor.className = 'study-level-upload';
     const fileLabel = node('label', editor); fileLabel.className = 'study-field'; node('span', fileLabel, 'JSON level file');
-    const file = node('input', fileLabel); file.type = 'file'; file.accept = '.json,application/json'; file.title = 'Choose a Level Designer JSON export.';
+    // Render our own centered file-picker text; native file buttons are offset by
+    // different amounts in Chrome/Edge/Firefox on Windows and macOS.
+    const picker = node('div', fileLabel); picker.className = 'study-file-picker';
+    node('span', picker, 'Choose file').className = 'study-file-picker-button';
+    const fileStatus = node('span', picker, 'No file chosen'); fileStatus.className = 'study-file-picker-name';
+    const file = node('input', picker); file.type = 'file'; file.accept = '.json,application/json';
+    file.title = 'Choose a Level Designer JSON export.';
+    file.setAttribute('aria-label', 'Choose a JSON level file');
+    file.onchange = () => { fileStatus.textContent = file.files?.[0]?.name || 'No file chosen'; };
     const levelName = field(editor, 'Display name', '', 'input', 'The name researchers see when assigning a level.');
     action(editor, 'Upload level', async () => {
       if (!file.files?.[0]) throw new Error('Select a level JSON file first');

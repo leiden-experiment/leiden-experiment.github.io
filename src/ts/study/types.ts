@@ -30,6 +30,24 @@ export function isChoiceUnlocked(step: LevelChoiceStep, choice: number, week: nu
 export function isLevelStep(step: StudyStep): step is Assignment {
   return !step.type || step.type === 'level';
 }
+/** Restore week-number keys after Firebase RTDB decodes a numeric-keyed object as an array.
+ * A single-session study with only week 1 may arrive as [null, slides].
+ * Throw instead of silently replacing unexpected data and risking data loss.
+ */
+export function normalizeStudyWeeks(input: unknown): Record<string, StudyStep[]> {
+  if (input == null) return { '1': [] };
+  if (typeof input !== 'object') throw new Error('Cannot read saved study timeline');
+  const restored: Record<string, StudyStep[]> = {};
+  for (const [week, slides] of Object.entries(input)) {
+    if (!/^(?:-1|0|[1-9]\d*)$/.test(week)) throw new Error(`Invalid saved study week ${week}`);
+    if (slides == null) continue;
+    if (!Array.isArray(slides)) throw new Error(`Cannot read saved slides for week ${week}`);
+    restored[week] = slides as StudyStep[];
+  }
+  if (!restored['1']) restored['1'] = [];
+  return restored;
+}
+
 export interface StudySettings {
   title: string;
   description: string; // legacy field; not shown in the dashboard

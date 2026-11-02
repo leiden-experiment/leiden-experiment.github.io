@@ -140,6 +140,8 @@ This is recommended for testing the study-to-database link. It is **not** a seco
 6. Optional: check **Override default gameplay settings** to edit the settings as labeled switches and number fields. Check **Use group-specific gameplay settings** to add groups with their own settings. Hover over or focus the **ⓘ** beside any setting to see a short explanation.
 7. Click **Create study**. Participant access is enabled automatically, and the system generates the study ID. Saving performs a write test if you provided a separate results database URL. Resolve any connection error before proceeding.
 
+**Single-session timeline safety:** A single-session study uses the Week 1 row even when Weekly study is unchecked. Existing slides should reappear each time you open **Edit Study**; changing schedule options must not erase them. The app now asks for explicit confirmation before replacing a populated timeline with an empty one. **If an earlier version already saved a blank timeline**, it cannot reconstruct the deleted slides automatically; restore them from a Firebase database backup or re-create them in the editor. Test this with a sample study before editing active research schedules.
+
 **Multiple weeks:** When **Weekly study** is checked, use **+ Add week** to create another horizontal row. Week 2 begins seven days after the Week 1 reference/start date. Pretest and posttest rows are also available. Each populated row must include a playable level. If Weekly study is unchecked, only the Week 1 row is used, but other rows are preserved if you re-enable weekly scheduling later.
 
 ### Step 10 — Make a test participant, play, and check results

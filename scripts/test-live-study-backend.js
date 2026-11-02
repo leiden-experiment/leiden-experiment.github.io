@@ -65,6 +65,23 @@ const fauxRequire=name => {
 vm.runInNewContext(code, {require:fauxRequire, exports:moduleObject.exports,module:moduleObject,URL,Buffer,Date,Number,JSON,Math,Object,Array,String,Set}, {filename:'functions/index.js'});
 const api=moduleObject.exports;
 const request=(uid,data={})=>({auth:{uid,token:{auth_time:1}},data});
+// Test the actual TypeScript normalization used by the visual timeline editor.
+const typescript = (() => { try { return require('typescript'); }
+  catch { return require('/opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript'); } })();
+const studyTypesSource = fs.readFileSync(path.join(root, 'src/ts/study/types.ts'), 'utf8');
+const compiledTypes = typescript.transpileModule(studyTypesSource,
+  { compilerOptions: { target: typescript.ScriptTarget.ES2020, module: typescript.ModuleKind.CommonJS } }).outputText;
+const studyTypesExports = {};
+vm.runInNewContext(compiledTypes, { exports: studyTypesExports, Date, Number, Math, Object, Array, JSON },
+  { filename: 'study/types.ts' });
+const { normalizeStudyWeeks, defaultStudySettings } = studyTypesExports;
+const sampleSteps = defaultStudySettings().weeks['1'];
+assert.equal(sampleSteps.length, 5, 'new single-session studies should have a visible default timeline');
+assert.equal(normalizeStudyWeeks([null, sampleSteps])['1'].length, 5,
+  'the editor must show slides decoded from a numeric-keyed Firebase array');
+assert.equal(normalizeStudyWeeks({ 1: sampleSteps })['1'].length, 5);
+assert.throws(() => normalizeStudyWeeks({ 1: { broken: true } }), /Cannot read saved slides/,
+  'malformed saved timelines must fail visibly instead of silently clearing slides');
 const settings={title:'Test',enabled:true,weeklyEnabled:false,dateRangeEnabled:false,startDate:'2026-10-28',
   maxSessionsPerWeek:3,weeks:{1:[{type:'start',text:'Welcome'}, {type:'level',levelId:'legacy:Trained',bpmIndex:0,loops:2},{type:'end',text:'Thank you'}]}};
 const result={schemaVersion:1,studyId:'research1',participantId:'participant01',group:'',sessionId:'1-1',week:1,assignmentIndex:1,
@@ -84,6 +101,27 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   const emptySaved = await api.getStudySettings(request('admin-one',{studyId:'emptytest'}));
   assert.deepEqual(JSON.parse(JSON.stringify(emptySaved.settings.weeks)), {'1':[]});
   assert(!emptySaved.databaseURL, 'linked results database is optional');
+  // Firebase RTDB returns an array rather than an object when all week keys
+  // are numeric. This was dropping every slide when reopening single-session studies.
+  const authoredSlides = clone(settings.weeks[1]);
+  await central.ref('studies/numericweek/settings').set({ ...settings,
+    weeks: [null, authoredSlides] }); // Exactly what RTDB can return for week '1'.
+  await central.ref('studyIndex/numericweek').set({title: 'Numeric', enabled:true});
+  const loaded = await api.getStudySettings(request('admin-one',{studyId:'numericweek'}));
+  assert.equal(loaded.settings.weeks['1'].length, 3, 'the week-1 slides must survive Firebase array decoding');
+  assert.equal(loaded.settings.weeks['1'][1].levelId, 'legacy:Trained');
+  await api.saveStudy(request('admin-one',{id:'numericweek',settings:{...loaded.settings,title:'Renamed'}}));
+  const reopened = await api.getStudySettings(request('admin-one',{studyId:'numericweek'}));
+  assert.equal(reopened.settings.weeks['1'].length, 3, 'editing and saving must preserve slides');
+  await api.saveStudy(request('admin-one',{id:'numericweek',settings:{...reopened.settings, weeklyEnabled:true}}));
+  const weeklyReload = await api.getStudySettings(request('admin-one',{studyId:'numericweek'}));
+  assert.equal(weeklyReload.settings.weeks['1'].length, 3, 'switching to weekly must preserve slides');
+  await assert.rejects(api.saveStudy(request('admin-one',{id:'numericweek',settings:{...weeklyReload.settings,weeks:{'1':[]}}})),
+    /Confirm clearing the timeline/, 'accidental empty saves must be rejected');
+  const stillIntact = await api.getStudySettings(request('admin-one',{studyId:'numericweek'}));
+  assert.equal(stillIntact.settings.weeks['1'].length, 3, 'rejected save must not change slides');
+  await api.saveStudy(request('admin-one',{id:'numericweek',settings:{...weeklyReload.settings,weeks:{'1':[]}},confirmClearTimeline:true}));
+  assert.deepEqual(JSON.parse(JSON.stringify((await api.getStudySettings(request('admin-one',{studyId:'numericweek'}))).settings.weeks)),{'1':[]});
   await assert.rejects(api.preparePlay(request('user-one', {week:1,sessionId:'1-1',index:1,levelId:'legacy:Trained'})),
     /progress or assignment has changed/, 'Server must not authorize playing a later slide');
   let done=await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-1',index:0,stepType:'start'}));

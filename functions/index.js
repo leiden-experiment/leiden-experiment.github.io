@@ -16,8 +16,22 @@ const { firebasePassword } = require('./password');
 const usernameValid = value => { try { normalizeUsername(value); return true; } catch { return false; } };
 const isLevel = step => step && (!step.type || step.type === 'level');
 const isSelection = step => step && step.type === 'selection';
-// Realtime Database omits empty objects/arrays; non-weekly studies always use week 1.
-const effectiveWeeks = weeks => weeks && typeof weeks === 'object' && !Array.isArray(weeks) ? weeks : { '1': [] };
+// Realtime Database can decode numeric child keys (for example, only week '1')
+// as a sparse array: [null, [slides...]]. Never treat this as an empty study;
+// doing so silently erases slides the next time a researcher saves settings.
+function effectiveWeeks(weeks) {
+  if (weeks == null) return { '1': [] }; // Empty timelines are valid.
+  if (typeof weeks !== 'object') fail('Study timeline could not be read; nothing was changed');
+  const restored = {};
+  for (const [week, slides] of Object.entries(weeks)) {
+    if (!/^(?:-1|0|[1-9]\d*)$/.test(week)) fail('Invalid week in saved study timeline');
+    if (slides == null) continue; // Firebase removes empty weeks.
+    if (!Array.isArray(slides)) fail(`Saved week ${week} is not a slide list; nothing was changed`);
+    restored[week] = slides;
+  }
+  if (!restored['1']) restored['1'] = [];
+  return restored;
+}
 const choiceKey = (week, sid, index) => `${week}_${sid}_${index}`;
 const unlockedChoice = (step, index, week, counts) => index >= 0 && index < step.choices.length &&
   (step.unlock === 'all' || (step.unlock === 'weekly' && index + 1 <= Math.max(1, week)) ||
@@ -152,9 +166,16 @@ exports.getStudySettings = onCall(options, async req => {
 });
 exports.saveStudy = onCall(options, async req => {
   const account = await profile(req); requireAdmin(account);
-  const { id, settings, databaseURL } = req.data || {};
+  const { id, settings, databaseURL, confirmClearTimeline } = req.data || {};
   if (!idValid(id)) fail('Study ID must be 1–64 letters, digits, underscores or hyphens');
   validateSettings(settings);
+  // Safety check: an accidental empty editor must not erase a populated study.
+  // The client must explicitly confirm when a researcher intentionally clears it.
+  const oldWeeks = effectiveWeeks((await db.ref(`studies/${id}/settings/weeks`).get()).val());
+  const previousSlides = Object.values(oldWeeks).reduce((count, slides) => count + slides.length, 0);
+  const updatedSlides = Object.values(effectiveWeeks(settings.weeks)).reduce((count, slides) => count + slides.length, 0);
+  if (previousSlides > 0 && updatedSlides === 0 && confirmClearTimeline !== true)
+    fail('This save would remove every slide from the study. Confirm clearing the timeline to proceed.', 'failed-precondition');
   const url = checkedDbUrl(databaseURL);
   if (url) {
     // A service account must have permissions on the linked project. This test fails closed.
