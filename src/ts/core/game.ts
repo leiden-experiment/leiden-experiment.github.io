@@ -29,14 +29,14 @@ const root = document.createElement('div'); root.id = 'pizzicato-gateway';
 document.body.appendChild(root);
 const background = document.createElement('div'); background.id = 'background_image'; document.body.appendChild(background);
 function startGame() {
-  root.replaceChildren(); root.classList.remove('study-shell'); root.style.display = 'none';
+  root.replaceChildren(); root.classList.remove('study-shell', 'study-admin-dashboard'); root.style.display = 'none';
   if (!game) game = new Phaser.Game(config);
 }
 function el<K extends keyof HTMLElementTagNameMap>(parent: HTMLElement, tag: K, label?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag); if (label) node.textContent = label; parent.appendChild(node); return node;
 }
 function promptLogin() {
-  root.style.display = 'block'; root.classList.add('study-shell'); root.replaceChildren();
+  root.style.display = 'block'; root.classList.remove('study-admin-dashboard'); root.classList.add('study-shell'); root.replaceChildren();
   const wrapper = el(root, 'main'); wrapper.className = 'study-card';
   el(wrapper, 'h1', deployment.mode === 'offline' ? 'Pizzicato · Offline participant login' : 'Pizzicato · Research login');
   const error = el(wrapper, 'p'); error.setAttribute('role', 'alert');

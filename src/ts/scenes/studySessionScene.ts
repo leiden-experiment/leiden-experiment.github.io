@@ -23,12 +23,13 @@ export default class StudySessionScene extends HandScene {
     this.add.text(this.center.x, 180, session.settings.title, { font: '65px Courier New', color: '#ffffff', align: 'center' }).setOrigin(.5);
     const step = plan && plan.index >= 0 ? plan.assignments[plan.index] : null;
     const startDate = session.account.startDate || session.settings.startDate;
-    const nextMonday = plan && plan.week > 0 ? new Date(Date.parse(`${startDate}T00:00:00Z`) + plan.week * 7 * 86400000) : null;
+    const nextMonday = session.settings.weeklyEnabled !== false && plan && plan.week > 0 ? new Date(Date.parse(`${startDate}T00:00:00Z`) + plan.week * 7 * 86400000) : null;
     const daysUntil = nextMonday ? Math.max(0, Math.ceil((nextMonday.getTime() - Date.now()) / 86400000)) : 0;
     const cappedText = plan?.week && plan.week > 0 && daysUntil > 0
       ? `You have finished this week's sessions. Come back in ${daysUntil} day${daysUntil === 1 ? '' : 's'}.`
       : 'You have completed the maximum sessions for this week.';
-    const message = plan?.beforeStart && plan.week !== 0 ? 'Your training programme has not started yet.' :
+    const message = plan?.afterEnd ? 'This study has ended. Thank you for participating.' :
+      plan?.beforeStart && plan.week !== 0 ? 'Your training programme has not started yet.' :
       plan?.capped ? cappedText :
       !plan?.assignments.length ? 'There are no activities scheduled for this week.' :
       step ? `${!isLevelStep(step) ? step.text : `${session.settings.introText}\nReady to play: ${step.levelId}`}\nWEEK ${plan.week} · SESSION ${plan.sessionId.split('-')[1]} · SLIDE ${plan.index + 1}/${plan.assignments.length}` :

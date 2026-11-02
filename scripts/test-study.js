@@ -37,6 +37,19 @@ step = getNextAssignment(study, p, study.startDate, new Date('2026-10-28T12:00Z'
 assert.equal(step.sessionId, '1-2');
 p = markAssignmentComplete(p, step.week, step.sessionId, step.index, step.assignments.length);
 assert.equal(getNextAssignment(study, p, study.startDate, new Date('2026-10-28T12:00Z')).capped, true);
+// Non-weekly studies always use week 1 and are not limited to weekly sessions.
+const freeStudy = { ...study, weeklyEnabled: false, dateRangeEnabled: false, weeks: { '1': [{ levelId: 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 2 }] } };
+assert.deepEqual(validateSettings(freeStudy), []);
+assert.equal(getNextAssignment(freeStudy, { ...emptyProgress(), sessions: { '1': 100 } }, freeStudy.startDate, new Date('2027-05-01T00:00:00Z')).week, 1);
+assert.equal(getNextAssignment({ ...freeStudy, weeks: { ...freeStudy.weeks, '0': study.weeks['0'] } }, emptyProgress(), freeStudy.startDate, new Date('2027-05-01T00:00:00Z')).week, 1);
+assert.equal(getNextAssignment(freeStudy, { ...emptyProgress(), sessions: { '1': 100 } }, freeStudy.startDate, new Date('2027-05-01T00:00:00Z')).capped, false);
+const boundedStudy = { ...freeStudy, dateRangeEnabled: true, endDate: '2026-11-01' };
+assert.equal(getNextAssignment(boundedStudy, emptyProgress(), boundedStudy.startDate, new Date('2026-11-02T00:00:00Z')).capped, true);
+assert.equal(getNextAssignment(boundedStudy, emptyProgress(), boundedStudy.startDate, new Date('2026-11-02T00:00:00Z')).afterEnd, true);
+assert(validateSettings({ ...boundedStudy, endDate: '2026-01-01' }).length > 0);
+const backendCode = fs.readFileSync(path.resolve(__dirname, '../functions/index.js'), 'utf8');
+assert(backendCode.includes('studyTiming(settings, account, weeks, progress)'));
+assert(backendCode.includes('studyTiming(settings, account, assignedWeeks, current)'));
 const screens = defaultStudySettings('Visual study');
 assert.deepEqual(validateSettings(screens), []);
 assert.equal(screens.weeks['1'][0].type, 'start');

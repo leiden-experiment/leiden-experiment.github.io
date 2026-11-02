@@ -44,7 +44,7 @@ assert(migrate.includes('auth.updateUser(user.uid'), 'Migration must keep existi
 assert(migrate.includes('await ref.update({ username })'), 'Migration must update profile display');
 assert(migrate.includes('await auth.revokeRefreshTokens(user.uid)'), 'Migration should revoke old sessions');
 assert.equal(JSON.parse(fs.readFileSync(path.join(__dirname, '../functions/package.json'))).engines.node, '22');
-const guide = fs.readFileSync(path.join(__dirname, '../docs/README.md'), 'utf8');
+const guide = fs.readFileSync(path.join(__dirname, '../README.md'), 'utf8');
 assert(guide.includes('npm run admin:create -- leadresearcher'));
 assert(guide.includes('npm run account:migrate --'));
 assert(guide.includes('not an email address'));

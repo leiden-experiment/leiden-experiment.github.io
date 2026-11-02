@@ -46,7 +46,6 @@ const mockModules = new Map([
     export async function createOfflinePack(...args: any[]): Promise<any> { return null; }
     export function downloadFile(...args: any[]): void {}
   `],
-  [path.join(studyDir, 'flowBoard.ts'), 'export function createFlowBoard(...args: any[]): any { return null; }'],
   [path.join(studyDir, 'results.ts'), 'export function resultsCSV(...args: any[]): string { return ""; }'],
   [path.join(root, 'src/ts/util/levelConverter.ts'), 'export const LevelConverter: any = {};'],
 ]);
@@ -80,4 +79,4 @@ assert.equal(diagnostics.length, 0,
   ts.formatDiagnosticsWithColorAndContext(diagnostics, {
     getCanonicalFileName: x => x, getCurrentDirectory: () => root, getNewLine: () => '\n',
   }));
-console.log('PASS: dashboard and runtime TS type-check under ES2015; nullable tween value; MediaPipe warning filter limited to its own bundle');
+console.log('PASS: dashboard, flow board, gameplay fields and runtime TS type-check under ES2015; nullable tween value; MediaPipe warning filter limited to its own bundle');

@@ -16,9 +16,12 @@ export function isLevelStep(step: StudyStep): step is Assignment {
 }
 export interface StudySettings {
   title: string;
-  description: string;
+  description: string; // legacy field; not shown in the dashboard
   introText: string;
-  startDate: string;
+  startDate: string; // also acts as the week-1 anchor when date restrictions are off
+  weeklyEnabled?: boolean; // absent = true for earlier saved studies
+  dateRangeEnabled?: boolean; // absent = true for earlier saved studies
+  endDate?: string;
   maxSessionsPerWeek: number;
   weeks: Record<string, StudyStep[]>; // 0 = pretest, -1 = posttest, >= 1 = ordinary weeks
   defaultConfig?: Record<string, unknown>;
@@ -70,7 +73,11 @@ export function defaultStudySettings(title = 'New study'): StudySettings {
 export function validateSettings(value: StudySettings): string[] {
   const issues: string[] = [];
   if (!value || typeof value.title !== 'string' || !value.title.trim() || value.title.length > 120) issues.push('Study title is required (maximum 120 characters)');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value?.startDate || '') || Number.isNaN(Date.parse(value.startDate))) issues.push('Invalid start date');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value?.startDate || '') || Number.isNaN(Date.parse(value.startDate))) issues.push('Invalid week anchor/start date');
+  if (value?.weeklyEnabled !== undefined && typeof value.weeklyEnabled !== 'boolean') issues.push('Invalid weekly study option');
+  if (value?.dateRangeEnabled !== undefined && typeof value.dateRangeEnabled !== 'boolean') issues.push('Invalid date limit option');
+  if (value?.endDate && (!/^\d{4}-\d{2}-\d{2}$/.test(value.endDate) || Number.isNaN(Date.parse(value.endDate)))) issues.push('Invalid end date');
+  if (value?.dateRangeEnabled !== false && value?.endDate && value.endDate < value.startDate) issues.push('End date must not precede start date');
   if (!Number.isInteger(value?.maxSessionsPerWeek) || value.maxSessionsPerWeek < 1 || value.maxSessionsPerWeek > 50) issues.push('Sessions per week must be between 1 and 50');
   if (!value?.weeks || typeof value.weeks !== 'object' || Array.isArray(value.weeks)) issues.push('At least one week is required');
   else Object.entries(value.weeks).forEach(([week, steps]) => {
@@ -100,19 +107,22 @@ export function calculateStudyWeek(startDate: string, now = new Date()): number 
 }
 export function emptyProgress(): Progress { return { completed: {}, sessions: {}, activeSession: {} }; }
 export function getNextAssignment(settings: StudySettings, progress: Progress, startDate: string, now = new Date()) {
-  const current = calculateStudyWeek(startDate, now);
+  const weekly = settings.weeklyEnabled !== false;
+  const dated = settings.dateRangeEnabled !== false;
+  const current = weekly ? calculateStudyWeek(startDate, now) : 1;
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const beforeStart = today < Date.parse(`${startDate}T00:00:00Z`);
+  const beforeStart = dated && today < Date.parse(`${startDate}T00:00:00Z`);
+  const afterEnd = dated && !!settings.endDate && today > Date.parse(`${settings.endDate}T00:00:00Z`);
   const lastWeek = Math.max(1, ...Object.keys(settings.weeks).map(Number).filter(n => n > 0));
-  const week = settings.weeks['0'] && !(progress.sessions['0'] || 0) ? 0 :
-    current > lastWeek && settings.weeks['-1'] ? -1 : current;
+  const week = weekly && settings.weeks['0'] && !(progress.sessions['0'] || 0) ? 0 :
+    weekly && current > lastWeek && settings.weeks['-1'] ? -1 : current;
   const assignments = settings.weeks[String(week)] || [];
   const sessionNo = (progress.sessions[String(week)] || 0) + 1;
   const sessionId = progress.activeSession[String(week)] || `${week}-${sessionNo}`;
   const done = progress.completed[String(week)] || [];
   const index = assignments.findIndex((_, i) => !done.includes(`${sessionId}:${i}`));
   return { week, assignments, sessionId, index, complete: assignments.length > 0 && index === -1,
-    capped: (beforeStart && week !== 0) || (progress.sessions[String(week)] || 0) >= (week <= 0 ? 1 : settings.maxSessionsPerWeek), beforeStart };
+    capped: (beforeStart && week !== 0) || afterEnd || (weekly && (progress.sessions[String(week)] || 0) >= (week <= 0 ? 1 : settings.maxSessionsPerWeek)), beforeStart, afterEnd };
 }
 export function markAssignmentComplete(progress: Progress, week: number, sessionId: string, index: number, total: number): Progress {
   const next: Progress = JSON.parse(JSON.stringify(progress));

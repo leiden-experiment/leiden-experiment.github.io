@@ -36,6 +36,9 @@ function requireResearcher(account, studyId) {
 function validateSettings(s) {
   if (!s || typeof s !== 'object' || typeof s.title !== 'string' || !s.title.trim() || s.title.length > 120 ||
       typeof s.startDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s.startDate) || Number.isNaN(Date.parse(s.startDate)) ||
+      (s.weeklyEnabled !== undefined && typeof s.weeklyEnabled !== 'boolean') ||
+      (s.dateRangeEnabled !== undefined && typeof s.dateRangeEnabled !== 'boolean') ||
+      (s.endDate && (!/^\d{4}-\d{2}-\d{2}$/.test(s.endDate) || Number.isNaN(Date.parse(s.endDate)) || s.endDate < s.startDate)) ||
       !Number.isInteger(s.maxSessionsPerWeek) || s.maxSessionsPerWeek < 1 || s.maxSessionsPerWeek > 50 ||
       !s.weeks || typeof s.weeks !== 'object' || Array.isArray(s.weeks)) fail('Invalid study settings');
   for (const [week, assignments] of Object.entries(s.weeks)) {
@@ -74,6 +77,22 @@ function weekOf(start) {
   const date = new Date(`${start}T00:00:00Z`);
   const now = new Date();
   return Math.max(1, Math.floor((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - date.getTime()) / 604800000) + 1);
+}
+/** The source of truth for calendar restrictions and weekly schedules (also used by both progress endpoints). */
+function studyTiming(settings, account, weeks, progress) {
+  const weekly = settings.weeklyEnabled !== false; // Legacy saved studies remain weekly.
+  const dates = settings.dateRangeEnabled !== false; // Legacy saved studies retain date restrictions.
+  const start = account.startDate || settings.startDate;
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const beforeStart = dates && today < Date.parse(`${start}T00:00:00Z`);
+  const afterEnd = dates && !!settings.endDate && today > Date.parse(`${settings.endDate}T00:00:00Z`);
+  const current = weekly ? weekOf(start) : 1;
+  const lastWeek = Math.max(1, ...Object.keys(weeks).map(Number).filter(n => n > 0));
+  const week = weekly && weeks['0'] && !(progress.sessions['0'] || 0) ? 0 :
+    weekly && current > lastWeek && weeks['-1'] ? -1 : current;
+  const cap = weekly ? (week <= 0 ? 1 : settings.maxSessionsPerWeek) : Number.MAX_SAFE_INTEGER;
+  return { week, beforeStart, afterEnd, cap };
 }
 exports.getProfile = onCall(options, async req => ({ account: await profile(req) }));
 exports.listStudies = onCall(options, async req => {
@@ -237,19 +256,14 @@ exports.advanceStudyStep = onCall(options, async req => {
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings || !settings.enabled) fail('Study disabled', 'failed-precondition');
   const weeks = account.weeksOverride || settings.weeks;
-  const baseWeek = weekOf(account.startDate || settings.startDate);
-  const now = new Date(); const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const beforeStart = today < Date.parse(`${account.startDate || settings.startDate}T00:00:00Z`);
-  const lastWeek = Math.max(1, ...Object.keys(weeks).map(Number).filter(n => n > 0));
   const ref = db.ref(`progress/${account.studyId}/${account.uid}`);
   const transaction = await ref.transaction(value => {
     const progress = { completed: value?.completed || {}, sessions: value?.sessions || {}, activeSession: value?.activeSession || {} };
-    const currentWeek = weeks['0'] && !(progress.sessions['0'] || 0) ? 0 :
-      baseWeek > lastWeek && weeks['-1'] ? -1 : baseWeek;
-    if (week !== currentWeek || (beforeStart && week !== 0)) return;
+    const timing = studyTiming(settings, account, weeks, progress);
+    if (week !== timing.week || (timing.beforeStart && week !== 0) || timing.afterEnd) return;
     const assignments = weeks[String(week)] || [];
     const count = progress.sessions[String(week)] || 0;
-    if (count >= (week <= 0 ? 1 : settings.maxSessionsPerWeek)) return;
+    if (count >= timing.cap) return;
     const sid = progress.activeSession[String(week)] || `${week}-${count + 1}`;
     const done = progress.completed[String(week)] || [];
     const ix = assignments.findIndex((_, i) => !done.includes(`${sid}:${i}`));
@@ -277,20 +291,17 @@ exports.submitResult = onCall(options, async req => {
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings || !settings.enabled) fail('Study disabled', 'failed-precondition');
   const assignedWeeks = account.weeksOverride || settings.weeks;
-  const baseWeek = weekOf(account.startDate || settings.startDate);
-  const now = new Date(); const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const beforeStart = today < Date.parse(`${account.startDate || settings.startDate}T00:00:00Z`);
-  const lastWeek = Math.max(1, ...Object.keys(assignedWeeks).map(Number).filter(n => n > 0));
   const savedProgress = (await db.ref(`progress/${account.studyId}/${account.uid}`).get()).val() || {};
   const current = { completed: savedProgress.completed || {}, sessions: savedProgress.sessions || {}, activeSession: savedProgress.activeSession || {} };
-  const week = assignedWeeks['0'] && !(current.sessions['0'] || 0) ? 0 : baseWeek > lastWeek && assignedWeeks['-1'] ? -1 : baseWeek;
+  const timing = studyTiming(settings, account, assignedWeeks, current);
+  const { week } = timing;
   const assignments = assignedWeeks[String(week)] || [];
   if ((current.completed[String(data.week)] || []).includes(`${data.sessionId}:${data.assignmentIndex}`)) return { ok: true, duplicate: true };
   const count = current.sessions[String(week)] || 0;
-  const maxSessions = week <= 0 ? 1 : settings.maxSessionsPerWeek;
+  const maxSessions = timing.cap;
   const expectedSessionId = current.activeSession[String(week)] || `${week}-${count + 1}`;
   const expectedIndex = assignments.findIndex((a, i) => !(current.completed[String(week)] || []).includes(`${expectedSessionId}:${i}`));
-  if ((beforeStart && week !== 0) || count >= maxSessions || expectedIndex < 0 || data.week !== week || data.sessionId !== expectedSessionId ||
+  if ((timing.beforeStart && week !== 0) || timing.afterEnd || count >= maxSessions || expectedIndex < 0 || data.week !== week || data.sessionId !== expectedSessionId ||
       data.assignmentIndex !== expectedIndex || !isLevel(assignments[expectedIndex]) || data.levelId !== assignments[expectedIndex].levelId)
     fail('Result is outside the assigned study schedule', 'failed-precondition');
   const key = `${expectedSessionId}:${expectedIndex}`;

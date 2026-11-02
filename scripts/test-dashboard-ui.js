@@ -1,0 +1,26 @@
+/** Dependency-free regressions for the dashboard contract and the protected schedule flags. */
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const source = file => fs.readFileSync(path.resolve(__dirname, '..', file), 'utf8');
+const dashboard = source('src/ts/study/dashboard.ts');
+const board = source('src/ts/study/flowBoard.ts');
+const css = source('src/css/study.css');
+const functions = source('functions/index.js');
+const app = source('src/ts/core/game.ts');
+for (const label of ["'← Back'", "'Studies'", "'Shared level library'", "'Sign out'"]) assert(dashboard.includes(label), label);
+assert(dashboard.includes('crypto.getRandomValues'), 'Study and library IDs must be random');
+assert(dashboard.includes("newId('study')") && dashboard.includes("newId('level')"));
+assert(!dashboard.includes('Study ID (letters'), 'No manual study ID field');
+assert(!dashboard.includes("'Description'"), 'No study description editor');
+assert(dashboard.includes('showModerators(study)'), 'Moderators must be managed in a study');
+assert(dashboard.includes('dateRangeEnabled: dateEnabled.checked') && dashboard.includes('weeklyEnabled: weekly.checked'));
+assert(dashboard.includes('Override default gameplay settings') && dashboard.includes('Use group-specific gameplay settings'));
+assert(board.includes('study-drop-indicator') && board.includes('slides.insertBefore(indicator, target)'));
+assert(board.includes('Delete this slide') && !board.includes('Delete selected slide'));
+assert(!board.includes("button(controls, '→'"), 'Movement arrows must be removed');
+assert(css.includes('.study-admin-dashboard .study-nav') && css.includes('.study-drop-indicator'));
+assert(app.includes("root.classList.remove('study-shell', 'study-admin-dashboard')"), 'Sign out must remove dashboard theme');
+assert(functions.includes('studyTiming(settings, account, weeks, progress)'));
+assert(functions.includes('studyTiming(settings, account, assignedWeeks, current)'));
+console.log('PASS: immediate navbar, random IDs, study-scoped moderators, visual slide insertion, per-field configs, date/week server enforcement');

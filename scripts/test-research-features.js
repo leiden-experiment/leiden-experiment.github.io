@@ -60,12 +60,13 @@ assert(backend.includes('if (sessionId !== sid || index !== ix || !step || step.
 assert(backend.includes('!isLevel(assignments[expectedIndex])'));
 assert(fs.readFileSync(path.resolve(__dirname, '../src/ts/study/dashboard.ts'), 'utf8').includes('createFlowBoard'));
 assert(fs.readFileSync(path.resolve(__dirname, '../src/ts/scenes/studySessionScene.ts'), 'utf8').includes('advanceScreenStep'));
-const guidePath = path.resolve(__dirname, '../docs/README.md');
+const guidePath = path.resolve(__dirname, '../README.md');
 assert(fs.existsSync(guidePath), 'Single consolidated researcher guide is missing');
 const guide = fs.readFileSync(guidePath, 'utf8');
 for (const step of ['Step 1', 'Step 4', 'Step 5', 'Step 6', 'Step 7', 'Step 8', 'Step 9', 'Step 10', 'Step 11', 'Step 12'])
   assert(guide.includes(step), `Guide missing ${step}`);
 for (const command of ['npm install', 'npm run admin:create', 'npm run setup:web', 'npm run check:web', 'firebase deploy --only functions,database', 'npm start'])
   assert(guide.includes(command), `Guide missing command ${command}`);
-assert.deepEqual(fs.readdirSync(path.dirname(guidePath)).filter(f => f.endsWith('.md')), ['README.md']);
+assert.deepEqual(fs.readdirSync(path.resolve(__dirname, '..')).filter(f => /^readme(\.md)?$/i.test(f)), ['README.md']);
+assert(!fs.existsSync(path.resolve(__dirname, '../docs')), 'Redundant docs directory must not be present');
 console.log('PASS: AES-GCM admin vault (round-trip, wrong key, tamper resistance), start/level/break/end, weekly cap, authorization guards, consolidated setup guide');
