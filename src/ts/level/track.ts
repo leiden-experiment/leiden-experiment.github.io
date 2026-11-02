@@ -140,13 +140,21 @@ export class Track {
   // Preloads all the audio loop track in levelDir/<trackKey>/<layer_id>/<soundKey>.<soundFileExtension>
   private preloadLoops() {
     this.forEachLayer((layer: TrackLayerData) => {
-      assert(layer.soundLoopKeys != undefined);
-      // Skip layers with empty soundLoopKeys (programmatic-only layers)
-      if (layer.soundLoopKeys.length === 0) {
+      // Realtime Database omits zero-length arrays when it serializes JSON.
+      // A generated-only layer legitimately has no recorded backing loops.
+      const loopKeys = layer.soundLoopKeys || [];
+      if (!layer.soundLoopKeys && !(layer.playable &&
+          (layer as PlayableTrackLayerData).nodes?.every(node =>
+            !!(node as ProgrammaticTrackNode).programmaticNote ||
+            !!(node as ProgrammaticTrackNode).programmaticChord ||
+            !!(node as ProgrammaticTrackNode).programmaticSequenceChord))) {
+        throw new Error(`Missing audio loops in recorded layer ${layer.id}`);
+      }
+      if (loopKeys.length === 0) {
         return;
       }
 
-      layer.soundLoopKeys.forEach(loopKey => {
+      loopKeys.forEach(loopKey => {
         const soundKey = this.getSoundKey(layer, loopKey);
         if (!this.scene.cache.audio.exists(soundKey) && loopKey !== '') {
           const soundPath = this.trackDir + layer.id + '/' + loopKey + soundFileExtension;
@@ -158,7 +166,7 @@ export class Track {
 
   private unloadLoops() {
     this.forEachLayer((layer: TrackLayerData) => {
-      layer.soundLoopKeys.forEach(loopKey => {
+      (layer.soundLoopKeys || []).forEach(loopKey => {
         this.scene.cache.audio.remove(this.getSoundKey(layer, loopKey));
       });
     });
@@ -206,10 +214,8 @@ export class Track {
           (layer.playable && config.playableBackingTracksEnabled) ||
           (!layer.playable && config.unplayableBackingTracksEnabled)
         ) {
-          assert(layer.soundLoopKeys != undefined);
-
-          // Handle layers with empty soundLoopKeys (programmatic-only layers)
-          if (layer.soundLoopKeys.length === 0) {
+          // Missing/empty soundLoopKeys denotes generated backing audio.
+          if (!(layer.soundLoopKeys || []).length) {
             // For programmatic layers, try to find generated loop audio
             if (bpmIndex < this.data.bpm.length) {
               const loopKey = `loop${this.data.bpm[bpmIndex]}`;

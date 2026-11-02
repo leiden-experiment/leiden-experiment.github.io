@@ -5,7 +5,7 @@ import { levels } from './loadingScene';
 import { LevelConverter } from '../util/levelConverter';
 import { UploadedLevelManager } from '../managers/uploadedLevelManager';
 import { defaultConfig, updateConfig } from '../managers/storageManager';
-import { getStudyPlan, getStudyProgress, getStudySession, setPendingAssignment, publishedLevels, advanceScreenStep, hasJustFinishedSession, wasLastStudyResultQueued } from '../study/runtime';
+import { getStudyPlan, getStudyProgress, getStudySession, setPendingAssignment, syncStudyProgress, publishedLevels, advanceScreenStep, hasJustFinishedSession, wasLastStudyResultQueued } from '../study/runtime';
 import { studyApi } from '../study/firebaseClient';
 import { downloadResults } from '../study/offline';
 import { TrackData } from '../level/trackTypes';
@@ -106,7 +106,13 @@ export default class StudySessionScene extends HandScene {
         const track = data as TrackData;
         if (!Array.isArray(track.bpm) || !Array.isArray(track.layers)) throw new Error('Invalid published level');
         const key = LevelConverter.generateTempLevelKey();
-        this.cache.json.add(key, JSON.parse(JSON.stringify(track)));
+        // Firebase RTDB strips empty arrays; restore generated-only loop keys.
+        const restored = JSON.parse(JSON.stringify(track)) as TrackData;
+        restored.layers.forEach(layer => {
+          if (!layer.soundLoopKeys && layer.playable) layer.soundLoopKeys = [];
+          if (layer.playable && !layer.backgroundLayers) layer.backgroundLayers = [];
+        });
+        this.cache.json.add(key, restored);
         level = new Level(this, key);
       }
       if (!level.track.data?.bpm?.[assignment.bpmIndex]) throw new Error('Assigned BPM index does not exist in this level');
@@ -114,10 +120,31 @@ export default class StudySessionScene extends HandScene {
         skipLayersAutomatically: true, skipLayersAutomaticallyAfterLoop: assignment.loops,
         autoSaveCSV: false }); // Research results are sent once, between levels; never during gameplay.
       level.setBPM(assignment.bpmIndex);
+      // Validate the authoritative server position before expensive gameplay begins;
+      // preventing stale client progression from losing a completed research play.
+      if (session.mode === 'online') {
+        const allowed = await studyApi.preparePlay(plan.week, plan.sessionId, plan.index,
+          assignment.levelId, choiceIndex, selectionPlay);
+        syncStudyProgress(allowed.progress);
+      }
       setPendingAssignment(plan.week, plan.sessionId, plan.index, plan.assignments.length, assignment, choiceIndex, selectionPlay);
       this.scene.start('level', level);
     } catch (error) {
-      this.status.setText(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      // An older browser tab can have obsolete progress after a study edit or
+      // another sign-in. Refresh before the player spends time on a rejected play.
+      if (session.mode === 'online' && (/progress or assignment has changed|failed-precondition/i).test(message)) {
+        try {
+          const latest = await studyApi.fetchParticipant();
+          syncStudyProgress(latest.progress);
+          this.scene.restart();
+          return;
+        } catch (refreshError) {
+          this.status.setText(`Study session is out of date. Sign out and sign back in.\n${String(refreshError)}`);
+          return;
+        }
+      }
+      this.status.setText(message);
     }
   }
 }

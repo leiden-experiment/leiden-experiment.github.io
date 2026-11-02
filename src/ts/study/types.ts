@@ -101,8 +101,8 @@ export function validateSettings(value: StudySettings): string[] {
   if (value?.endDate && (!/^\d{4}-\d{2}-\d{2}$/.test(value.endDate) || Number.isNaN(Date.parse(value.endDate)))) issues.push('Invalid end date');
   if (value?.dateRangeEnabled !== false && value?.endDate && value.endDate < value.startDate) issues.push('End date must not precede start date');
   if (!Number.isInteger(value?.maxSessionsPerWeek) || value.maxSessionsPerWeek < 1 || value.maxSessionsPerWeek > 50) issues.push('Sessions per week must be between 1 and 50');
-  if (!value?.weeks || typeof value.weeks !== 'object' || Array.isArray(value.weeks)) issues.push('At least one week is required');
-  else Object.entries(value.weeks).forEach(([week, steps]) => {
+  if ((value?.weeks == null && value?.weeklyEnabled !== false) || (value?.weeks != null && (typeof value.weeks !== 'object' || Array.isArray(value.weeks)))) issues.push('Invalid study timeline');
+  else Object.entries(value.weeks || {}).forEach(([week, steps]) => {
     if (!/^(?:-1|0|[1-9]\d*)$/.test(week) || !Array.isArray(steps) || steps.length > 40) { issues.push(`Invalid week ${week}`); return; }
     steps.forEach((step, i) => {
       if (!step || typeof step !== 'object') { issues.push(`${week}/${i}: invalid block`); return; }
@@ -146,11 +146,11 @@ export function getNextAssignment(settings: StudySettings, progress: Progress, s
     (!!settings.durationWeeks && today < Date.parse(`${startDate}T00:00:00Z`));
   const afterEnd = (dated && !!settings.endDate && today > Date.parse(`${settings.endDate}T00:00:00Z`)) ||
     (!!settings.durationWeeks && calculateStudyWeek(startDate, now) > settings.durationWeeks);
-  const lastWeek = Math.max(1, ...Object.keys(settings.weeks).map(Number).filter(n => n > 0));
-  const finished = weekly && current > lastWeek && (!settings.weeks['-1'] || !!progress.sessions['-1']);
-  const week = weekly && settings.weeks['0'] && !(progress.sessions['0'] || 0) ? 0 :
-    weekly && current > lastWeek && settings.weeks['-1'] && !(progress.sessions['-1'] || 0) ? -1 : current;
-  const assignments = settings.weeks[String(week)] || [];
+  const lastWeek = Math.max(1, ...Object.keys(settings.weeks || {}).map(Number).filter(n => n > 0));
+  const finished = weekly && current > lastWeek && (!settings.weeks?.['-1'] || !!progress.sessions['-1']);
+  const week = weekly && settings.weeks?.['0'] && !(progress.sessions['0'] || 0) ? 0 :
+    weekly && current > lastWeek && settings.weeks?.['-1'] && !(progress.sessions['-1'] || 0) ? -1 : current;
+  const assignments = settings.weeks?.[String(week)] || [];
   const sessionNo = (progress.sessions[String(week)] || 0) + 1;
   const sessionId = progress.activeSession[String(week)] || `${week}-${sessionNo}`;
   const done = progress.completed[String(week)] || [];

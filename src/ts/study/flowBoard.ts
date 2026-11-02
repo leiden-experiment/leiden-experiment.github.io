@@ -2,7 +2,8 @@ import { StudyStep, StudySettings, isLevelStep, isSelectionStep, Assignment } fr
 
 /** Dependency-free study slide timeline with live, explicit drag insertion previews. */
 export function createFlowBoard(parent: HTMLElement, source: StudySettings['weeks'], changed: (weeks: StudySettings['weeks']) => void, weekly = true) {
-  let weeks: StudySettings['weeks'] = JSON.parse(JSON.stringify(source));
+  let weeks: StudySettings['weeks'] = source && typeof source === 'object'
+    ? JSON.parse(JSON.stringify(source)) : { '1': [] };
   let isWeekly = weekly;
   let availableLevels: { id: string; name: string }[] = [
     ...['Birthday Vibes', 'Cheerful Bliss', 'Slow Elegance', 'Trained', 'Untrained', 'Tryout', 'Nosound']
@@ -27,7 +28,7 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
     : { type: kind, text: kind === 'start' ? 'Welcome! Press Continue when ready.' :
       kind === 'break' ? 'Take a break. Press Continue when ready to play again.' :
         'Thanks for playing! Please come back for your next session.' };
-  const ordered = () => Object.keys(weeks).sort((a, b) => Number(a) - Number(b));
+  const ordered = () => Object.keys(weeks || {}).sort((a, b) => Number(a) - Number(b));
   function move(fromWeek: string, fromIndex: number, toWeek: string, insertion: number) {
     const from = weeks[fromWeek]; const to = weeks[toWeek];
     if (!from || !to || !from[fromIndex] || insertion < 0 || insertion > to.length) return;
@@ -42,7 +43,7 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
   }
   function edit() {
     editor.replaceChildren();
-    if (!selected) { make('p', editor, 'Click a slide to edit it. Drag slides between positions; the blue insertion marker shows where the slide will go. Use the × on a slide to delete it.'); return; }
+    if (!selected) { make('p', editor, 'Click a slide to edit it. Drag a slide to a different position; the insertion marker shows where it will go. Use the × on a slide to delete it.'); return; }
     const { week, index } = selected;
     const step = weeks[week]?.[index]; if (!step) { selected = null; return edit(); }
     make('h3', editor, `${week === '0' ? 'Pretest' : week === '-1' ? 'Posttest' : `Week ${week}`} · Slide ${index + 1}`);
@@ -63,7 +64,8 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
       select.value = availableLevels.some(l => l.id === step.levelId) ? step.levelId : '';
       select.onchange = () => { if (!select.value) return; step.levelId = select.value; trigger(); render(); };
       if (!select.value) item('Existing level ID', step.levelId, value => { step.levelId = value; }, 'Keeps previously assigned levels available even if they are not currently listed.');
-      item('Difficulty / BPM option', String(step.bpmIndex), value => { step.bpmIndex = Number(value); }, '0 selects the first speed. Higher numbers select later speed options.');
+      if (step.levelId.startsWith('legacy:')) item('Difficulty / BPM option', String(step.bpmIndex), value => { step.bpmIndex = Number(value); }, '0 selects the first speed. Higher numbers select later speed options.');
+      else if (step.bpmIndex !== 0) { step.bpmIndex = 0; trigger(); } // Imported JSON has its own authored BPM.
       item('Number of loops', String(step.loops), value => { step.loops = Number(value); }, 'Loops to play before this slide completes.');
     } else if (isSelectionStep(step)) {
       item('Selection screen message', step.text, v => { step.text = v; }, 'Shown above the selectable levels.', true);
@@ -87,10 +89,12 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
         const picker = make('select', pickerLabel);
         for (const level of availableLevels) { const option = make('option', picker, level.name); option.value = level.id; }
         if (!availableLevels.some(l => l.id === choice.levelId)) { const old = make('option', picker, choice.levelId); old.value = choice.levelId; }
-        picker.value = choice.levelId; picker.onchange = () => { choice.levelId = picker.value; trigger(); };
-        const difficulty = make('label', row); difficulty.className = 'study-field'; make('span', difficulty, 'BPM option');
-        const bpm = make('input', difficulty); bpm.type = 'number'; bpm.min = '0'; bpm.max = '8'; bpm.step = '1'; bpm.value = String(choice.bpmIndex);
-        bpm.onchange = () => { choice.bpmIndex = Number(bpm.value); trigger(); };
+        picker.value = choice.levelId; picker.onchange = () => { choice.levelId = picker.value; if (!picker.value.startsWith('legacy:')) choice.bpmIndex = 0; trigger(); render(); };
+        if (choice.levelId.startsWith('legacy:')) {
+          const difficulty = make('label', row); difficulty.className = 'study-field'; make('span', difficulty, 'BPM option');
+          const bpm = make('input', difficulty); bpm.type = 'number'; bpm.min = '0'; bpm.max = '8'; bpm.step = '1'; bpm.value = String(choice.bpmIndex);
+          bpm.onchange = () => { choice.bpmIndex = Number(bpm.value); trigger(); };
+        } else if (choice.bpmIndex !== 0) { choice.bpmIndex = 0; trigger(); }
         const count = make('label', row); count.className = 'study-field'; make('span', count, 'Loops');
         const loops = make('input', count); loops.type = 'number'; loops.min = '1'; loops.max = '100'; loops.step = '1'; loops.value = String(choice.loops);
         loops.onchange = () => { choice.loops = Number(loops.value); trigger(); };
@@ -135,6 +139,11 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
       const clearPreview = () => { indicator.remove(); destination = null; };
       const preview = (index: number) => {
         if (!dragging) return;
+        // Inserting before or after the dragged tile leaves it unchanged:
+        // do not display a misleading drop target for those positions.
+        if (dragging.week === week && (index === dragging.index || index === dragging.index + 1)) {
+          clearPreview(); return;
+        }
         destination = { week, index };
         const candidates = Array.from(slides.querySelectorAll<HTMLElement>('.study-slide'));
         const target = candidates[index];
@@ -172,7 +181,7 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
         remove.className = 'study-slide-delete'; remove.title = 'Delete this slide'; remove.setAttribute('aria-label', 'Delete this slide');
         remove.onclick = event => { event.stopPropagation(); if (!confirm(`Delete slide ${index + 1}?`)) return; weeks[week].splice(index, 1); selected = null; trigger(); render(); };
         make('strong', tile, isLevelStep(step) ? availableLevels.find(l => l.id === step.levelId)?.name || step.levelId : isSelectionStep(step) ? `Choose between ${step.choices.length} levels` : step.text.slice(0, 85) || '(empty message)');
-        if (isLevelStep(step)) make('small', tile, `BPM option ${step.bpmIndex} · ${step.loops} loops`);
+        if (isLevelStep(step)) make('small', tile, `${step.levelId.startsWith('legacy:') ? `BPM option ${step.bpmIndex} · ` : ''}${step.loops} loops`);
         if (isSelectionStep(step)) make('small', tile, `${step.playthroughs === 0 ? 'Free play' : `${step.playthroughs} plays`} · ${step.unlock}`);
         tile.addEventListener('click', () => { selected = { week, index }; render(); });
         tile.addEventListener('keydown', e => {
@@ -204,7 +213,8 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
   return {
     getWeeks: () => JSON.parse(JSON.stringify(weeks)) as StudySettings['weeks'],
     setAvailableLevels: (levels: { id: string; name: string }[]) => { availableLevels = [...availableLevels.filter(x => x.id.startsWith('legacy:')), ...levels]; edit(); },
-    setWeeks: (value: StudySettings['weeks']) => { weeks = JSON.parse(JSON.stringify(value)); selected = null; trigger(); render(); },
+    setWeeks: (value: StudySettings['weeks']) => { weeks = value && typeof value === 'object'
+      ? JSON.parse(JSON.stringify(value)) : { '1': [] }; selected = null; trigger(); render(); },
     setWeekly: (value: boolean) => { if (isWeekly !== value) { isWeekly = value; selected = null; render(); } },
   };
 }

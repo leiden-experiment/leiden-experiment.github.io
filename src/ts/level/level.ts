@@ -214,7 +214,7 @@ export default class Level {
     layer.start(delay);
 
     // Progressive audio building: include original background layers + completed layers
-    const backgroundLayers: string[] = [...layer.data.backgroundLayers];
+    const backgroundLayers: string[] = [...(layer.data.backgroundLayers || [])];
 
     // Add all previously completed playable layers to background
     if (this.trackKey_.startsWith('temp_level_')) {

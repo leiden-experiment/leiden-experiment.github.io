@@ -51,6 +51,10 @@ export const studyApi = {
   listLevels: () => callBackend<{ levels: PublishedLevel[] }>('listLevels', {}),
   saveLevel: (id: string, name: string, data: unknown) => callBackend<{ id: string }>('saveLevel', { id, name, data }),
   getLevel: (id: string) => callBackend<{ level: PublishedLevel }>('getLevel', { id }),
+  removeLevel: (id: string) => callBackend<{ ok: boolean }>('removeLevel', { id }),
+  preparePlay: (week: number, sessionId: string, index: number, levelId: string, choiceIndex?: number, selectionPlay?: number) =>
+    callBackend<{ ok: boolean; progress: Progress }>('preparePlay', { week, sessionId, index, levelId,
+      ...(choiceIndex !== undefined ? { choiceIndex, selectionPlay } : {}) }),
   fetchParticipant: () => callBackend<{ account: Account; settings: StudySettings; progress: Progress }>('getParticipantBundle', {}),
   saveResult: (data: ResultEnvelope, progress: Progress) => callBackend<{ ok: boolean; queued?: boolean; duplicate?: boolean; progress?: Progress }>('submitResult', { data, progress }),
   removeStudy: (studyId: string) => callBackend<{ ok: boolean }>('removeStudy', { studyId }),

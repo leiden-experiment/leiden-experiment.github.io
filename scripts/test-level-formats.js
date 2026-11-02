@@ -134,6 +134,22 @@ const generatedScene = fakeScene('temp_level_test', converted);
 new Track(generatedScene, 'temp_level_test').preload(generatedScene);
 assert.equal(loadedFiles.length, legacyCount, 'Dynamic levels must not request nonexistent MP3s');
 assert.equal(loadedSounds.length, chords.nodes.length + melody.nodes.length, 'Every programmatic target must have generated audio');
+// Firebase RTDB removes empty arrays when writing stored JSON. A published
+// programmatic level must preload without a soundLoopKeys property.
+const firestoreStyle = JSON.parse(JSON.stringify(converted, (k, v) =>
+  Array.isArray(v) && v.length === 0 ? undefined : v));
+assert(!Object.prototype.hasOwnProperty.call(firestoreStyle.layers[0], 'soundLoopKeys'));
+const missingLoopsScene = fakeScene('temp_level_rtdb', firestoreStyle);
+const beforeRtdb = loadedFiles.length;
+new Track(missingLoopsScene, 'temp_level_rtdb').preload(missingLoopsScene);
+assert.equal(loadedFiles.length, beforeRtdb, 'Firebase-serialized programmatic levels must not fetch MP3 files');
+assert.throws(() => {
+  const brokenLegacy = structuredClone(legacy);
+  delete brokenLegacy.layers[0].soundLoopKeys;
+  const badScene = fakeScene('broken_legacy', brokenLegacy);
+  new Track(badScene, 'broken_legacy').preload(badScene);
+}, /Missing audio loops/, 'A corrupted legacy recording should not be silently treated as programmatic');
+
 
 let checkedTypeScriptFiles = 0;
 function scan(folder) {

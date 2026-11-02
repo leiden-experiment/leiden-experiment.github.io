@@ -202,7 +202,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     };
     weekly.addEventListener('change', sync); dateEnabled.addEventListener('change', sync); perParticipant.addEventListener('change', sync);
     const timelineHost = section(page, 'Study timeline'); timelineHost.classList.add('study-subsection');
-    const board = createFlowBoard(timelineHost, data.weeks, () => {}, weekly.checked);
+    const board = createFlowBoard(timelineHost, data.weeks || { '1': [] }, () => {}, weekly.checked);
     void studyApi.listLevels().then(({ levels }) => {
       if (timelineHost.isConnected) board.setAvailableLevels(levels.map(l => ({ id: `library:${l.id}`, name: `Uploaded: ${l.name}` })));
     }).catch(() => { /* Bundled levels and saved IDs remain usable. */ });
@@ -255,7 +255,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         enabled: true,
         ...(perParticipant.checked ? { durationWeeks: Number(duration.value),
           participantStartMode: startMode.value as 'manual' | 'first-login' } : {}),
-        weeks: board.getWeeks(),
+        weeks: board.getWeeks() || { '1': [] },
         defaultConfig: defaultEnabled.checked ? readDefaults() : {}, groupConfigs,
       };
       const errors = validateSettings(settings); if (errors.length) throw new Error(errors.join('\n'));
@@ -306,7 +306,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const page = section(output, `Participants · ${study.title}`);
     page.classList.add('study-compact-card');
     const canEdit = user.role === 'admin';
-    const controls = actions(page);
+    const controls = actions(page); controls.classList.add('study-full-actions');
     action(controls, 'Download all participant data', async () => {
       const { results, partial } = await studyApi.exportResults(study.id);
       if (partial) alert('Some linked-database results could not be retrieved; queued records are included.');
@@ -434,7 +434,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     };
   }
   async function showLibrary() {
-    const page = section(output, 'Levels');
+    const page = section(output, 'Levels'); page.classList.add('study-compact-card');
     node('p', page, 'Upload a JSON level once, then assign it to any study. IDs are created automatically.');
     const editor = node('div', page); editor.className = 'study-level-upload';
     const fileLabel = node('label', editor); fileLabel.className = 'study-field'; node('span', fileLabel, 'JSON level file');
@@ -456,6 +456,15 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       const label = node('div', row); label.className = 'study-row-title';
       node('strong', label, level.name); node('small', label, `library:${level.id}`);
       action(row, 'Download', async () => downloadJSON(`${level.id}.json`, (await studyApi.getLevel(level.id)).level.data));
+      if (user.role === 'admin') {
+        const remove = action(row, '×', async () => {
+          if (!confirm(`Permanently remove level “${level.name}” from the shared library? Only unused levels can be deleted.`)) return;
+          await studyApi.removeLevel(level.id);
+          navigate('Levels', showLibrary, false);
+        }, 'danger');
+        remove.classList.add('study-remove-icon'); remove.title = `Delete level ${level.name}`;
+        remove.setAttribute('aria-label', remove.title);
+      }
     }
   }
   navigate('Studies', showStudies, false);

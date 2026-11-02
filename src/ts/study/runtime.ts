@@ -19,6 +19,7 @@ export function setStudySession(value: StudySession, remoteProgress?: Progress, 
 }
 export function getStudySession() { return session; }
 export function getStudyProgress() { return progress; }
+export function syncStudyProgress(remote: Progress) { progress = remote; }
 export function getStudyPlan(now = new Date()) {
   if (!session) return null;
   return getNextAssignment(session.settings, progress, session.account.startDate || session.settings.startDate, now);
@@ -28,6 +29,18 @@ export function setPendingAssignment(week: number, sessionId: string, index: num
 }
 export function clearPendingAssignment() { pending = null; }
 export function getPendingAssignment() { return pending; }
+/** Portable fallback if a backend refuses completion due to a stale session.
+ * Preserve the actual unmodified result instead of telling researchers it was saved. */
+export function pendingResultBackup(result: unknown): ResultEnvelope | null {
+  if (!session || !pending) return null;
+  return {
+    schemaVersion: 1, studyId: session.account.studyId!, participantId: session.account.participantId!,
+    group: session.account.group || '', week: pending.week, sessionId: pending.sessionId,
+    assignmentIndex: pending.index, levelId: pending.assignment.levelId,
+    completedAt: new Date().toISOString(), result,
+    ...(pending.choiceIndex !== undefined ? { choiceIndex: pending.choiceIndex, selectionPlay: pending.selectionPlay } : {}),
+  };
+}
 export function recordLevelCompletion(result: unknown): Promise<void> {
   if (pendingSave) return pendingSave;
   if (!session || !pending) return Promise.resolve();

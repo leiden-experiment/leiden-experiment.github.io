@@ -74,8 +74,14 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   await central.ref('accounts/user-one').set({uid:'user-one',username:'participant01',participantId:'participant01',studyId:'research1',role:'participant',active:true});
   await central.ref('accounts/admin-one').set({uid:'admin-one',username:'owner',role:'admin',active:true});
   await central.ref('studyMembers/research1/user-one').set(true);
+  await assert.rejects(api.preparePlay(request('user-one', {week:1,sessionId:'1-1',index:1,levelId:'legacy:Trained'})),
+    /progress or assignment has changed/, 'Server must not authorize playing a later slide');
   let done=await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-1',index:0,stepType:'start'}));
   assert(done.ok && done.progress.completed['1'].includes('1-1:0'));
+  const permitted = await api.preparePlay(request('user-one', {week:1,sessionId:'1-1',index:1,levelId:'legacy:Trained'}));
+  assert(permitted.ok && permitted.progress.completed['1'].includes('1-1:0'));
+  await assert.rejects(api.preparePlay(request('user-one', {week:1,sessionId:'1-1',index:1,levelId:'legacy:Nosound'})),
+    /progress or assignment has changed/, 'Server must reject a different level');
   const first=await api.submitResult(request('user-one',{data:result}));
   assert(first.ok && !first.queued);
   assert(first.progress.completed['1'].includes('1-1:1'));
@@ -103,6 +109,13 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   assert(retry.ok && !retry.queued);
   assert(!(await central.ref('progress/research1/user-one/pendingResults/1-2_1_0').get()).val());
   assert((await studyDatabase.ref('results/research1/user-one/1-2_1_0').get()).val());
+  await central.ref('levelLibrary/testlevel').set({id:'testlevel',name:'Test'});
+  await central.ref('levelIndex/testlevel').set({id:'testlevel',name:'Test'});
+  await central.ref('studies/research1/settings/weeks/1').set([{type:'level',levelId:'library:testlevel'}]);
+  await assert.rejects(api.removeLevel(request('admin-one',{id:'testlevel'})), /used by a study/);
+  await central.ref('studies/research1/settings/weeks/1').set([{type:'level',levelId:'legacy:Trained'}]);
+  assert((await api.removeLevel(request('admin-one',{id:'testlevel'}))).ok);
+  assert(!(await central.ref('levelIndex/testlevel').get()).exists());
   await api.removeStudy(request('admin-one',{studyId:'research1'}));
   assert(!(await central.ref('studyIndex/research1').get()).exists());
   assert((await central.ref('studies/research1/settings').get()).val().enabled===false);

@@ -69,8 +69,8 @@ function validateSettings(s) {
       (s.participantStartMode !== undefined && !['manual','first-login'].includes(s.participantStartMode)) ||
       (s.endDate && (!/^\d{4}-\d{2}-\d{2}$/.test(s.endDate) || Number.isNaN(Date.parse(s.endDate)) || s.endDate < s.startDate)) ||
       !Number.isInteger(s.maxSessionsPerWeek) || s.maxSessionsPerWeek < 1 || s.maxSessionsPerWeek > 50 ||
-      !s.weeks || typeof s.weeks !== 'object' || Array.isArray(s.weeks)) fail('Invalid study settings');
-  for (const [week, assignments] of Object.entries(s.weeks)) {
+      (s.weeks === null && s.weeklyEnabled !== false) || (s.weeks !== null && (!s.weeks || typeof s.weeks !== 'object' || Array.isArray(s.weeks)))) fail('Invalid study settings');
+  for (const [week, assignments] of Object.entries(s.weeks || {})) {
     if (!/^-?\d+$/.test(week) || !Array.isArray(assignments) || assignments.length > 40) fail('Invalid weekly schedule');
     if (assignments.length && !assignments.some(a => isLevel(a) || isSelection(a))) fail('Each populated week needs a playable level');
     for (const a of assignments) {
@@ -144,7 +144,8 @@ exports.getStudySettings = onCall(options, async req => {
   if (!idValid(studyId)) fail('Invalid study ID'); requireResearcher(account, studyId);
   const [s, i] = await Promise.all([db.ref(`studies/${studyId}/settings`).get(), db.ref(`studyIndex/${studyId}`).get()]);
   if (!s.exists()) fail('Study not found', 'not-found');
-  return { settings: s.val(), databaseURL: account.role === 'admin' ? i.val()?.databaseURL : undefined };
+  return { settings: { ...s.val(), weeks: s.val().weeks || { '1': [] } },
+    databaseURL: account.role === 'admin' ? i.val()?.databaseURL : undefined };
 });
 exports.saveStudy = onCall(options, async req => {
   const account = await profile(req); requireAdmin(account);
@@ -217,7 +218,12 @@ exports.provisionAccount = onCall(options, async req => {
   }
   if (customConfig !== undefined && (!configValid(customConfig) || role !== 'participant')) fail('Invalid custom gameplay settings');
   const name = normalizeUsername(username);
-  const user = await auth.createUser({ email: emailForUsername(name), password: firebasePassword(password), displayName: name, disabled: false });
+  let user;
+  try { user = await auth.createUser({ email: emailForUsername(name), password: firebasePassword(password), displayName: name, disabled: false }); }
+  catch (error) {
+    if (error?.code === 'auth/email-already-exists') fail('Username already exists. Choose a different participant or moderator username.', 'already-exists');
+    throw error;
+  }
   const account = { uid: user.uid, username: name, role, studyId, participantId: role === 'participant' ? name : '', group, startDate, ...(customConfig ? { customConfig } : {}), active: true };
   try { await db.ref().update({ [`accounts/${user.uid}`]: account, [`studyMembers/${studyId}/${user.uid}`]: true }); }
   catch (error) { await auth.deleteUser(user.uid); throw error; }
@@ -338,6 +344,36 @@ exports.getLevel = onCall(options, async req => {
   if (!level) fail('Level not found', 'not-found');
   return { level };
 });
+/** Removing shared content must never silently break an existing study. */
+exports.removeLevel = onCall(options, async req => {
+  const account = await profile(req); requireAdmin(account);
+  const { id } = req.data || {};
+  if (!idValid(id)) fail('Invalid level ID');
+  const level = (await db.ref(`levelLibrary/${id}`).get()).val();
+  if (!level) fail('Level not found', 'not-found');
+  const all = (await db.ref('studies').get()).val() || {};
+  for (const study of Object.values(all)) {
+    const weeks = study?.settings?.weeks || {};
+    for (const steps of Object.values(weeks)) {
+      if (!Array.isArray(steps)) continue;
+      if (steps.some(step => (isLevel(step) && step.levelId === `library:${id}`) ||
+        (isSelection(step) && step.choices?.some(choice => choice.levelId === `library:${id}`)))) {
+        fail('Level is used by a study. Remove its assignments before deleting it.', 'failed-precondition');
+      }
+    }
+  }
+  // Also safeguard participant-specific study timelines.
+  const accounts = (await db.ref('accounts').get()).val() || {};
+  for (const member of Object.values(accounts)) {
+    if (!member?.weeksOverride) continue;
+    if (Object.values(member.weeksOverride).some(steps => Array.isArray(steps) && steps.some(step =>
+      (isLevel(step) && step.levelId === `library:${id}`) ||
+      (isSelection(step) && step.choices?.some(choice => choice.levelId === `library:${id}`)))))
+      fail('Level is used by a participant-specific timeline.', 'failed-precondition');
+  }
+  await db.ref().update({ [`levelLibrary/${id}`]: null, [`levelIndex/${id}`]: null });
+  return { ok: true };
+});
 exports.getParticipantBundle = onCall(options, async req => {
   const account = await profile(req);
   if (account.role !== 'participant') fail('Participant login required', 'permission-denied');
@@ -350,7 +386,7 @@ exports.getParticipantBundle = onCall(options, async req => {
   }
   const saved = (await db.ref(`progress/${account.studyId}/${account.uid}`).get()).val() || {};
   const progress = { completed: saved.completed || {}, sessions: saved.sessions || {}, activeSession: saved.activeSession || {}, choices: saved.choices || {} };
-  return { account, settings: account.weeksOverride ? { ...settings, weeks: account.weeksOverride } : settings, progress };
+  return { account, settings: { ...settings, weeks: account.weeksOverride || settings.weeks || { '1': [] } }, progress };
 });
 /** Advance a non-gameplay slide, with the same server-enforced weekly limits as a level result. */
 exports.advanceStudyStep = onCall(options, async req => {
@@ -361,7 +397,7 @@ exports.advanceStudyStep = onCall(options, async req => {
       !['start', 'break', 'end', 'selection'].includes(stepType)) fail('Invalid study step');
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings || !settings.enabled) fail('Study disabled', 'failed-precondition');
-  const weeks = account.weeksOverride || settings.weeks;
+  const weeks = account.weeksOverride || settings.weeks || { '1': [] };
   const ref = db.ref(`progress/${account.studyId}/${account.uid}`);
   const transaction = await ref.transaction(value => {
     const progress = { completed: value?.completed || {}, sessions: value?.sessions || {}, activeSession: value?.activeSession || {}, choices: value?.choices || {}, pendingResults: value?.pendingResults || {} };
@@ -394,6 +430,45 @@ exports.advanceStudyStep = onCall(options, async req => {
   return { ok: true, progress: { completed: saved.completed || {}, sessions: saved.sessions || {},
     activeSession: saved.activeSession || {}, choices: saved.choices || {} } };
 });
+/** Read-only authorization before playing an assigned level. Detects stale tabs,
+ * changed study schedules, or a mismatched participant progress record before
+ * collecting a play that the backend would later reject. */
+exports.preparePlay = onCall(options, async req => {
+  const account = await profile(req);
+  if (account.role !== 'participant') fail('Participant permission required', 'permission-denied');
+  const { week, sessionId, index, levelId, choiceIndex, selectionPlay } = req.data || {};
+  if (!Number.isInteger(week) || !Number.isInteger(index) || !idValid(sessionId) ||
+      typeof levelId !== 'string' || levelId.length > 120) fail('Invalid play request');
+  const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
+  if (!settings?.enabled) fail('Study is not enabled', 'failed-precondition');
+  const weeks = account.weeksOverride || settings.weeks || { '1': [] };
+  const saved = (await db.ref(`progress/${account.studyId}/${account.uid}`).get()).val() || {};
+  const progress = { completed: saved.completed || {}, sessions: saved.sessions || {},
+    activeSession: saved.activeSession || {}, choices: saved.choices || {} };
+  const timing = studyTiming(settings, account, weeks, progress);
+  const expectedWeek = timing.week;
+  const steps = weeks[String(expectedWeek)] || [];
+  const sid = progress.activeSession[String(expectedWeek)] ||
+    `${expectedWeek}-${(progress.sessions[String(expectedWeek)] || 0) + 1}`;
+  const done = progress.completed[String(expectedWeek)] || [];
+  const expectedIndex = steps.findIndex((_, i) => !done.includes(`${sid}:${i}`));
+  const step = steps[expectedIndex];
+  const samePosition = !timing.beforeStart && !timing.afterEnd &&
+    (progress.sessions[String(expectedWeek)] || 0) < timing.cap &&
+    week === expectedWeek && sessionId === sid && index === expectedIndex;
+  const matchedLevel = isLevel(step) && !isSelection(step) && step.levelId === levelId && choiceIndex === undefined;
+  const counts = step && isSelection(step) ? (progress.choices[choiceKey(week, sid, index)] || {}) : {};
+  const count = Object.values(counts).reduce((sum, n) => sum + Number(n), 0);
+  const matchedChoice = isSelection(step) && Number.isInteger(choiceIndex) &&
+    Number.isInteger(selectionPlay) && selectionPlay === count &&
+    (step.playthroughs === 0 || count < step.playthroughs) &&
+    unlockedChoice(step, choiceIndex, week, counts) &&
+    step.choices[choiceIndex].levelId === levelId;
+  if (!samePosition || (!matchedLevel && !matchedChoice)) {
+    fail('Your study progress or assignment has changed. Return to the study screen to resume.', 'failed-precondition');
+  }
+  return { ok: true, progress };
+});
 /** Save an accepted result in the SAME Realtime Database transaction as progress.
  * Its pendingResults record acts as a durable outbox if delivery to a linked
  * study database fails, so retries cannot lose completed research data.
@@ -409,7 +484,7 @@ exports.submitResult = onCall(options, async req => {
       !data.sessionId.startsWith(`${data.week}-`)) fail('Invalid study result');
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings || !settings.enabled) fail('Study disabled', 'failed-precondition');
-  const weeks = account.weeksOverride || settings.weeks;
+  const weeks = account.weeksOverride || settings.weeks || { '1': [] };
   const sourceSteps = weeks[String(data.week)] || [];
   const sourceStep = sourceSteps[data.assignmentIndex];
   const selection = isSelection(sourceStep);
@@ -471,7 +546,7 @@ exports.submitResult = onCall(options, async req => {
     if (!current.pendingResults?.[key]) {
       const timing = studyTiming(settings, account, weeks, current);
       const sid = current.activeSession?.[String(timing.week)] || `${timing.week}-${(current.sessions?.[String(timing.week)] || 0) + 1}`;
-      fail(`Study progress has changed (expected week ${timing.week}, session ${sid}). Return to the study screen and resume before playing another level.`, 'failed-precondition');
+      fail(`Study progress is out of date (server: week ${timing.week}, session ${sid}). Return to the study screen to refresh. Your completed play has not been counted; contact a researcher if this continues.`, 'failed-precondition');
     }
   }
   const latest = transaction.committed ? transaction.snapshot.val() : (await stateRef.get()).val();
