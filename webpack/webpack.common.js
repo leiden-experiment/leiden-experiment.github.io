@@ -16,6 +16,16 @@ module.exports = {
   resolve: {
     extensions: ['.ts', '.tsx', '.js'],
   },
+  // MediaPipe's prebuilt Emscripten bundle contains a runtime-dependent
+  // require() used outside its normal browser path. Webpack cannot statically
+  // resolve it, but this specific diagnostic does not prevent hand tracking.
+  // Do not hide warnings from any other package or module.
+  ignoreWarnings: [
+    {
+      module: /[\\/]@mediapipe[\\/]tasks-vision[\\/]vision_bundle\.mjs$/,
+      message: /Critical dependency: the request of a dependency is an expression/,
+    },
+  ],
   module: {
     rules: [
       {

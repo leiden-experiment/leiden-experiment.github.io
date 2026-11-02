@@ -208,6 +208,7 @@ For the technical maintainer; **not necessary** for local browser testing.
 | Problem | What to check |
 | --- | --- |
 | `git`, `node` or `npm` is not recognized | Install Git/Node.js from Step 1, then restart the terminal. |
+| `npm start` reports TypeScript TS2345, TS1323, TS2540, or TS2367, or a MediaPipe `vision_bundle.mjs` critical dependency warning | Make sure you are using **Pizzicato v1.3.2 or newer** (the corrected source files). Stop the server with **Ctrl+C**; run `npm install`, then `npm start` again. Earlier repository ZIPs have these build issues. |
 | Website starts as a guest instead of asking for login | Run `npm run check:web`. If it says `guest`, rerun `npm run setup:web` with Firebase (`y`) and **restart** `npm start`. |
 | Firebase login fails | Check administrator username/password, enabled **Email/Password** provider, central project ID, and (if relevant) authorized domain. All roles log in using their chosen username, not an email address. |
 | You can sign in, but the dashboard says `functions/not-found` or permissions error | Check `firebase deploy --only functions,database --project YOUR-PROJECT-ID`, that web setup uses the **same** central project, and that the administrator account was created there. |

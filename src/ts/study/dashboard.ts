@@ -1,4 +1,4 @@
-import { studyApi } from './firebaseClient';
+import { studyApi, callBackend } from './firebaseClient';
 import { Account, StudySettings, StudySummary, defaultStudySettings, validateSettings, isLevelStep } from './types';
 import { createFlowBoard } from './flowBoard';
 import { LevelConverter } from '../util/levelConverter';
@@ -8,6 +8,10 @@ import { resultsCSV } from './results';
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, text?: string): HTMLElementTagNameMap[K] {
   const item = document.createElement(tag); if (text) item.textContent = text; parent.appendChild(item); return item;
 }
+// Return the actual element type: HTMLTextAreaElement.type is readonly, while
+// HTMLInputElement.type is writable (e.g. for password inputs).
+function field(parent: HTMLElement, title: string, value?: string, kind?: 'input'): HTMLInputElement;
+function field(parent: HTMLElement, title: string, value: string, kind: 'textarea'): HTMLTextAreaElement;
 function field(parent: HTMLElement, title: string, value = '', kind: 'input' | 'textarea' = 'input') {
   const row = node('label', parent); row.className = 'study-field';
   node('span', row, title);
@@ -60,7 +64,6 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     if (user.role === 'admin') action(output, 'Shared level library', () => showLibrary());
   };
   async function studyApiCallSettings(studyId: string) {
-    const { callBackend } = await import('./firebaseClient');
     return callBackend<{ settings: StudySettings; databaseURL?: string }>('getStudySettings', { studyId });
   }
   function editStudy(id: string, data: StudySettings, databaseURL = '') {

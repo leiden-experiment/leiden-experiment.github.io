@@ -1,4 +1,4 @@
-import { StudySession, Progress, Assignment, ResultEnvelope, emptyProgress, getNextAssignment, markAssignmentComplete, ScreenStep } from './types';
+import { StudySession, Progress, Assignment, ResultEnvelope, emptyProgress, getNextAssignment, markAssignmentComplete, ScreenStep, isLevelStep } from './types';
 import { loadLocalProgress, saveLocalResult, saveLocalProgress } from './offline';
 import { studyApi } from './firebaseClient';
 
@@ -44,7 +44,7 @@ export async function advanceScreenStep(step: ScreenStep) {
   const plan = getStudyPlan();
   if (!session || !plan || plan.index < 0 || plan.capped) throw new Error('No screen is currently available');
   const current = plan.assignments[plan.index];
-  if (!current || current.type !== step.type || current.type === 'level') throw new Error('Study step changed. Reload your session.');
+  if (!current || isLevelStep(current) || current.type !== step.type) throw new Error('Study step changed. Reload your session.');
   const updated = markAssignmentComplete(progress, plan.week, plan.sessionId, plan.index, plan.assignments.length);
   if (session.mode === 'offline') saveLocalProgress(session.account.studyId!, session.account.participantId!, updated);
   else await studyApi.advanceStep(plan.week, plan.sessionId, plan.index, step.type);
