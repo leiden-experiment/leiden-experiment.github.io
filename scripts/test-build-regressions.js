@@ -49,7 +49,16 @@ const mockModules = new Map([
   [path.join(studyDir, 'results.ts'), 'export function resultsCSV(...args: any[]): string { return ""; }'],
   [path.join(root, 'src/ts/util/levelConverter.ts'), 'export const LevelConverter: any = {};'],
 ]);
+// Type-check the actual Firebase-rehydration loop from StudySessionScene. This
+// catches accidental access to PlayableTrackLayerData-only properties on the
+// broader TrackLayerData interface, which a syntax-only test cannot detect.
+const scene = source(path.join(root, 'src/ts/scenes/studySessionScene.ts'));
+const layerRestoration = scene.match(/restored\.layers\.forEach\(layer => \{[\s\S]*?\n        \}\);/);
+assert(layerRestoration, 'StudySessionScene must restore RTDB-stripped arrays');
 const extra = `
+  import { TrackData, PlayableTrackLayerData } from '../level/trackTypes';
+  declare const restored: TrackData;
+  ${layerRestoration[0]}
   declare function testTween(): { getValue(): number | null };
   const index: number = ${match[0].replace('tween', 'testTween()')};
 `;
@@ -79,4 +88,4 @@ assert.equal(diagnostics.length, 0,
   ts.formatDiagnosticsWithColorAndContext(diagnostics, {
     getCanonicalFileName: x => x, getCurrentDirectory: () => root, getNewLine: () => '\n',
   }));
-console.log('PASS: dashboard, flow board, gameplay fields and runtime TS type-check under ES2015; nullable tween value; MediaPipe warning filter limited to its own bundle');
+console.log('PASS: dashboard, study session layer restoration, flow board, gameplay fields and runtime TS type-check under ES2015; nullable tween value; MediaPipe warning filter limited to its own bundle');

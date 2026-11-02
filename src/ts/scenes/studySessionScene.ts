@@ -8,7 +8,7 @@ import { defaultConfig, updateConfig } from '../managers/storageManager';
 import { getStudyPlan, getStudyProgress, getStudySession, setPendingAssignment, syncStudyProgress, publishedLevels, advanceScreenStep, hasJustFinishedSession, wasLastStudyResultQueued } from '../study/runtime';
 import { studyApi } from '../study/firebaseClient';
 import { downloadResults } from '../study/offline';
-import { TrackData } from '../level/trackTypes';
+import { TrackData, PlayableTrackLayerData } from '../level/trackTypes';
 import { isLevelStep, isSelectionStep, isChoiceUnlocked, selectionKey, Assignment } from '../study/types';
 
 export default class StudySessionScene extends HandScene {
@@ -110,7 +110,10 @@ export default class StudySessionScene extends HandScene {
         const restored = JSON.parse(JSON.stringify(track)) as TrackData;
         restored.layers.forEach(layer => {
           if (!layer.soundLoopKeys && layer.playable) layer.soundLoopKeys = [];
-          if (layer.playable && !layer.backgroundLayers) layer.backgroundLayers = [];
+          if (layer.playable) {
+            const playableLayer = layer as PlayableTrackLayerData;
+            if (!playableLayer.backgroundLayers) playableLayer.backgroundLayers = [];
+          }
         });
         this.cache.json.add(key, restored);
         level = new Level(this, key);
