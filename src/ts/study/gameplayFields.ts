@@ -2,8 +2,8 @@
 export type GameplayValue = boolean | number;
 export interface GameplayOption { key: string; label: string; defaultValue: GameplayValue; help: string; min?: number; max?: number; step?: number }
 export const gameplayOptions: GameplayOption[] = [
-  { key: 'targetSize', label: 'Target size', defaultValue: 1, help: 'Scale of the targets.', min: 0.1, max: 10, step: .1 },
-  { key: 'fingerSize', label: 'Finger size', defaultValue: 1, help: 'Scale of the on-screen fingers.', min: 0.1, max: 10, step: .1 },
+  { key: 'targetSize', label: 'Target size', defaultValue: 1, help: 'Scale of the targets.', min: 0.1, max: 5, step: .1 },
+  { key: 'fingerSize', label: 'Finger size', defaultValue: 1, help: 'Scale of the on-screen fingers.', min: 0.1, max: 5, step: .1 },
   { key: 'showSkipButton', label: 'Show skip button', defaultValue: false, help: 'Let participants skip layers.' },
   { key: 'skipButtonAppearsAfterLoop', label: 'Show skip after loop', defaultValue: 1, help: 'When the skip button becomes available.', min: 0, max: 100, step: 1 },
   { key: 'skipLayersAutomatically', label: 'Automatically advance layers', defaultValue: false, help: 'Advance layers without pressing Skip.' },

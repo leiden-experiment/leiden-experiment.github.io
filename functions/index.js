@@ -11,8 +11,35 @@ const options = { region: 'europe-west1', maxInstances: 20 };
 const fail = (message, code = 'invalid-argument') => { throw new HttpsError(code, message); };
 const idValid = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(value);
 const { normalizeUsername, emailForUsername } = require('./username');
+const { firebasePassword } = require('./password');
 const usernameValid = value => { try { normalizeUsername(value); return true; } catch { return false; } };
 const isLevel = step => step && (!step.type || step.type === 'level');
+const isSelection = step => step && step.type === 'selection';
+const choiceKey = (week, sid, index) => `${week}_${sid}_${index}`;
+const unlockedChoice = (step, index, week, counts) => index >= 0 && index < step.choices.length &&
+  (step.unlock === 'all' || (step.unlock === 'weekly' && index + 1 <= Math.max(1, week)) ||
+    (step.unlock === 'sequential' && (index === 0 || (counts[String(index - 1)] || 0) > 0)));
+const validAssignment = a => a && typeof a.levelId === 'string' && /^(legacy|library|uploaded):[\w .-]{1,100}$/.test(a.levelId) &&
+  Number.isInteger(a.bpmIndex) && a.bpmIndex >= 0 && a.bpmIndex <= 8 &&
+  Number.isInteger(a.loops) && a.loops >= 1 && a.loops <= 100;
+// Mirror the public controls in src/ts/study/gameplayFields.ts. Validate API calls as well as the UI.
+const numericLimits = {
+  targetSize: [0.1, 5], fingerSize: [0.1, 5], skipButtonAppearsAfterLoop: [0, 100],
+  skipLayersAutomaticallyAfterLoop: [1, 100], pinchVolume: [0, 1], backgroundMusicVolume: [0, 1],
+  onTimeDuration: [0, 5000], lateTimeDuration: [0, 5000], cameraOpacity: [0, 1]
+};
+const boolConfigFields = new Set([
+  'showSkipButton', 'skipLayersAutomatically', 'ignoreMultifingerPinches', 'mousePinchesEnabled',
+  'uiPinchesEnabled', 'sonificationEnabled', 'synchronizationEnabled', 'playableBackingTracksEnabled',
+  'unplayableBackingTracksEnabled', 'disableLayerProgression', 'indexFingerOnly', 'enableCameraVisibility',
+  'postProcessingDisabled', 'displayVisualMetronome', 'autoSaveCSV'
+]);
+const configValid = config => config && typeof config === 'object' && !Array.isArray(config) &&
+  JSON.stringify(config).length <= 12000 && Object.entries(config).every(([key, value]) =>
+    boolConfigFields.has(key) ? typeof value === 'boolean' :
+    Object.prototype.hasOwnProperty.call(numericLimits, key) && typeof value === 'number' &&
+      Number.isFinite(value) && value >= numericLimits[key][0] && value <= numericLimits[key][1] &&
+      (!['skipButtonAppearsAfterLoop', 'skipLayersAutomaticallyAfterLoop'].includes(key) || Number.isInteger(value)));
 async function profile(req) {
   if (!req.auth) fail('Login required', 'unauthenticated');
   // Check disabled users and revoked sessions on every privileged call, not just at sign-in.
@@ -45,20 +72,25 @@ function validateSettings(s) {
       !s.weeks || typeof s.weeks !== 'object' || Array.isArray(s.weeks)) fail('Invalid study settings');
   for (const [week, assignments] of Object.entries(s.weeks)) {
     if (!/^-?\d+$/.test(week) || !Array.isArray(assignments) || assignments.length > 40) fail('Invalid weekly schedule');
-    if (assignments.length && !assignments.some(a => a && (!a.type || a.type === 'level'))) fail('Each populated week needs a playable level');
+    if (assignments.length && !assignments.some(a => isLevel(a) || isSelection(a))) fail('Each populated week needs a playable level');
     for (const a of assignments) {
       if (!a || typeof a !== 'object') fail('Invalid study block');
+      if (a.configOverride !== undefined && !configValid(a.configOverride)) fail('Invalid level gameplay override');
       if (['start', 'break', 'end'].includes(a.type)) {
         if (typeof a.text !== 'string' || a.text.length > 2000) fail('Screen text must be under 2,000 characters');
-      } else if ((!a.type || a.type === 'level') && typeof a.levelId === 'string' && /^(legacy|library|uploaded):[\w .-]{1,100}$/.test(a.levelId) &&
-          Number.isInteger(a.bpmIndex) && a.bpmIndex >= 0 && a.bpmIndex <= 8 &&
-          Number.isInteger(a.loops) && a.loops >= 1 && a.loops <= 100) {
+      } else if (isSelection(a) && typeof a.text === 'string' && a.text.length <= 2000 &&
+        ['all','sequential','weekly'].includes(a.unlock) && Number.isInteger(a.playthroughs) &&
+        a.playthroughs >= 0 && a.playthroughs <= 100 && Array.isArray(a.choices) &&
+        a.choices.length >= 1 && a.choices.length <= 9 && a.choices.every(choice => validAssignment(choice) && (choice.configOverride === undefined || configValid(choice.configOverride)))) {
+        // Levels are picked by the participant; the backend validates unlock and quota per result.
+      } else if (validAssignment(a) && (!a.type || a.type === 'level')) {
         // Existing formats without an explicit type remain valid.
       } else fail('Invalid level assignment');
     }
   }
+  if (s.defaultConfig !== undefined && !configValid(s.defaultConfig)) fail('Invalid default gameplay settings');
   if (s.groupConfigs && (typeof s.groupConfigs !== 'object' || Array.isArray(s.groupConfigs) ||
-      Object.values(s.groupConfigs).some(g => !g || typeof g !== 'object' || Array.isArray(g)))) fail('Invalid group configurations');
+      Object.values(s.groupConfigs).some(g => !configValid(g)))) fail('Invalid group configurations');
   if (JSON.stringify(s).length > 200000) fail('Study settings exceed maximum size');
 }
 function checkedDbUrl(url) {
@@ -146,9 +178,9 @@ exports.listParticipants = onCall(options, async req => {
 });
 exports.provisionAccount = onCall(options, async req => {
   const operator = await profile(req); requireAdmin(operator);
-  const { studyId, username, password, role, group = '', startDate = '' } = req.data || {};
+  const { studyId, username, password, role, group = '', startDate = '', customConfig } = req.data || {};
   if (!idValid(studyId) || !usernameValid(username) || !['participant', 'moderator'].includes(role) ||
-      typeof password !== 'string' || password.length < 12 || password.length > 128) fail('Invalid participant or moderator fields');
+      typeof password !== 'string' || password.length < 1 || password.length > 128) fail('Invalid participant or moderator fields');
   if (startDate && (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || Number.isNaN(Date.parse(startDate)))) fail('Invalid participant start date');
   if (typeof group !== 'string' || group.length > 100) fail('Invalid group');
   const settings = (await db.ref(`studies/${studyId}/settings`).get()).val();
@@ -157,9 +189,10 @@ exports.provisionAccount = onCall(options, async req => {
     if (group && !Object.prototype.hasOwnProperty.call(settings.groupConfigs || {}, group)) fail('Unknown study group');
     if (settings.durationWeeks && settings.participantStartMode !== 'first-login' && !startDate) fail('Participant start date required');
   }
+  if (customConfig !== undefined && (!configValid(customConfig) || role !== 'participant')) fail('Invalid custom gameplay settings');
   const name = normalizeUsername(username);
-  const user = await auth.createUser({ email: emailForUsername(name), password, displayName: name, disabled: false });
-  const account = { uid: user.uid, username: name, role, studyId, participantId: role === 'participant' ? name : '', group, startDate, active: true };
+  const user = await auth.createUser({ email: emailForUsername(name), password: firebasePassword(password), displayName: name, disabled: false });
+  const account = { uid: user.uid, username: name, role, studyId, participantId: role === 'participant' ? name : '', group, startDate, ...(customConfig ? { customConfig } : {}), active: true };
   try { await db.ref().update({ [`accounts/${user.uid}`]: account, [`studyMembers/${studyId}/${user.uid}`]: true }); }
   catch (error) { await auth.deleteUser(user.uid); throw error; }
   return { uid: user.uid };
@@ -188,10 +221,10 @@ exports.removeAccount = onCall(options, async req => {
 exports.resetModeratorPassword = onCall(options, async req => {
   const operator = await profile(req); requireAdmin(operator);
   const { uid, password } = req.data || {};
-  if (!idValid(uid) || typeof password !== 'string' || password.length < 12 || password.length > 128) fail('Use a password of 12–128 characters');
+  if (!idValid(uid) || typeof password !== 'string' || password.length < 1 || password.length > 128) fail('Use a password of 1–128 characters');
   const account = (await db.ref(`accounts/${uid}`).get()).val();
   if (!account || account.role !== 'moderator') fail('Only moderator passwords can be reset here');
-  await auth.updateUser(uid, { password });
+  await auth.updateUser(uid, { password: firebasePassword(password) });
   await auth.revokeRefreshTokens(uid);
   return { ok: true };
 });
@@ -210,8 +243,8 @@ exports.updateAccountCredentials = onCall(options, async req => {
     if (name !== target.username) { change.email = emailForUsername(name); change.displayName = name; }
   }
   if (password !== undefined) {
-    if (typeof password !== 'string' || password.length < 12 || password.length > 128) fail('Use a password of 12–128 characters');
-    change.password = password;
+    if (typeof password !== 'string' || password.length < 1 || password.length > 128) fail('Use a password of 1–128 characters');
+    change.password = firebasePassword(password);
   }
   if (!Object.keys(change).length) return { ok: true };
   await auth.updateUser(uid, change); // Firebase Auth enforces global username uniqueness.
@@ -233,6 +266,10 @@ exports.setParticipant = onCall(options, async req => {
   if (Object.prototype.hasOwnProperty.call(changes, 'startDate')) {
     if (changes.startDate && (!/^\d{4}-\d{2}-\d{2}$/.test(changes.startDate) || Number.isNaN(Date.parse(changes.startDate)))) fail('Invalid start date');
     permitted.startDate = changes.startDate || '';
+  }
+  if (Object.prototype.hasOwnProperty.call(changes, 'customConfig')) {
+    if (changes.customConfig !== null && !configValid(changes.customConfig)) fail('Invalid custom gameplay settings');
+    permitted.customConfig = changes.customConfig;
   }
   if (Object.prototype.hasOwnProperty.call(changes, 'weeksOverride')) {
     if (changes.weeksOverride == null) permitted.weeksOverride = null;
@@ -267,7 +304,8 @@ exports.getLevel = onCall(options, async req => {
   if (operator.role === 'participant') {
     const settings = (await db.ref(`studies/${operator.studyId}/settings`).get()).val();
     const weeks = operator.weeksOverride || settings?.weeks || {};
-    if (!settings || !Object.values(weeks).some(arr => Array.isArray(arr) && arr.some(a => isLevel(a) && a.levelId === `library:${id}`)))
+    if (!settings || !Object.values(weeks).some(arr => Array.isArray(arr) && arr.some(a => (isLevel(a) && a.levelId === `library:${id}`) ||
+      (isSelection(a) && a.choices.some(choice => choice.levelId === `library:${id}`)))))
       fail('Level is not assigned to participant study', 'permission-denied');
   }
   const level = (await db.ref(`levelLibrary/${id}`).get()).val();
@@ -285,7 +323,7 @@ exports.getParticipantBundle = onCall(options, async req => {
     account.startDate = started.snapshot.val();
   }
   const saved = (await db.ref(`progress/${account.studyId}/${account.uid}`).get()).val() || {};
-  const progress = { completed: saved.completed || {}, sessions: saved.sessions || {}, activeSession: saved.activeSession || {} };
+  const progress = { completed: saved.completed || {}, sessions: saved.sessions || {}, activeSession: saved.activeSession || {}, choices: saved.choices || {} };
   return { account, settings: account.weeksOverride ? { ...settings, weeks: account.weeksOverride } : settings, progress };
 });
 /** Advance a non-gameplay slide, with the same server-enforced weekly limits as a level result. */
@@ -294,13 +332,13 @@ exports.advanceStudyStep = onCall(options, async req => {
   if (account.role !== 'participant') fail('Participant permission required', 'permission-denied');
   const { week, sessionId, index, stepType } = req.data || {};
   if (!Number.isInteger(week) || !Number.isInteger(index) || typeof sessionId !== 'string' ||
-      !['start', 'break', 'end'].includes(stepType)) fail('Invalid study step');
+      !['start', 'break', 'end', 'selection'].includes(stepType)) fail('Invalid study step');
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings || !settings.enabled) fail('Study disabled', 'failed-precondition');
   const weeks = account.weeksOverride || settings.weeks;
   const ref = db.ref(`progress/${account.studyId}/${account.uid}`);
   const transaction = await ref.transaction(value => {
-    const progress = { completed: value?.completed || {}, sessions: value?.sessions || {}, activeSession: value?.activeSession || {} };
+    const progress = { completed: value?.completed || {}, sessions: value?.sessions || {}, activeSession: value?.activeSession || {}, choices: value?.choices || {} };
     const timing = studyTiming(settings, account, weeks, progress);
     if (week !== timing.week || (timing.beforeStart && week !== 0) || timing.afterEnd) return;
     const assignments = weeks[String(week)] || [];
@@ -311,7 +349,12 @@ exports.advanceStudyStep = onCall(options, async req => {
     const ix = assignments.findIndex((_, i) => !done.includes(`${sid}:${i}`));
     const step = assignments[ix];
     if (sessionId !== sid || index !== ix || !step || step.type !== stepType) return;
-    const copy = { completed: { ...progress.completed }, sessions: { ...progress.sessions }, activeSession: { ...progress.activeSession } };
+    if (stepType === 'selection') {
+      // Unlimited choice screens may be finished after at least one completed play.
+      const counts = progress.choices[choiceKey(week, sid, ix)] || {};
+      if (step.playthroughs !== 0 || !Object.values(counts).some(n => n > 0)) return;
+    }
+    const copy = { completed: { ...progress.completed }, sessions: { ...progress.sessions }, activeSession: { ...progress.activeSession }, choices: { ...progress.choices } };
     const entries = [...done, `${sid}:${ix}`];
     copy.completed[String(week)] = entries;
     if (assignments.every((_, i) => entries.includes(`${sid}:${i}`))) {
@@ -328,58 +371,62 @@ exports.submitResult = onCall(options, async req => {
   if (account.role !== 'participant') fail('Participant permission required', 'permission-denied');
   const { data } = req.data || {};
   if (!data || JSON.stringify(data).length > 800000 || data.schemaVersion !== 1 || data.studyId !== account.studyId ||
-      data.participantId !== account.participantId || data.group !== (account.group || '') || !/^\-?\d+-\d+$/.test(data.sessionId) ||
+      data.participantId !== account.participantId || data.group !== (account.group || '') || !/^-?\d+-\d+$/.test(data.sessionId) ||
       !Number.isInteger(data.week) || !Number.isInteger(data.assignmentIndex)) fail('Invalid result');
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings || !settings.enabled) fail('Study disabled', 'failed-precondition');
-  const assignedWeeks = account.weeksOverride || settings.weeks;
-  const savedProgress = (await db.ref(`progress/${account.studyId}/${account.uid}`).get()).val() || {};
-  const current = { completed: savedProgress.completed || {}, sessions: savedProgress.sessions || {}, activeSession: savedProgress.activeSession || {} };
-  const timing = studyTiming(settings, account, assignedWeeks, current);
-  const { week } = timing;
-  const assignments = assignedWeeks[String(week)] || [];
-  if ((current.completed[String(data.week)] || []).includes(`${data.sessionId}:${data.assignmentIndex}`)) return { ok: true, duplicate: true };
-  const count = current.sessions[String(week)] || 0;
-  const maxSessions = timing.cap;
-  const expectedSessionId = current.activeSession[String(week)] || `${week}-${count + 1}`;
-  const expectedIndex = assignments.findIndex((a, i) => !(current.completed[String(week)] || []).includes(`${expectedSessionId}:${i}`));
-  if ((timing.beforeStart && week !== 0) || timing.afterEnd || count >= maxSessions || expectedIndex < 0 || data.week !== week || data.sessionId !== expectedSessionId ||
-      data.assignmentIndex !== expectedIndex || !isLevel(assignments[expectedIndex]) || data.levelId !== assignments[expectedIndex].levelId)
-    fail('Result is outside the assigned study schedule', 'failed-precondition');
-  const key = `${expectedSessionId}:${expectedIndex}`;
-  const progress = JSON.parse(JSON.stringify(current));
-  if (!progress.completed[String(week)]) progress.completed[String(week)] = [];
-  progress.completed[String(week)].push(key);
-  if (progress.completed[String(week)].filter(k => k.startsWith(expectedSessionId + ':')).length === assignments.length) {
-    progress.sessions[String(week)] = count + 1;
-    delete progress.activeSession[String(week)];
-  } else progress.activeSession[String(week)] = expectedSessionId;
-  const safeRecord = { ...data, completedAt: new Date().toISOString() };
-  const indexPath = `progress/${account.studyId}/${account.uid}`;
-  const resultPath = `results/${account.studyId}/${account.uid}/${expectedSessionId}_${expectedIndex}`;
-  // Use a lock to prevent double submissions / concurrent sessions sharing one progression state.
-  // The transaction runs on the progress node, preventing clients from writing it directly.
-  const stateRef = db.ref(indexPath);
+  const weeks = account.weeksOverride || settings.weeks;
+  const stateRef = db.ref(`progress/${account.studyId}/${account.uid}`);
   const transaction = await stateRef.transaction(value => {
-    const actual = { completed: value?.completed || {}, sessions: value?.sessions || {}, activeSession: value?.activeSession || {} };
-    const n = actual.sessions?.[String(week)] || 0;
-    const sid = actual.activeSession?.[String(week)] || `${week}-${n + 1}`;
-    const done = actual.completed?.[String(week)] || [];
-    const ix = assignments.findIndex((a, i) => !done.includes(`${sid}:${i}`));
-    if (sid !== expectedSessionId || ix !== expectedIndex || n >= maxSessions) return;
+    const progress = { completed: { ...(value?.completed || {}) }, sessions: { ...(value?.sessions || {}) },
+      activeSession: { ...(value?.activeSession || {}) }, choices: { ...(value?.choices || {}) } };
+    const timing = studyTiming(settings, account, weeks, progress);
+    const week = timing.week;
+    const steps = weeks[String(week)] || [];
+    const sessionsDone = progress.sessions[String(week)] || 0;
+    const sessionId = progress.activeSession[String(week)] || `${week}-${sessionsDone + 1}`;
+    const done = [...(progress.completed[String(week)] || [])];
+    const index = steps.findIndex((_, i) => !done.includes(`${sessionId}:${i}`));
+    if (timing.beforeStart && week !== 0 || timing.afterEnd || sessionsDone >= timing.cap ||
+        week !== data.week || sessionId !== data.sessionId || index !== data.assignmentIndex || index < 0) return;
+    const step = steps[index];
+    const selection = isSelection(step);
+    const key = choiceKey(week, sessionId, index);
+    const counts = { ...(progress.choices[key] || {}) };
+    const count = Object.values(counts).reduce((n, x) => n + x, 0);
+    const choice = data.choiceIndex;
+    if (selection) {
+      if (!Number.isInteger(choice) || !Number.isInteger(data.selectionPlay) || data.selectionPlay !== count ||
+          (step.playthroughs > 0 && count >= step.playthroughs) ||
+          !unlockedChoice(step, choice, week, counts) || data.levelId !== step.choices[choice].levelId) return;
+      counts[String(choice)] = (counts[String(choice)] || 0) + 1;
+      progress.choices[key] = counts;
+      if (step.playthroughs > 0 && count + 1 >= step.playthroughs) done.push(`${sessionId}:${index}`);
+    } else if (!isLevel(step) || data.choiceIndex !== undefined || data.levelId !== step.levelId) return;
+    else done.push(`${sessionId}:${index}`);
+    progress.completed[String(week)] = done;
+    if (steps.every((_, i) => done.includes(`${sessionId}:${i}`))) {
+      progress.sessions[String(week)] = sessionsDone + 1;
+      delete progress.activeSession[String(week)];
+    } else progress.activeSession[String(week)] = sessionId;
     return progress;
   });
+  const key = `${data.sessionId}_${data.assignmentIndex}_${Number.isInteger(data.selectionPlay) ? data.selectionPlay : 0}`;
   if (!transaction.committed) {
     const latest = (await stateRef.get()).val() || {};
-    if ((latest.completed?.[String(data.week)] || []).includes(`${data.sessionId}:${data.assignmentIndex}`))
-      return { ok: true, duplicate: true };
+    const played = latest.choices?.[choiceKey(data.week, data.sessionId, data.assignmentIndex)] || {};
+    const total = Object.values(played).reduce((n, x) => n + x, 0);
+    // Retries for an already committed play are idempotent, even if progression has moved on.
+    if ((latest.completed?.[String(data.week)] || []).includes(`${data.sessionId}:${data.assignmentIndex}`) ||
+        (Number.isInteger(data.selectionPlay) && total > data.selectionPlay)) return { ok: true, duplicate: true };
     fail('Study progress changed in another session. Sign in again before retrying.', 'failed-precondition');
   }
-  const destinationDB = destination((await db.ref(`studyIndex/${account.studyId}/databaseURL`).get()).val());
-  try { await destinationDB.ref(resultPath).set(safeRecord); }
-  catch (err) {
-    // Reconciliation record prevents silent data loss if a linked destination is unavailable.
-    await db.ref(`failedDeliveries/${account.studyId}/${account.uid}/${expectedSessionId}_${expectedIndex}`).set(safeRecord);
+  const record = { ...data, completedAt: new Date().toISOString() };
+  const url = (await db.ref(`studyIndex/${account.studyId}/databaseURL`).get()).val();
+  const path = `results/${account.studyId}/${account.uid}/${key}`;
+  try { await destination(url).ref(path).set(record); }
+  catch (error) {
+    await db.ref(`failedDeliveries/${account.studyId}/${account.uid}/${key}`).set(record);
     return { ok: true, queued: true };
   }
   return { ok: true };

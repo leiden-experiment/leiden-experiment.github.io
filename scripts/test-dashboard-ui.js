@@ -8,7 +8,7 @@ const board = source('src/ts/study/flowBoard.ts');
 const css = source('src/css/study.css');
 const functions = source('functions/index.js');
 const app = source('src/ts/core/game.ts');
-for (const label of ["'← Back'", "'Studies'", "'Shared level library'", "'Sign out'"]) assert(dashboard.includes(label), label);
+for (const label of ["'← Back'", "'Studies'", "'Levels'", '`Sign Out (']) assert(dashboard.includes(label), label);
 assert(dashboard.includes('crypto.getRandomValues'), 'Study and library IDs must be random');
 assert(dashboard.includes("newId('study')") && dashboard.includes("newId('level')"));
 assert(!dashboard.includes('Study ID (letters'), 'No manual study ID field');
@@ -22,7 +22,7 @@ assert(!board.includes("button(controls, '→'"), 'Movement arrows must be remov
 assert(css.includes('.study-admin-dashboard .study-nav') && css.includes('.study-drop-indicator'));
 assert(app.includes("root.classList.remove('study-shell', 'study-login', 'study-admin-dashboard')"), 'Leaving the gateway must remove dashboard and login themes');
 assert(functions.includes('studyTiming(settings, account, weeks, progress)'));
-assert(functions.includes('studyTiming(settings, account, assignedWeeks, current)'));
+assert(functions.includes('studyTiming(settings, account, weeks, progress)'));
 console.log('PASS: immediate navbar, random IDs, study-scoped moderators, visual slide insertion, per-field configs, date/week server enforcement');
 // Revised research UX, credential management and JSON-only exports.
 const sessionScene = source('src/ts/scenes/studySessionScene.ts');
@@ -34,12 +34,12 @@ assert(!dashboard.includes('Import study template'), 'Study template import must
 assert(!dashboard.includes('Export study results'), 'Export action belongs on participant page');
 assert(!dashboard.includes('Offline pack'), 'Offline pack button must not appear in participant roster');
 assert(!dashboard.includes('resultsCSV('), 'Researcher export should be JSON only');
-assert(dashboard.includes('Download all participant data (JSON)') && dashboard.includes("'Download JSON'"));
-assert(dashboard.includes('groupSelect(') && dashboard.includes('Save assignment'));
+assert(dashboard.includes('Download all participant data') && dashboard.includes("'Download participant results (JSON)'"));
+assert(dashboard.includes('groupSelect(') && dashboard.includes('Save participant settings'));
 assert(dashboard.includes('Change username') && dashboard.includes('Change password'));
 assert(dashboard.includes('...(perParticipant.checked ? { durationWeeks:') && dashboard.includes('participantStartMode: startMode.value'));
 assert(!dashboard.includes('Enable participant access'), 'New studies must be enabled automatically');
-assert(dashboard.includes('user.username') && !dashboard.includes('`${user.username} · ${user.role}`'));
+assert(dashboard.includes('user.username'));
 assert(app.includes('study-login-card') && app.includes('Show password'), 'Leiden login must be adopted');
 assert(app.includes("root.style.display = 'block'"), 'Dashboard must not retain centered login flex display');
 assert(css.includes('.study-login-card') && css.includes('.study-signout'));

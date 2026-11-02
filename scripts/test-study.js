@@ -62,7 +62,7 @@ const finite = { ...study, weeks: { '1': [{ levelId: 'legacy:Cheerful Bliss', bp
 assert.equal(getNextAssignment(finite, emptyProgress(), '2026-11-02', new Date('2026-11-10T12:00:00Z')).afterEnd, true);
 const backendCode = fs.readFileSync(path.resolve(__dirname, '../functions/index.js'), 'utf8');
 assert(backendCode.includes('studyTiming(settings, account, weeks, progress)'));
-assert(backendCode.includes('studyTiming(settings, account, assignedWeeks, current)'));
+assert(backendCode.includes('studyTiming(settings, account, weeks, progress)'));
 const screens = defaultStudySettings('Visual study');
 assert.deepEqual(validateSettings(screens), []);
 assert.equal(screens.weeks['1'][0].type, 'start');

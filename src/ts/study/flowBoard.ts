@@ -1,4 +1,4 @@
-import { StudyStep, StudySettings, isLevelStep } from './types';
+import { StudyStep, StudySettings, isLevelStep, isSelectionStep, Assignment } from './types';
 
 /** Dependency-free study slide timeline with live, explicit drag insertion previews. */
 export function createFlowBoard(parent: HTMLElement, source: StudySettings['weeks'], changed: (weeks: StudySettings['weeks']) => void, weekly = true) {
@@ -20,7 +20,9 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
     const b = make('button', into, title); b.type = 'button'; b.onclick = fn; return b;
   };
   const trigger = () => changed(JSON.parse(JSON.stringify(weeks)));
-  const placeholder = (kind: 'start' | 'level' | 'break' | 'end'): StudyStep => kind === 'level'
+  const placeholder = (kind: 'start' | 'level' | 'selection' | 'break' | 'end'): StudyStep => kind === 'selection'
+    ? { type: 'selection', text: 'Choose a level to play.', choices: [{ type: 'level', levelId: 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 3 }], unlock: 'all', playthroughs: 3 }
+    : kind === 'level'
     ? { type: 'level', levelId: 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 3 }
     : { type: kind, text: kind === 'start' ? 'Welcome! Press Continue when ready.' :
       kind === 'break' ? 'Take a break. Press Continue when ready to play again.' :
@@ -35,7 +37,7 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
     to.splice(target, 0, step);
     selected = { week: toWeek, index: target }; trigger(); render();
   }
-  function add(week: string, type: 'start' | 'level' | 'break' | 'end') {
+  function add(week: string, type: 'start' | 'level' | 'selection' | 'break' | 'end') {
     weeks[week].push(placeholder(type)); selected = { week, index: weeks[week].length - 1 }; trigger(); render();
   }
   function edit() {
@@ -63,6 +65,44 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
       if (!select.value) item('Existing level ID', step.levelId, value => { step.levelId = value; }, 'Keeps previously assigned levels available even if they are not currently listed.');
       item('Difficulty / BPM option', String(step.bpmIndex), value => { step.bpmIndex = Number(value); }, '0 selects the first speed. Higher numbers select later speed options.');
       item('Number of loops', String(step.loops), value => { step.loops = Number(value); }, 'Loops to play before this slide completes.');
+    } else if (isSelectionStep(step)) {
+      item('Selection screen message', step.text, v => { step.text = v; }, 'Shown above the selectable levels.', true);
+      const unlock = make('label', editor); unlock.className = 'study-field';
+      make('span', unlock, 'Unlock levels');
+      const unlockSelect = make('select', unlock);
+      for (const [value, label] of [['all', 'All levels unlocked'], ['sequential', 'Unlock next after playing previous'], ['weekly', 'Unlock one more each week']]) {
+        const option = make('option', unlockSelect, label); option.value = value;
+      }
+      unlockSelect.value = step.unlock; unlockSelect.title = 'Controls which levels the participant may select.';
+      unlockSelect.onchange = () => { step.unlock = unlockSelect.value as typeof step.unlock; trigger(); };
+      const quota = make('label', editor); quota.className = 'study-field';
+      make('span', quota, 'Number of plays (0 = unlimited)');
+      const plays = make('input', quota); plays.type = 'number'; plays.min = '0'; plays.max = '100'; plays.step = '1'; plays.value = String(step.playthroughs);
+      plays.title = 'Fixed number of completed level plays, or 0 to allow indefinite selection with a Finish button.';
+      plays.onchange = () => { step.playthroughs = Number(plays.value); trigger(); };
+      make('h3', editor, 'Selectable levels');
+      step.choices.forEach((choice, i) => {
+        const row = make('div', editor); row.className = 'study-choice-editor';
+        const pickerLabel = make('label', row); pickerLabel.className = 'study-field'; make('span', pickerLabel, `Level ${i + 1}`);
+        const picker = make('select', pickerLabel);
+        for (const level of availableLevels) { const option = make('option', picker, level.name); option.value = level.id; }
+        if (!availableLevels.some(l => l.id === choice.levelId)) { const old = make('option', picker, choice.levelId); old.value = choice.levelId; }
+        picker.value = choice.levelId; picker.onchange = () => { choice.levelId = picker.value; trigger(); };
+        const difficulty = make('label', row); difficulty.className = 'study-field'; make('span', difficulty, 'BPM option');
+        const bpm = make('input', difficulty); bpm.type = 'number'; bpm.min = '0'; bpm.max = '8'; bpm.step = '1'; bpm.value = String(choice.bpmIndex);
+        bpm.onchange = () => { choice.bpmIndex = Number(bpm.value); trigger(); };
+        const count = make('label', row); count.className = 'study-field'; make('span', count, 'Loops');
+        const loops = make('input', count); loops.type = 'number'; loops.min = '1'; loops.max = '100'; loops.step = '1'; loops.value = String(choice.loops);
+        loops.onchange = () => { choice.loops = Number(loops.value); trigger(); };
+        const remove = button(row, 'Remove level', () => { if (step.choices.length <= 1) return; step.choices.splice(i, 1); trigger(); render(); });
+        remove.disabled = step.choices.length <= 1; remove.title = 'Remove this choice';
+      });
+      const addChoice = button(editor, '+ Add selectable level', () => {
+        if (step.choices.length >= 9) return;
+        step.choices.push({ type: 'level', levelId: availableLevels[0]?.id || 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 3 });
+        trigger(); render();
+      });
+      addChoice.disabled = step.choices.length >= 9;
     } else item('Participant message', step.text, value => { step.text = value; }, 'Shown on this start, break, or end screen.', true);
   }
   function render() {
@@ -131,8 +171,9 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
         });
         remove.className = 'study-slide-delete'; remove.title = 'Delete this slide'; remove.setAttribute('aria-label', 'Delete this slide');
         remove.onclick = event => { event.stopPropagation(); if (!confirm(`Delete slide ${index + 1}?`)) return; weeks[week].splice(index, 1); selected = null; trigger(); render(); };
-        make('strong', tile, isLevelStep(step) ? availableLevels.find(l => l.id === step.levelId)?.name || step.levelId : step.text.slice(0, 85) || '(empty message)');
+        make('strong', tile, isLevelStep(step) ? availableLevels.find(l => l.id === step.levelId)?.name || step.levelId : isSelectionStep(step) ? `Choose between ${step.choices.length} levels` : step.text.slice(0, 85) || '(empty message)');
         if (isLevelStep(step)) make('small', tile, `BPM option ${step.bpmIndex} · ${step.loops} loops`);
+        if (isSelectionStep(step)) make('small', tile, `${step.playthroughs === 0 ? 'Free play' : `${step.playthroughs} plays`} · ${step.unlock}`);
         tile.addEventListener('click', () => { selected = { week, index }; render(); });
         tile.addEventListener('keydown', e => {
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selected = { week, index }; render(); }
@@ -148,11 +189,12 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
       });
       const addBar = make('div', section); addBar.className = 'study-flow-add';
       const hints = {
+        selection: 'Let the participant choose from multiple levels, with unlock rules and play limits.',
         start: 'Introductory screen shown before play.', level: 'Play an assigned level at the chosen difficulty and loops.',
         break: 'Pause screen with a Continue button.', end: 'Thank-you screen ending the participant session.'
       };
-      for (const type of ['start', 'level', 'break', 'end'] as const) {
-        const addButton = button(addBar, `+ ${type === 'level' ? 'Play level' : type === 'break' ? 'Break' : type === 'start' ? 'Start' : 'End'}`, () => add(week, type));
+      for (const type of ['start', 'level', 'selection', 'break', 'end'] as const) {
+        const addButton = button(addBar, `+ ${type === 'selection' ? 'Level selection' : type === 'level' ? 'Play level' : type === 'break' ? 'Break' : type === 'start' ? 'Start' : 'End'}`, () => add(week, type));
         addButton.title = hints[type];
       }
     }

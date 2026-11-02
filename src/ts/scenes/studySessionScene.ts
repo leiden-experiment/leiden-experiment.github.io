@@ -5,11 +5,11 @@ import { levels } from './loadingScene';
 import { LevelConverter } from '../util/levelConverter';
 import { UploadedLevelManager } from '../managers/uploadedLevelManager';
 import { defaultConfig, updateConfig } from '../managers/storageManager';
-import { getStudyPlan, getStudySession, setPendingAssignment, publishedLevels, advanceScreenStep, hasJustFinishedSession } from '../study/runtime';
+import { getStudyPlan, getStudyProgress, getStudySession, setPendingAssignment, publishedLevels, advanceScreenStep, hasJustFinishedSession } from '../study/runtime';
 import { studyApi } from '../study/firebaseClient';
 import { downloadResults } from '../study/offline';
 import { TrackData } from '../level/trackTypes';
-import { isLevelStep } from '../study/types';
+import { isLevelStep, isSelectionStep, isChoiceUnlocked, selectionKey, Assignment } from '../study/types';
 
 export default class StudySessionScene extends HandScene {
   private status: Phaser.GameObjects.Text;
@@ -41,6 +41,27 @@ export default class StudySessionScene extends HandScene {
       if (isLevelStep(step)) {
         new Button(this, 'PLAY\nLEVEL', this.center.x + 300, 810, () => { void this.playLevel(); });
         new Button(this, 'SETUP\nCAMERA', this.center.x - 300, 810, () => this.scene.start('calibration'));
+      } else if (isSelectionStep(step)) {
+        const counts = (getStudyProgress().choices || {})[selectionKey(plan.week, plan.sessionId, plan.index)] || {};
+        const plays = Object.values(counts).reduce((total, n) => total + n, 0);
+        const selectable = step.choices.map((choice, i) => ({ choice, i })).filter(({ i }) => isChoiceUnlocked(step, i, plan.week, counts));
+        // Display responsive, clickable options without changing the research progression until play completes.
+        selectable.forEach(({ choice, i }, pos) => {
+          const label = choice.levelId.replace(/^(legacy|library|uploaded):/, '').slice(0, 18);
+          const col = pos % 3;
+          const row = Math.floor(pos / 3);
+          new Button(this, `${label}\n${(counts[String(i)] || 0)} played`, this.center.x - 480 + col * 480, 720 + row * 120,
+            () => { void this.playLevel(choice, i, plays); });
+        });
+        if (step.playthroughs === 0 && plays > 0) {
+          let busy = false;
+          new Button(this, 'FINISH\nSESSION', this.center.x, 1010, () => {
+            if (busy) return; busy = true;
+            void advanceScreenStep(step).then(() => this.scene.restart()).catch(error => {
+              busy = false; this.status.setText(error instanceof Error ? error.message : String(error));
+            });
+          });
+        }
       } else {
         const buttonText = step.type === 'end' ? 'FINISH\nSESSION' : step.type === 'break' ? 'RESUME\nPLAYING' : 'CONTINUE';
         let busy = false;
@@ -54,12 +75,13 @@ export default class StudySessionScene extends HandScene {
     }
     if (session.mode === 'offline') new Button(this, 'EXPORT\nRESULTS', 200, 940, () => { void downloadResults(session.account.studyId!, session.account.participantId!); });
   }
-  private async playLevel() {
+  private async playLevel(selected?: Assignment, choiceIndex?: number, selectionPlay?: number) {
     const session = getStudySession(); const plan = getStudyPlan();
     if (!session || !plan || plan.capped || plan.index < 0) return;
     const step = plan.assignments[plan.index];
-    if (!isLevelStep(step)) return;
-    const assignment = step;
+    if (!isLevelStep(step) && !isSelectionStep(step)) return;
+    const assignment = selected || (isLevelStep(step) ? step : null);
+    if (!assignment) return;
     this.status.setText('Preparing assigned level...');
     try {
       let level: Level;
@@ -85,11 +107,11 @@ export default class StudySessionScene extends HandScene {
         level = new Level(this, key);
       }
       if (!level.track.data?.bpm?.[assignment.bpmIndex]) throw new Error('Assigned BPM index does not exist in this level');
-      updateConfig({ ...defaultConfig, ...session.settings.defaultConfig, ...(session.settings.groupConfigs?.[session.account.group || ''] || {}), ...assignment.configOverride,
+      updateConfig({ ...defaultConfig, ...session.settings.defaultConfig, ...(session.settings.groupConfigs?.[session.account.group || ''] || {}), ...(session.account.customConfig || {}), ...assignment.configOverride,
         skipLayersAutomatically: true, skipLayersAutomaticallyAfterLoop: assignment.loops,
         autoSaveCSV: false }); // Research results are sent once, between levels; never during gameplay.
       level.setBPM(assignment.bpmIndex);
-      setPendingAssignment(plan.week, plan.sessionId, plan.index, plan.assignments.length, assignment);
+      setPendingAssignment(plan.week, plan.sessionId, plan.index, plan.assignments.length, assignment, choiceIndex, selectionPlay);
       this.scene.start('level', level);
     } catch (error) {
       this.status.setText(error instanceof Error ? error.message : String(error));

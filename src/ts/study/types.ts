@@ -10,7 +10,23 @@ export interface ScreenStep {
   type: 'start' | 'break' | 'end';
   text: string;
 }
-export type StudyStep = Assignment | ScreenStep;
+export interface LevelChoiceStep {
+  type: 'selection';
+  text: string;
+  choices: Assignment[];
+  unlock: 'all' | 'sequential' | 'weekly';
+  /** 0 = unlimited until the participant selects Finish; otherwise complete after N plays. */
+  playthroughs: number;
+}
+export type StudyStep = Assignment | ScreenStep | LevelChoiceStep;
+export function isSelectionStep(step: StudyStep): step is LevelChoiceStep { return step.type === 'selection'; }
+export function selectionKey(week: number, sessionId: string, index: number) { return `${week}_${sessionId}_${index}`; }
+export function isChoiceUnlocked(step: LevelChoiceStep, choice: number, week: number, played: Record<string, number>) {
+  if (choice < 0 || choice >= step.choices.length) return false;
+  if (step.unlock === 'sequential') return choice === 0 || (played[String(choice - 1)] || 0) > 0;
+  if (step.unlock === 'weekly') return choice + 1 <= Math.max(1, week);
+  return true;
+}
 export function isLevelStep(step: StudyStep): step is Assignment {
   return !step.type || step.type === 'level';
 }
@@ -45,18 +61,20 @@ export interface Account {
   group?: string;
   startDate?: string;
   weeksOverride?: Record<string, StudyStep[]>;
+  customConfig?: Record<string, unknown>;
   active: boolean;
 }
 export interface StudySession { account: Account; settings: StudySettings; mode: 'online' | 'offline' }
 export interface ResultEnvelope {
   schemaVersion: 1; studyId: string; participantId: string; group: string;
   sessionId: string; week: number; assignmentIndex: number; levelId: string;
-  completedAt: string; result: unknown;
+  completedAt: string; result: unknown; choiceIndex?: number; selectionPlay?: number;
 }
 export interface Progress {
   completed: Record<string, string[]>;
   sessions: Record<string, number>;
   activeSession: Record<string, string>;
+  choices?: Record<string, Record<string, number>>;
 }
 export interface PublishedLevel { id: string; name: string; data?: unknown; updatedAt?: string }
 export function defaultStudySettings(title = 'New study'): StudySettings {
@@ -92,11 +110,20 @@ export function validateSettings(value: StudySettings): string[] {
         if (typeof step.levelId !== 'string' || !/^(legacy|library|uploaded):[\w .-]{1,100}$/.test(step.levelId)) issues.push(`${week}/${i}: invalid levelId`);
         if (!Number.isInteger(step.bpmIndex) || step.bpmIndex < 0 || step.bpmIndex > 8) issues.push(`${week}/${i}: invalid bpmIndex`);
         if (!Number.isInteger(step.loops) || step.loops < 1 || step.loops > 100) issues.push(`${week}/${i}: invalid loops`);
+      } else if (isSelectionStep(step)) {
+        if (typeof step.text !== 'string' || step.text.length > 2000 || !['all', 'sequential', 'weekly'].includes(step.unlock) ||
+            !Number.isInteger(step.playthroughs) || step.playthroughs < 0 || step.playthroughs > 100 ||
+            !Array.isArray(step.choices) || step.choices.length < 1 || step.choices.length > 9) issues.push(`${week}/${i}: invalid level selection`);
+        else step.choices.forEach((choice, j) => {
+          if (typeof choice.levelId !== 'string' || !/^(legacy|library|uploaded):[\w .-]{1,100}$/.test(choice.levelId) ||
+              !Number.isInteger(choice.bpmIndex) || choice.bpmIndex < 0 || choice.bpmIndex > 8 ||
+              !Number.isInteger(choice.loops) || choice.loops < 1 || choice.loops > 100) issues.push(`${week}/${i}/${j}: invalid selectable level`);
+        });
       } else if (['start', 'break', 'end'].includes(step.type)) {
         if (typeof step.text !== 'string' || step.text.length > 2000) issues.push(`${week}/${i}: screen message must be at most 2,000 characters`);
       } else issues.push(`${week}/${i}: unknown block type`);
     });
-    if (steps.length && !steps.some(isLevelStep)) issues.push(`Week ${week} must contain at least one playable level`);
+    if (steps.length && !steps.some(step => isLevelStep(step) || isSelectionStep(step))) issues.push(`Week ${week} must contain at least one playable level`);
   });
   if (value?.groupConfigs && (typeof value.groupConfigs !== 'object' || Array.isArray(value.groupConfigs) ||
     Object.values(value.groupConfigs).some(g => !g || typeof g !== 'object' || Array.isArray(g)))) issues.push('Invalid group configurations');

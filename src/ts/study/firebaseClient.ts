@@ -3,6 +3,7 @@ import { Auth, getAuth, signInWithEmailAndPassword, signOut } from 'firebase/aut
 import { getFunctions, httpsCallable, Functions } from 'firebase/functions';
 import { deployment } from './deployment';
 import { emailForUsername } from './username';
+import { firebasePassword } from './password';
 import { Account, PublishedLevel, StudySettings, StudySummary, Progress, ResultEnvelope } from './types';
 
 let app: FirebaseApp | null = null;
@@ -19,7 +20,7 @@ function ensureServices() {
 export async function loginOnline(username: string, password: string) {
   ensureServices();
   const email = emailForUsername(username);
-  const credential = await signInWithEmailAndPassword(auth!, email, password);
+  const credential = await signInWithEmailAndPassword(auth!, email, await firebasePassword(password));
   const token = await credential.user.getIdTokenResult(true);
   const profile = await callBackend<{ account: Account }>('getProfile', {});
   return { account: profile.account, isAdmin: token.claims.superadmin === true };
@@ -37,8 +38,8 @@ export const studyApi = {
   saveStudy: (id: string, settings: StudySettings, databaseURL?: string) =>
     callBackend<{ id: string }>('saveStudy', { id, settings, ...(databaseURL ? { databaseURL } : {}) }),
   listParticipants: (studyId: string) => callBackend<{ accounts: Account[] }>('listParticipants', { studyId }),
-  provisionAccount: (studyId: string, username: string, password: string, role: 'participant' | 'moderator', group = '', startDate = '') =>
-    callBackend<{ uid: string }>('provisionAccount', { studyId, username, password, role, group, startDate }),
+  provisionAccount: (studyId: string, username: string, password: string, role: 'participant' | 'moderator', group = '', startDate = '', customConfig?: Record<string, unknown>) =>
+    callBackend<{ uid: string }>('provisionAccount', { studyId, username, password, role, group, startDate, ...(customConfig ? { customConfig } : {}) }),
   setAccountActive: (uid: string, active: boolean) => callBackend<{ ok: boolean }>('setAccountActive', { uid, active }),
   setParticipant: (uid: string, changes: object) => callBackend<{ ok: boolean }>('setParticipant', { uid, changes }),
   advanceStep: (week: number, sessionId: string, index: number, stepType: string) => callBackend<{ ok: boolean }>('advanceStudyStep', { week, sessionId, index, stepType }),

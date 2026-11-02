@@ -57,7 +57,7 @@ for (const operation of ['removeAccount', 'resetModeratorPassword', 'listModerat
   assert(segment.includes('requireAdmin(operator)'), `${operation} missing admin authorization`);
 }
 assert(backend.includes('if (sessionId !== sid || index !== ix || !step || step.type !== stepType) return;'));
-assert(backend.includes('!isLevel(assignments[expectedIndex])'));
+assert(backend.includes('!isLevel(step)') && backend.includes('isSelection(step)')); // Both assigned and participant-selected levels are checked
 assert(fs.readFileSync(path.resolve(__dirname, '../src/ts/study/dashboard.ts'), 'utf8').includes('createFlowBoard'));
 assert(fs.readFileSync(path.resolve(__dirname, '../src/ts/scenes/studySessionScene.ts'), 'utf8').includes('advanceScreenStep'));
 const guidePath = path.resolve(__dirname, '../README.md');

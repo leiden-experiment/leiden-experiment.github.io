@@ -41,7 +41,13 @@ function action(parent: HTMLElement, title: string, fn: () => void | Promise<voi
 }
 function section(parent: HTMLElement, heading: string) { const el = node('section', parent); el.className = 'study-card'; node('h2', el, heading); return el; }
 function actions(parent: HTMLElement) { const el = node('div', parent); el.className = 'study-actions'; return el; }
+function fileSlug(text: string) { return text.trim().replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-|-$/g, '').slice(0, 70) || 'study'; }
 function downloadJSON(name: string, data: unknown) { downloadFile(name, JSON.stringify(data, null, 2)); }
+function exportName(study: StudySummary, person = 'all-participants') {
+  // Local time at the moment of download, down to the second.
+  const now = new Date(); const stamp = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}-${String(now.getMinutes()).padStart(2,'0')}-${String(now.getSeconds()).padStart(2,'0')}`;
+  return `pizzicato-${fileSlug(study.title)}-${fileSlug(person)}-${stamp}.json`;
+}
 /** Cryptographically random, collision-resistant public IDs; no manually entered identifier. */
 function newId(prefix: string) {
   const bytes = crypto.getRandomValues(new Uint8Array(12));
@@ -84,18 +90,16 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
   const navButtons = node('div', nav); navButtons.className = 'study-nav-links';
   const backBtn = action(navButtons, '← Back', () => goBack());
   action(navButtons, 'Studies', () => navigate('Studies', showStudies));
-  if (user.role === 'admin') action(navButtons, 'Shared level library', () => navigate('Shared level library', showLibrary));
-  const account = node('span', nav, user.username); account.className = 'study-account';
-  const signOut = action(nav, 'Sign out', onExit); signOut.classList.add('study-signout');
+  if (user.role === 'admin') action(navButtons, 'Levels', () => navigate('Levels', showLibrary));
+  const signOut = action(nav, `Sign Out (${user.username})`, onExit); signOut.classList.add('study-signout');
   const frame = node('div', root); frame.className = 'study-layout';
-  const breadcrumb = node('p', frame); breadcrumb.className = 'study-breadcrumb';
   const output = node('main', frame);
   type View = { label: string; render: () => void | Promise<void> };
   const history: View[] = [];
   let current: View | undefined;
   let navigationToken = 0;
   const clear = (label: string) => {
-    output.replaceChildren(); breadcrumb.textContent = label;
+    output.replaceChildren();
     backBtn.disabled = history.length === 0;
   };
   function navigate(label: string, render: () => void | Promise<void>, push = true) {
@@ -135,17 +139,17 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
   }
   function showStudy(study: StudySummary) {
     const page = section(output, study.title);
-    const buttons = actions(page);
+    const buttons = actions(page); buttons.classList.add('study-study-tabs');
     if (user.role === 'admin') {
-      action(buttons, 'Study settings & timeline', () => navigate('Edit ' + study.title, async () => {
+      action(buttons, 'Edit Study', () => navigate('Edit ' + study.title, async () => {
         const pending = section(output, 'Loading study settings…');
         const fetched = await studyApiCallSettings(study.id);
         if (!pending.isConnected) return;
         output.replaceChildren(); editStudy(study.id, fetched.settings, fetched.databaseURL || '');
       }), 'primary');
-      action(buttons, 'Moderator accounts', () => navigate(`Moderators · ${study.title}`, () => showModerators(study)));
+      action(buttons, 'Moderators', () => navigate(`Moderators · ${study.title}`, () => showModerators(study)));
     }
-    action(buttons, 'Participants & results', () => navigate(`Participants · ${study.title}`, () => showRoster(study)));
+    action(buttons, 'Participants', () => navigate(`Participants · ${study.title}`, () => showRoster(study)));
   }
   function editStudy(id: string, data: StudySettings, databaseURL = '') {
     const page = section(output, id ? `Edit study: ${data.title}` : 'Create study');
@@ -205,8 +209,10 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       const panel = node('section', groupsHost); panel.className = 'study-group-panel';
       const heading = node('div', panel); heading.className = 'study-row';
       const nameField = field(heading, 'Group name', name, 'input', 'Enter this exact name when assigning a participant to this group.');
-      action(heading, 'Remove group', () => { panel.remove(); const ix = groups.findIndex(g => g.panel === panel); if (ix >= 0) groups.splice(ix, 1); }, 'danger');
+      const removeGroup = action(panel, 'Remove group', () => { panel.remove(); const ix = groups.findIndex(g => g.panel === panel); if (ix >= 0) groups.splice(ix, 1); }, 'danger');
+      removeGroup.classList.add('study-block-button');
       const read = gameConfigEditor(panel, values, { ...gameplayDefaults, ...(defaultEnabled.checked ? readDefaults() : {}) } as Record<string, GameplayValue>);
+      panel.appendChild(removeGroup);
       groups.push({ name: nameField, read, panel });
     }
     for (const [name, values] of Object.entries(data.groupConfigs || {})) addGroup(name, values);
@@ -216,12 +222,13 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       if (!name || groups.some(g => g.name.value.trim() === name)) throw new Error('Enter a unique group name');
       addGroup(name, { ...gameplayDefaults, ...(defaultEnabled.checked ? readDefaults() : {}) });
     });
+    addGroupButton.classList.add('study-block-button');
     const updateConfigs = () => {
       defaultsHost.hidden = !defaultEnabled.checked; groupsHost.hidden = !groupsEnabled.checked;
       addGroupButton.disabled = !groupsEnabled.checked;
     };
     defaultEnabled.addEventListener('change', updateConfigs); groupsEnabled.addEventListener('change', updateConfigs); updateConfigs();
-    action(actions(page), id ? 'Save changes' : 'Create study', async () => {
+    const saveStudyButton = action(actions(page), id ? 'Save changes' : 'Create study', async () => {
       const groupConfigs: Record<string, Record<string, unknown>> = {};
       if (groupsEnabled.checked) for (const group of groups) {
         const name = group.name.value.trim(); if (!name || name.length > 100 || Object.prototype.hasOwnProperty.call(groupConfigs, name)) throw new Error('Every group needs a unique name (max 100 characters)');
@@ -243,35 +250,38 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       await studyApi.saveStudy(id || newId('study'), settings, db.value.trim() || undefined);
       history.length = 0; navigate('Studies', showStudies, false);
     }, 'primary');
+    saveStudyButton.classList.add('study-block-button');
   }
   async function showModerators(study: StudySummary) {
     const page = section(output, `Moderator accounts · ${study.title}`);
     node('p', page, 'Moderators may view participants and download results for this study; only administrators can manage accounts.');
     const create = node('div', page); create.className = 'study-form-grid';
     const name = field(create, 'New moderator username', '', 'input', 'At least four characters; used to sign in.');
-    const password = field(create, 'Password', '', 'input', 'At least 12 characters; share privately.'); password.type = 'password';
-    action(page, '+ Create moderator', async () => {
+    const password = field(create, 'Password', '', 'input', 'Use a long password for security.'); password.type = 'password';
+    const createModerator = action(page, '+ Create moderator', async () => {
       await studyApi.provisionAccount(study.id, name.value, password.value, 'moderator');
       alert(`Moderator ${name.value} created. Share their login securely.`);
       navigate(`Moderators · ${study.title}`, () => showModerators(study), false);
     }, 'primary');
+    createModerator.classList.add('study-block-button');
     const results = node('div', page); node('p', results, 'Loading moderators…');
     const { accounts } = await studyApi.listParticipants(study.id);
     if (!results.isConnected) return; results.replaceChildren();
     const moderators = accounts.filter(a => a.role === 'moderator');
     if (!moderators.length) node('p', results, 'No moderator accounts for this study.');
     for (const mod of moderators) {
-      const row = node('div', results); row.className = 'study-row';
+      const row = node('div', results); row.className = 'study-row study-mod-row';
       const title = node('div', row); title.className = 'study-row-title';
       node('strong', title, mod.username); node('small', title, mod.active ? 'Active' : 'Disabled');
-      action(row, mod.active ? 'Disable' : 'Enable', async () => {
+      const modActions = actions(row); modActions.classList.add('study-row-actions');
+      action(modActions, mod.active ? 'Disable' : 'Enable', async () => {
         await studyApi.setAccountActive(mod.uid, !mod.active); navigate(`Moderators · ${study.title}`, () => showModerators(study), false);
       });
-      action(row, 'Reset password', async () => {
-        const secret = prompt('New password (at least 12 characters)'); if (!secret) return;
+      action(modActions, 'Reset password', async () => {
+        const secret = prompt('New password'); if (!secret) return;
         await studyApi.resetModeratorPassword(mod.uid, secret); alert('Password updated. Share it securely.');
       });
-      action(row, 'Remove', async () => {
+      action(modActions, 'Remove', async () => {
         if (!confirm(`Permanently remove ${mod.username}?`)) return;
         await studyApi.removeAccount(mod.uid); navigate(`Moderators · ${study.title}`, () => showModerators(study), false);
       }, 'danger');
@@ -281,10 +291,10 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const page = section(output, `Participants · ${study.title}`);
     const canEdit = user.role === 'admin';
     const controls = actions(page);
-    action(controls, 'Download all participant data (JSON)', async () => {
+    action(controls, 'Download all participant data', async () => {
       const { results, partial } = await studyApi.exportResults(study.id);
-      if (partial) alert('The linked database is unavailable. The export includes any queued results, but may be incomplete.');
-      downloadJSON(`pizzicato-${study.id}-all-participants.json`, results);
+      if (partial) alert('Some linked-database results could not be retrieved; queued records are included.');
+      downloadJSON(exportName(study), results);
     }, 'primary');
     const settings = (await studyApiCallSettings(study.id)).settings;
     if (!page.isConnected) return;
@@ -292,93 +302,133 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const showStartDate = settings.dateRangeEnabled !== false || !!settings.durationWeeks;
     const requiredStartDate = !!settings.durationWeeks && settings.participantStartMode !== 'first-login';
     const dateHelp = settings.participantStartMode === 'first-login'
-      ? 'Leave blank to record the date on first login, or enter an override.'
-      : 'Sets the personal start date and weekly schedule anchor.';
+      ? 'Leave empty to record first login, or set a specific date.' : 'Individual start date and weekly schedule anchor.';
     if (canEdit) {
       const create = node('div', page); create.className = 'study-form-grid';
-      const username = field(create, 'New participant username', '', 'input', 'Username used to sign in.');
-      const password = field(create, 'Password', '', 'input', 'At least 12 characters.'); password.type = 'password';
+      const username = field(create, 'New participant username', '', 'input', 'Participant login name.');
+      const password = field(create, 'Password', '', 'input', 'One character is technically supported, but a longer password is substantially safer.'); password.type = 'password';
       const group = groupSelect(create, 'Group / condition', groups);
       let start: HTMLInputElement | undefined;
       if (showStartDate) {
         start = field(create, requiredStartDate ? 'Participant start date' : 'Participant start date (optional)', '', 'input', dateHelp);
         start.type = 'date'; start.required = requiredStartDate;
       }
-      action(actions(page), '+ Add participant', async () => {
+      const customToggle = check(page, 'Use custom gameplay settings for this participant', false,
+        'Participant-specific values take precedence over study defaults and group settings.');
+      const customPanel = node('div', page); customPanel.className = 'study-individual-config'; customPanel.hidden = true;
+      const baseline = { ...gameplayDefaults, ...(settings.defaultConfig || {}), ...(settings.groupConfigs?.[group.value] || {}) } as Record<string, GameplayValue>;
+      let readCustom = gameConfigEditor(customPanel, {}, baseline);
+      const refreshCustom = () => {
+        customPanel.replaceChildren();
+        readCustom = gameConfigEditor(customPanel, {}, { ...gameplayDefaults, ...(settings.defaultConfig || {}), ...(settings.groupConfigs?.[group.value] || {}) } as Record<string, GameplayValue>);
+      };
+      group.onchange = () => { if (customToggle.checked) refreshCustom(); };
+      customToggle.onchange = () => { customPanel.hidden = !customToggle.checked; };
+      const createButton = action(actions(page), '+ Add participant', async () => {
         if (requiredStartDate && !start?.value) throw new Error('Choose a participant start date.');
-        await studyApi.provisionAccount(study.id, username.value.trim(), password.value, 'participant', group.value, start?.value || '');
+        await studyApi.provisionAccount(study.id, username.value.trim(), password.value, 'participant', group.value, start?.value || '', customToggle.checked ? readCustom() : undefined);
         navigate(`Participants · ${study.title}`, () => showRoster(study), false);
       }, 'primary');
+      createButton.classList.add('study-block-button');
     }
-    const results = node('div', page); node('p', results, 'Loading participants…');
+    const search = field(page, 'Find a participant', '', 'input', 'Filter the participant list by username or group.');
+    search.placeholder = 'Search participants…'; search.classList.add('study-search');
+    const results = node('div', page); results.className = 'study-roster'; node('p', results, 'Loading participants…');
     const { accounts } = await studyApi.listParticipants(study.id);
-    if (!results.isConnected) return; results.replaceChildren();
-    const participants = accounts.filter(a => a.role === 'participant');
+    if (!results.isConnected) return;
+    results.replaceChildren();
+    const participants = accounts.filter(a => a.role === 'participant').sort((a,b) => a.username.localeCompare(b.username));
     if (!participants.length) node('p', results, 'No participants yet.');
+    const rows: { element: HTMLElement; member: Account }[] = [];
     for (const member of participants) {
-      const row = node('div', results); row.className = 'study-row study-participant-row';
+      const item = node('div', results); item.className = 'study-roster-item';
+      const row = node('div', item); row.className = 'study-row study-participant-row';
       const details = node('div', row); details.className = 'study-row-title';
       node('strong', details, member.username);
-      node('small', details, `Group: ${member.group || 'None'} · ${member.active ? 'Active' : 'Disabled'}`);
+      node('small', details, `Group: ${member.group || 'None'} · ${member.active ? 'Active' : 'Disabled'}${member.customConfig ? ' · Custom settings' : ''}`);
       const commands = actions(row); commands.classList.add('study-row-actions');
-      action(commands, 'Download JSON', async () => {
+      const iconAction = (text: string, hint: string, fn: () => void | Promise<void>, style: 'primary' | 'secondary' | 'danger' = 'secondary') => {
+        const button = action(commands, text, fn, style); button.title = hint; button.setAttribute('aria-label', hint); return button;
+      };
+      iconAction('↓', 'Download participant results (JSON)', async () => {
         const { results: data, partial } = await studyApi.exportResults(study.id, member.uid);
-        if (partial) alert('The linked results database is unavailable. This export may be incomplete.');
-        downloadJSON(`pizzicato-${study.id}-${member.username}.json`, data);
+        if (partial) alert('Some results could not be retrieved.');
+        downloadJSON(exportName(study, member.username), data);
       });
       if (canEdit) {
-        const editPanel = node('div', results); editPanel.className = 'study-inline-edit'; editPanel.hidden = true;
-        const fields = node('div', editPanel); fields.className = 'study-form-grid';
-        const assignmentGroup = groupSelect(fields, 'Group / condition', groups, member.group || '');
-        let assignmentDate: HTMLInputElement | undefined;
+        const edit = node('div', item); edit.className = 'study-inline-edit'; edit.hidden = true;
+        const assignmentFields = node('div', edit); assignmentFields.className = 'study-form-grid';
+        const group = groupSelect(assignmentFields, 'Group / condition', groups, member.group || '');
+        let date: HTMLInputElement | undefined;
         if (showStartDate) {
-          assignmentDate = field(fields, requiredStartDate ? 'Participant start date' : 'Participant start date (optional)', member.startDate || '', 'input', dateHelp);
-          assignmentDate.type = 'date'; assignmentDate.required = requiredStartDate;
+          date = field(assignmentFields, requiredStartDate ? 'Participant start date' : 'Participant start date (optional)', member.startDate || '', 'input', dateHelp);
+          date.type = 'date'; date.required = requiredStartDate;
         }
-        const saveActions = actions(editPanel);
-        action(saveActions, 'Save assignment', async () => {
-          if (requiredStartDate && !assignmentDate?.value) throw new Error('Choose a participant start date.');
-          await studyApi.setParticipant(member.uid, { group: assignmentGroup.value, ...(showStartDate ? { startDate: assignmentDate?.value || '' } : {}) });
+        let customToggle: HTMLInputElement | undefined;
+        let readCustom: () => Record<string, unknown> = () => ({});
+        // Only accounts provisioned with individual settings expose this editor.
+        if (member.customConfig) {
+          customToggle = check(edit, 'Use custom gameplay settings', true,
+            'Override the group configuration with participant-specific values. Uncheck to remove the override.');
+          const customPanel = node('div', edit); customPanel.className = 'study-individual-config';
+          const fillCustom = () => {
+            customPanel.replaceChildren();
+            readCustom = gameConfigEditor(customPanel, member.customConfig || {}, {
+              ...gameplayDefaults, ...(settings.defaultConfig || {}), ...(settings.groupConfigs?.[group.value] || {})
+            } as Record<string, GameplayValue>);
+          };
+          fillCustom();
+          customToggle.onchange = () => { customPanel.hidden = !customToggle!.checked; };
+          group.onchange = () => { if (customToggle!.checked) fillCustom(); };
+        }
+        const save = action(actions(edit), 'Save participant settings', async () => {
+          if (requiredStartDate && !date?.value) throw new Error('Choose a participant start date.');
+          await studyApi.setParticipant(member.uid, { group: group.value,
+            ...(showStartDate ? { startDate: date?.value || '' } : {}),
+            ...(customToggle ? { customConfig: customToggle.checked ? readCustom() : null } : {}) });
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
-        }, 'primary');
-        action(saveActions, 'Cancel', () => { editPanel.hidden = true; });
-        action(commands, 'Edit assignment', () => { editPanel.hidden = !editPanel.hidden; });
-        action(commands, 'Change username', async () => {
+        }, 'primary'); save.classList.add('study-block-button');
+        iconAction('✎', 'Edit group / condition and personal settings', () => { edit.hidden = !edit.hidden; });
+        iconAction('U', 'Change username', async () => {
           const name = prompt('New username', member.username);
           if (name === null || name.trim() === member.username) return;
           await studyApi.updateAccountCredentials(member.uid, name.trim());
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
         });
-        action(commands, 'Change password', async () => {
-          const password = prompt('New password (at least 12 characters)');
-          if (password === null) return;
+        iconAction('P', 'Change password', async () => {
+          const password = prompt('New password'); if (password === null) return;
           await studyApi.updateAccountCredentials(member.uid, undefined, password);
-          alert('Password updated. Share it securely.');
+          alert('Password updated. Share it privately.');
         });
-        action(commands, member.active ? 'Deactivate' : 'Reactivate', async () => {
+        iconAction(member.active ? '○' : '●', member.active ? 'Deactivate participant' : 'Reactivate participant', async () => {
           await studyApi.setAccountActive(member.uid, !member.active);
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
         });
-        action(commands, 'Remove', async () => {
-          if (!confirm(`Remove ${member.username}? Existing results are retained.`)) return;
+        iconAction('×', 'Remove participant (results are kept)', async () => {
+          if (!confirm(`Remove ${member.username}? Existing results will be retained.`)) return;
           await studyApi.removeAccount(member.uid);
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
         }, 'danger');
       }
+      rows.push({ element: item, member });
     }
+    search.oninput = () => { const query = search.value.trim().toLowerCase();
+      rows.forEach(({ element, member }) => { element.hidden = !!query && !`${member.username} ${member.group || ''}`.toLowerCase().includes(query); });
+    };
   }
   async function showLibrary() {
-    const page = section(output, 'Shared level library');
+    const page = section(output, 'Levels');
     node('p', page, 'Upload a JSON level once, then assign it to any study. IDs are created automatically.');
-    const editor = node('div', page); editor.className = 'study-form-grid';
-    const file = node('input', editor); file.type = 'file'; file.accept = '.json,application/json'; file.title = 'Choose a Level Designer JSON export.';
+    const editor = node('div', page); editor.className = 'study-level-upload';
+    const fileLabel = node('label', editor); fileLabel.className = 'study-field'; node('span', fileLabel, 'JSON level file');
+    const file = node('input', fileLabel); file.type = 'file'; file.accept = '.json,application/json'; file.title = 'Choose a Level Designer JSON export.';
     const levelName = field(editor, 'Display name', '', 'input', 'The name researchers see when assigning a level.');
     action(editor, 'Upload level', async () => {
       if (!file.files?.[0]) throw new Error('Select a level JSON file first');
       const converted = LevelConverter.convert(JSON.parse(await file.files[0].text()));
       const name = levelName.value.trim() || file.files[0].name.replace(/\.json$/i, '');
       await studyApi.saveLevel(newId('level'), name, converted);
-      navigate('Shared level library', showLibrary, false);
+      navigate('Levels', showLibrary, false);
     }, 'primary');
     const list = node('div', page); node('p', list, 'Loading levels…');
     const { levels } = await studyApi.listLevels();

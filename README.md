@@ -114,7 +114,7 @@ Wait until it finishes successfully. This deploys the protected Cloud Functions 
    ```
 
 2. A browser may open automatically. Otherwise open the address displayed by the terminal, usually <http://localhost:8080/>.
-3. Sign in with the **administrator username and password** from Step 5 (e.g. `leadresearcher`, **not** `leadresearcher@pizzicato.com`). You should see the Pizzicato research dashboard, with **+ Create study** in the Studies page and **Back**, **Studies**, **Shared level library**, and **Sign out** in the top navigation bar.
+3. Sign in with the **administrator username and password** from Step 5 (e.g. `leadresearcher`, **not** `leadresearcher@pizzicato.com`). You should see the Pizzicato research dashboard, with **+ Create study** in the Studies page and **Back**, **Studies**, **Levels**, and **Sign Out (username)** in the top navigation bar.
 4. Leave the terminal running while using the game. To stop the local web server later, press **Ctrl+C**. Firebase information stays saved online.
 
 **This is already the full online website running locally**: no GitHub deployment required. You still need internet to authenticate and save to Firebase.
@@ -144,11 +144,11 @@ This is recommended for testing the study-to-database link. It is **not** a seco
 
 ### Step 10 — Make a test participant, play, and check results
 
-1. From **Studies**, choose **Manage study** beside your test study, then **Participants & results**.
-2. Enter a test participant username such as `testplayer01`, a password of at least **12 characters**, and optionally a group name. Leave the individual start date blank to use the study's settings. Click **+ Add participant**.
+1. From **Studies**, choose **Manage study** beside your test study, then **Participants**.
+2. Enter a test participant username such as `testplayer01`, a strong password (short passwords are accepted for testing but unsafe), and optionally a group name. Leave the individual start date blank to use the study's settings. Click **+ Add participant**.
 3. Open a **private/incognito browser window** at the same local web address. Sign in with the test participant username/password, not the administrator credentials.
 4. Complete the Start → Play → Break → Play → End timeline. Return to the administrator window.
-5. From **Manage study → Participants & results**, select **Download JSON** for that participant. Select **Download all participant data (JSON)** at the top of **Participants & results** for one combined export.
+5. From **Manage study → Participants**, select **Download participant results (↓)** for that participant. Select **Download all participant data** at the top of **Participants** for one combined export.
 6. Check Firebase Console → your **study results database → Data** for records under **`results/YOUR_GENERATED_STUDY_ID/`**. The administrator database still contains the study configuration, user accounts, uploaded levels, and progression records.
 7. Test the weekly limit: after completing the single allowed weekly session, the participant should be unable to start another full session until their next week. If you disabled Weekly study, there is no weekly cap.
 
@@ -163,21 +163,21 @@ This is recommended for testing the study-to-database link. It is **not** a seco
 ### Step 11 — Start, manage studies, then stop
 
 1. Open the repository folder in a terminal and run **`npm start`**. Open the address displayed in the terminal (often <http://localhost:8080/>) and sign in with your administrator or moderator username/password.
-2. **Create and edit studies:** use **Studies → + Create study** or **Manage study → Study settings & timeline**. Study IDs are generated automatically. Toggle weekly scheduling or start/end date restrictions as needed; edit slides in the horizontal timeline and click **Save changes**. Only administrators can edit studies.
-3. **Upload shared levels:** use **Shared level library** in the top navigation, select a `.json` exported by Pizzicato Level Designer, enter a display name, and click **Upload level**. Its unique ID is generated automatically. Choose this level in any study's Play Level slide. An edited level must be published as a new entry (existing IDs are immutable).
-4. **Manage participants and results:** use **Studies → Manage study → Participants & results** to create participants, edit group assignments and start dates inline, change usernames/passwords, activate/deactivate accounts, and download JSON results. Use **Download all participant data (JSON)** at the top of the participant page for all participants.
+2. **Create and edit studies:** use **Studies → + Create study** or **Manage study → Edit Study**. Study IDs are generated automatically. Toggle weekly scheduling or start/end date restrictions as needed; edit slides in the horizontal timeline and click **Save changes**. Only administrators can edit studies.
+3. **Upload shared levels:** use **Levels** in the top navigation, select a `.json` exported by Pizzicato Level Designer, enter a display name, and click **Upload level**. Its unique ID is generated automatically. Choose this level in any study's Play Level slide. An edited level must be published as a new entry (existing IDs are immutable).
+4. **Manage participants and results:** use **Studies → Manage study → Participants** to create participants, edit group assignments and start dates inline, change usernames/passwords, activate/deactivate accounts, and download JSON results. Use **Download all participant data** at the top of the participant page for all participants.
 5. **Manage moderators:** use **Studies → Manage study → Moderator accounts** (administrator only). Create a username/password, disable or re-enable a login, reset its password, or permanently remove it. Each moderator belongs to the study where you created the account; moderators may view and export its results but cannot edit study settings or manage accounts.
-6. **Gameplay overrides:** in **Study settings & timeline**, check **Override default gameplay settings** to edit the main settings. Check **Use group-specific gameplay settings** to create groups with separate settings, initially copied from the current defaults. Give participants the exact group name to apply these settings. Use **ⓘ** for short tooltips.
-7. Use **Back**, **Studies**, **Shared level library**, and **Sign out** in the persistent top navigation. To stop the local server, press **Ctrl+C** in its terminal; data remains in Firebase.
+6. **Gameplay overrides:** in **Edit Study**, check **Override default gameplay settings** to edit the main settings. Check **Use group-specific gameplay settings** to create groups with separate settings, initially copied from the current defaults. Give participants the exact group name to apply these settings. Use **ⓘ** for short tooltips.
+7. Use **Back**, **Studies**, **Levels**, and **Sign Out (username)** in the persistent top navigation. To stop the local server, press **Ctrl+C** in its terminal; data remains in Firebase.
 
 **After pulling new code:** run `git pull` (if using Git), then `npm install`. If the update changes Cloud Functions or database rules (this dashboard update does), run `npm install --prefix functions` and redeploy with `firebase deploy --only functions,database --project YOUR-PROJECT-ID`. Restart `npm start` and test with sample accounts before a live study.
 
 
 ### Participant sessions and per-person schedules
 
-In **Study settings & timeline**, turn on **Limit each participant to a number of weeks** when appropriate. Set the number of weeks and choose either a researcher-assigned start date or the participant’s first login. The latter is written automatically to Firebase on first participant login. A separate global start/end-date restriction can also be enabled.
+In **Edit Study**, turn on **Limit each participant to a number of weeks** when appropriate. Set the number of weeks and choose either a researcher-assigned start date or the participant’s first login. The latter is written automatically to Firebase on first participant login. A separate global start/end-date restriction can also be enabled.
 
-Under **Participants & results**, choose a study group (or **None**) from the dropdown. To update an existing participant, open **Edit assignment**, change the group and, if applicable, use the calendar field to adjust the start date, then **Save assignment**. **Change username** and **Change password** update Firebase Authentication; the participant UID stays the same, preserving prior results. **Download JSON** downloads one person's results; **Download all participant data (JSON)** downloads the entire study.
+Under **Participants**, choose a study group (or **None**) from the dropdown. To update an existing participant, open **Edit group / condition and personal settings**, change the group and, if applicable, use the calendar field to adjust the start date, then **Save participant settings**. **Change username** and **Change password** update Firebase Authentication; the participant UID stays the same, preserving prior results. **Download participant results (↓)** downloads one person's results; **Download all participant data** downloads the entire study.
 
 The Leiden-style login screen accepts only username and password, with **Show password**. During a study, results are sent once between levels rather than during loops. A participant sees an explicit **Retry Save** button if sending fails. After completing a scheduled session, a thank-you screen appears instead of the guest scoreboard.
 
@@ -233,6 +233,15 @@ For the technical maintainer; **not necessary** for local browser testing.
 | Camera/microphone does not work | Use a compatible browser, allow camera permission, and use **localhost** or HTTPS (GitHub Pages). Check another application is not using the camera. |
 | GitHub Pages build fails in `online` mode | Verify the Actions secret is exactly `PIZZICATO_WEB_CONFIG` and contains a valid **public web** JSON config. The workflow intentionally refuses invalid online configuration. |
 | Need to change the central Firebase project | Repeat backend setup and admin creation for the new project, rerun `npm run setup:web`, then restart the website. Switching the web config alone does not migrate studies or accounts. |
+
+
+### Level Selection slides and participant-specific settings
+
+When editing a study, open its visual timeline and choose **+ Level selection**. Click the new slide to select up to **9 levels**, their BPM options, and the number of loops per play. Choose an unlock rule: **All unlocked** immediately, **Sequential** (each next choice unlocks after the previous one has been played), or **Weekly** (one additional choice unlocks per study week). **Number of plays** sets how many completed levels are required before the timeline continues; set it to **0** for free play, where the participant can pick levels repeatedly and presses **Finish session** when ready (after completing at least one play). Each completed play records a separate result in Firebase. For a study with multiple weeks, put a Level Selection slide into each relevant week's row. The existing weekly session limits and study date restrictions still apply.
+
+On the **Participants** page, use the search field to find an account. The compact action buttons have hover descriptions: **↓** export, **✎** edit group/condition, date and custom gameplay settings, **U** change username, **P** change password, **○/●** deactivate/reactivate, **×** remove. Enable **Use custom gameplay settings** when adding or editing a participant to override study/group gameplay values. Unchecking it removes that participant's individual override. For participants created without custom settings, the individual-settings editor remains hidden; change their group instead, or create a new account with custom settings if needed. Participant results download as **one JSON file per request**, named with the *study display name*, participant username (or all-participants), and local date/time.
+
+**Password safety:** The interface permits passwords from **1 to 128 characters** for participants and moderators. Firebase Authentication requires at least 6 characters internally, so Pizzicato converts passwords shorter than 6 characters to a deterministic 64-character value before Firebase handles them. This makes them technically compatible, **not secure**: a one-character password is extremely easy to guess. Use long, randomly generated passwords for real studies; treat short passwords as disposable test-only credentials. Existing passwords of 6 or more characters work unchanged. Passwords are never stored in the study database.
 
 ## Research-data and security reminders
 

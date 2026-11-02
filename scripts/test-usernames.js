@@ -31,7 +31,7 @@ const functions = fs.readFileSync(path.join(__dirname, '../functions/index.js'),
 assert(functions.includes('email: emailForUsername(name)'), 'Provisioning does not use username mapping');
 assert(functions.includes("const { normalizeUsername, emailForUsername } = require('./username')"));
 const browser = fs.readFileSync(path.join(__dirname, '../src/ts/study/firebaseClient.ts'), 'utf8');
-assert(browser.includes('signInWithEmailAndPassword(auth!, email, password)'), 'Login must use Firebase Auth');
+assert(browser.includes('signInWithEmailAndPassword(auth!, email, await firebasePassword(password))'), 'Login must use Firebase Auth');
 assert(browser.includes('emailForUsername(username)'), 'Login not using username mapping');
 const adminCreate = fs.readFileSync(path.join(__dirname, 'create-admin.js'), 'utf8');
 assert(adminCreate.includes('emailForUsername(username)'));
