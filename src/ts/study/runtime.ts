@@ -7,12 +7,14 @@ let progress: Progress = emptyProgress();
 let pendingSave: Promise<void> | null = null;
 let justFinishedSession = false;
 let lastSaveQueued = false;
+let lastSaveNeedsReview = false;
+export function wasLastStudyResultMarkedForReview() { return lastSaveNeedsReview; }
 export function wasLastStudyResultQueued() { return lastSaveQueued; }
 export function hasJustFinishedSession() { return justFinishedSession; }
-let pending: { week: number; sessionId: string; index: number; total: number; assignment: Assignment; choiceIndex?: number; selectionPlay?: number } | null = null;
+let pending: { week: number; sessionId: string; index: number; total: number; assignment: Assignment; choiceIndex?: number; selectionPlay?: number; playToken?: string } | null = null;
 export let publishedLevels: Record<string, unknown> = {};
 export function setStudySession(value: StudySession, remoteProgress?: Progress, levels: Record<string, unknown> = {}) {
-  session = value; pending = null; pendingSave = null; justFinishedSession = false; lastSaveQueued = false;
+  session = value; pending = null; pendingSave = null; justFinishedSession = false; lastSaveQueued = false; lastSaveNeedsReview = false;
   const account = value.account;
   progress = value.mode === 'offline' ? loadLocalProgress(account.studyId!, account.participantId!) : (remoteProgress || emptyProgress());
   publishedLevels = levels;
@@ -24,8 +26,8 @@ export function getStudyPlan(now = new Date()) {
   if (!session) return null;
   return getNextAssignment(session.settings, progress, session.account.startDate || session.settings.startDate, now);
 }
-export function setPendingAssignment(week: number, sessionId: string, index: number, total: number, assignment: Assignment, choiceIndex?: number, selectionPlay?: number) {
-  pending = { week, sessionId, index, total, assignment, choiceIndex, selectionPlay };
+export function setPendingAssignment(week: number, sessionId: string, index: number, total: number, assignment: Assignment, choiceIndex?: number, selectionPlay?: number, playToken?: string) {
+  pending = { week, sessionId, index, total, assignment, choiceIndex, selectionPlay, playToken };
 }
 export function clearPendingAssignment() { pending = null; }
 export function getPendingAssignment() { return pending; }
@@ -67,9 +69,11 @@ export function recordLevelCompletion(result: unknown): Promise<void> {
     let authoritative: Progress | undefined;
     if (activeSession.mode === 'offline') { await saveLocalResult(data, updated); lastSaveQueued = false; }
     else {
-      const response = await studyApi.saveResult(data, updated);
+      if (!active.playToken) throw new Error('Missing play authorization; download a backup and contact a researcher.');
+      const response = await studyApi.saveResult(data, active.playToken);
       authoritative = response.progress;
       lastSaveQueued = !!response.queued;
+      lastSaveNeedsReview = !!response.reviewRequired;
     }
     const confirmed = authoritative || updated;
     if ((confirmed.sessions[String(active.week)] || 0) > (progress.sessions[String(active.week)] || 0)) justFinishedSession = true;

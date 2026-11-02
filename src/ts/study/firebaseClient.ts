@@ -53,10 +53,10 @@ export const studyApi = {
   getLevel: (id: string) => callBackend<{ level: PublishedLevel }>('getLevel', { id }),
   removeLevel: (id: string) => callBackend<{ ok: boolean }>('removeLevel', { id }),
   preparePlay: (week: number, sessionId: string, index: number, levelId: string, choiceIndex?: number, selectionPlay?: number) =>
-    callBackend<{ ok: boolean; progress: Progress }>('preparePlay', { week, sessionId, index, levelId,
+    callBackend<{ ok: boolean; progress: Progress; playToken: string }>('preparePlay', { week, sessionId, index, levelId,
       ...(choiceIndex !== undefined ? { choiceIndex, selectionPlay } : {}) }),
   fetchParticipant: () => callBackend<{ account: Account; settings: StudySettings; progress: Progress }>('getParticipantBundle', {}),
-  saveResult: (data: ResultEnvelope, progress: Progress) => callBackend<{ ok: boolean; queued?: boolean; duplicate?: boolean; progress?: Progress }>('submitResult', { data, progress }),
+  saveResult: (data: ResultEnvelope, playToken: string) => callBackend<{ ok: boolean; queued?: boolean; reviewRequired?: boolean; duplicate?: boolean; progress?: Progress }>('submitResult', { data, playToken }),
   removeStudy: (studyId: string) => callBackend<{ ok: boolean }>('removeStudy', { studyId }),
   exportResults: (studyId: string, uid?: string) =>
     callBackend<{ results: ResultEnvelope[]; partial?: boolean }>('exportResults', { studyId, ...(uid ? { uid } : {}) }),

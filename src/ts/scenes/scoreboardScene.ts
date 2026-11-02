@@ -8,7 +8,7 @@ import { escapeKey, scoreboardBackgroundAudioFeintness } from '../core/config';
 
 import { ToggleButton } from '../ui/toggleButton';
 import { PlayableTrackLayerData } from '../level/trackTypes';
-import { getStudySession, recordLevelCompletion, wasLastStudyResultQueued, pendingResultBackup } from '../study/runtime';
+import { getStudySession, recordLevelCompletion, wasLastStudyResultQueued, wasLastStudyResultMarkedForReview, pendingResultBackup } from '../study/runtime';
 import { downloadFile } from '../study/offline';
 
 const capitalize = s => (s && s[0].toUpperCase() + s.slice(1)) || '';
@@ -57,15 +57,19 @@ export default class Scoreboard extends HandScene {
       try {
         await recordLevelCompletion(JSON.parse(JSON.stringify(this.levelStats)));
         this.studySaved = true;
-        status.setText(wasLastStudyResultQueued() ? 'Result secured in the admin database; transfer pending.' : 'Progress saved.');
-        // Cleanup is performed before advancing to the next study screen.
-        this.exit();
+        status.setText(wasLastStudyResultMarkedForReview() ? 'Play saved for researcher review. Study progress was not advanced.' :
+          wasLastStudyResultQueued() ? 'Result secured in the admin database; transfer pending.' : 'Progress saved.');
+        // A valid play can be archived for review without advancing the study
+        // timeline. Do not immediately prompt the participant to replay it.
+        if (wasLastStudyResultMarkedForReview()) {
+          new Button(this, 'RETURN TO\nSTUDY', this.center.x, 790, () => this.exit());
+        } else this.exit();
       } catch (reason) {
         status.setText('Result not confirmed by the server. Retry, or download a backup and contact a researcher.\n' +
           (reason instanceof Error ? reason.message : String(reason)));
-        if (!retry) retry = new Button(this, 'RETRY SAVE', this.center.x, 760, () => { void save(); });
+        if (!retry) retry = new Button(this, 'RETRY SAVE', this.center.x - 300, 760, () => { void save(); });
         retry.setVisible(true); retry.text?.setVisible(true);
-        if (!backup) backup = new Button(this, 'DOWNLOAD\nBACKUP', this.center.x, 900, () => {
+        if (!backup) backup = new Button(this, 'DOWNLOAD\nBACKUP', this.center.x + 300, 760, () => {
           const data = pendingResultBackup(JSON.parse(JSON.stringify(this.levelStats)));
           if (data) downloadFile(`pizzicato-unsent-${data.participantId}-${data.sessionId}-${Date.now()}.json`, JSON.stringify(data, null, 2));
         });

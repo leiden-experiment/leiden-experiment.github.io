@@ -88,6 +88,7 @@ export default class StudySessionScene extends HandScene {
     this.status.setText('Preparing assigned level...');
     try {
       let level: Level;
+      let playToken: string | undefined;
       const [kind, id] = [assignment.levelId.slice(0, assignment.levelId.indexOf(':')), assignment.levelId.slice(assignment.levelId.indexOf(':') + 1)];
       if (kind === 'legacy') {
         const candidate = levels.find(item => item.trackKey === id);
@@ -129,8 +130,9 @@ export default class StudySessionScene extends HandScene {
         const allowed = await studyApi.preparePlay(plan.week, plan.sessionId, plan.index,
           assignment.levelId, choiceIndex, selectionPlay);
         syncStudyProgress(allowed.progress);
+        playToken = allowed.playToken;
       }
-      setPendingAssignment(plan.week, plan.sessionId, plan.index, plan.assignments.length, assignment, choiceIndex, selectionPlay);
+      setPendingAssignment(plan.week, plan.sessionId, plan.index, plan.assignments.length, assignment, choiceIndex, selectionPlay, playToken);
       this.scene.start('level', level);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

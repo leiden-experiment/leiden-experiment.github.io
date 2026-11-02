@@ -127,6 +127,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       commands.classList.add('study-full-actions');
 
     }
+    page.classList.add('study-compact-card', 'study-list-card');
     const list = node('div', page); list.className = 'study-list'; node('p', list, 'Loading studies…');
     const { studies } = await studyApi.listStudies();
     if (!list.isConnected) return;
@@ -144,7 +145,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
           navigate('Studies', showStudies, false);
         }, 'danger');
         remove.title = `Remove study ${study.title}`; remove.setAttribute('aria-label', remove.title);
-        remove.classList.add('study-remove-icon');
+        remove.classList.add('study-remove-icon', 'study-remove-study');
       }
     }
   }
@@ -202,7 +203,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     };
     weekly.addEventListener('change', sync); dateEnabled.addEventListener('change', sync); perParticipant.addEventListener('change', sync);
     const timelineHost = section(page, 'Study timeline'); timelineHost.classList.add('study-subsection');
-    const board = createFlowBoard(timelineHost, data.weeks || { '1': [] }, () => {}, weekly.checked);
+    const board = createFlowBoard(timelineHost, data.weeks && !Array.isArray(data.weeks) ? data.weeks : { '1': [] }, () => {}, weekly.checked);
     void studyApi.listLevels().then(({ levels }) => {
       if (timelineHost.isConnected) board.setAvailableLevels(levels.map(l => ({ id: `library:${l.id}`, name: `Uploaded: ${l.name}` })));
     }).catch(() => { /* Bundled levels and saved IDs remain usable. */ });
@@ -255,7 +256,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         enabled: true,
         ...(perParticipant.checked ? { durationWeeks: Number(duration.value),
           participantStartMode: startMode.value as 'manual' | 'first-login' } : {}),
-        weeks: board.getWeeks() || { '1': [] },
+        weeks: board.getWeeks() && typeof board.getWeeks() === 'object' ? board.getWeeks() : { '1': [] },
         defaultConfig: defaultEnabled.checked ? readDefaults() : {}, groupConfigs,
       };
       const errors = validateSettings(settings); if (errors.length) throw new Error(errors.join('\n'));
@@ -434,7 +435,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     };
   }
   async function showLibrary() {
-    const page = section(output, 'Levels'); page.classList.add('study-compact-card');
+    const page = section(output, 'Levels'); page.classList.add('study-compact-card', 'study-library-card');
     node('p', page, 'Upload a JSON level once, then assign it to any study. IDs are created automatically.');
     const editor = node('div', page); editor.className = 'study-level-upload';
     const fileLabel = node('label', editor); fileLabel.className = 'study-field'; node('span', fileLabel, 'JSON level file');
@@ -452,9 +453,9 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     if (!list.isConnected) return; list.replaceChildren();
     if (!levels.length) node('p', list, 'No custom levels uploaded yet.');
     for (const level of levels) {
-      const row = node('div', list); row.className = 'study-row';
+      const row = node('div', list); row.className = 'study-row study-level-row';
       const label = node('div', row); label.className = 'study-row-title';
-      node('strong', label, level.name); node('small', label, `library:${level.id}`);
+      node('strong', label, level.name);
       action(row, 'Download', async () => downloadJSON(`${level.id}.json`, (await studyApi.getLevel(level.id)).level.data));
       if (user.role === 'admin') {
         const remove = action(row, '×', async () => {
@@ -462,7 +463,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
           await studyApi.removeLevel(level.id);
           navigate('Levels', showLibrary, false);
         }, 'danger');
-        remove.classList.add('study-remove-icon'); remove.title = `Delete level ${level.name}`;
+        remove.classList.add('study-remove-icon', 'study-remove-level'); remove.title = `Delete level ${level.name}`;
         remove.setAttribute('aria-label', remove.title);
       }
     }

@@ -1,6 +1,7 @@
 /* All privileged operations are callable Cloud Functions; the client receives no service account credentials. */
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const { randomBytes } = require('node:crypto');
 const { getApps, initializeApp, applicationDefault } = require('firebase-admin/app');
 const { getDatabase } = require('firebase-admin/database');
 const { getAuth } = require('firebase-admin/auth');
@@ -15,6 +16,8 @@ const { firebasePassword } = require('./password');
 const usernameValid = value => { try { normalizeUsername(value); return true; } catch { return false; } };
 const isLevel = step => step && (!step.type || step.type === 'level');
 const isSelection = step => step && step.type === 'selection';
+// Realtime Database omits empty objects/arrays; non-weekly studies always use week 1.
+const effectiveWeeks = weeks => weeks && typeof weeks === 'object' && !Array.isArray(weeks) ? weeks : { '1': [] };
 const choiceKey = (week, sid, index) => `${week}_${sid}_${index}`;
 const unlockedChoice = (step, index, week, counts) => index >= 0 && index < step.choices.length &&
   (step.unlock === 'all' || (step.unlock === 'weekly' && index + 1 <= Math.max(1, week)) ||
@@ -69,8 +72,8 @@ function validateSettings(s) {
       (s.participantStartMode !== undefined && !['manual','first-login'].includes(s.participantStartMode)) ||
       (s.endDate && (!/^\d{4}-\d{2}-\d{2}$/.test(s.endDate) || Number.isNaN(Date.parse(s.endDate)) || s.endDate < s.startDate)) ||
       !Number.isInteger(s.maxSessionsPerWeek) || s.maxSessionsPerWeek < 1 || s.maxSessionsPerWeek > 50 ||
-      (s.weeks === null && s.weeklyEnabled !== false) || (s.weeks !== null && (!s.weeks || typeof s.weeks !== 'object' || Array.isArray(s.weeks)))) fail('Invalid study settings');
-  for (const [week, assignments] of Object.entries(s.weeks || {})) {
+      (s.weeks != null && (typeof s.weeks !== 'object' || Array.isArray(s.weeks)))) fail('Invalid study settings');
+  for (const [week, assignments] of Object.entries(effectiveWeeks(s.weeks))) {
     if (!/^-?\d+$/.test(week) || !Array.isArray(assignments) || assignments.length > 40) fail('Invalid weekly schedule');
     if (assignments.length && !assignments.some(a => isLevel(a) || isSelection(a))) fail('Each populated week needs a playable level');
     for (const a of assignments) {
@@ -144,7 +147,7 @@ exports.getStudySettings = onCall(options, async req => {
   if (!idValid(studyId)) fail('Invalid study ID'); requireResearcher(account, studyId);
   const [s, i] = await Promise.all([db.ref(`studies/${studyId}/settings`).get(), db.ref(`studyIndex/${studyId}`).get()]);
   if (!s.exists()) fail('Study not found', 'not-found');
-  return { settings: { ...s.val(), weeks: s.val().weeks || { '1': [] } },
+  return { settings: { ...s.val(), weeks: effectiveWeeks(s.val().weeks) },
     databaseURL: account.role === 'admin' ? i.val()?.databaseURL : undefined };
 });
 exports.saveStudy = onCall(options, async req => {
@@ -158,7 +161,7 @@ exports.saveStudy = onCall(options, async req => {
     try { await destination(url).ref(`studies/${id}/_linkTest`).set({ checkedAt: Date.now() }); }
     catch { fail('Cannot write to linked database; grant the Functions service account access', 'failed-precondition'); }
   }
-  await db.ref().update({ [`studies/${id}/settings`]: settings,
+  await db.ref().update({ [`studies/${id}/settings`]: { ...settings, weeks: effectiveWeeks(settings.weeks) },
     [`studyIndex/${id}`]: { title: settings.title, enabled: !!settings.enabled, databaseURL: url || '' } });
   return { id };
 });
@@ -386,7 +389,7 @@ exports.getParticipantBundle = onCall(options, async req => {
   }
   const saved = (await db.ref(`progress/${account.studyId}/${account.uid}`).get()).val() || {};
   const progress = { completed: saved.completed || {}, sessions: saved.sessions || {}, activeSession: saved.activeSession || {}, choices: saved.choices || {} };
-  return { account, settings: { ...settings, weeks: account.weeksOverride || settings.weeks || { '1': [] } }, progress };
+  return { account, settings: { ...settings, weeks: effectiveWeeks(account.weeksOverride || settings.weeks) }, progress };
 });
 /** Advance a non-gameplay slide, with the same server-enforced weekly limits as a level result. */
 exports.advanceStudyStep = onCall(options, async req => {
@@ -397,7 +400,7 @@ exports.advanceStudyStep = onCall(options, async req => {
       !['start', 'break', 'end', 'selection'].includes(stepType)) fail('Invalid study step');
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings || !settings.enabled) fail('Study disabled', 'failed-precondition');
-  const weeks = account.weeksOverride || settings.weeks || { '1': [] };
+  const weeks = effectiveWeeks(account.weeksOverride || settings.weeks);
   const ref = db.ref(`progress/${account.studyId}/${account.uid}`);
   const transaction = await ref.transaction(value => {
     const progress = { completed: value?.completed || {}, sessions: value?.sessions || {}, activeSession: value?.activeSession || {}, choices: value?.choices || {}, pendingResults: value?.pendingResults || {} };
@@ -441,7 +444,7 @@ exports.preparePlay = onCall(options, async req => {
       typeof levelId !== 'string' || levelId.length > 120) fail('Invalid play request');
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings?.enabled) fail('Study is not enabled', 'failed-precondition');
-  const weeks = account.weeksOverride || settings.weeks || { '1': [] };
+  const weeks = effectiveWeeks(account.weeksOverride || settings.weeks);
   const saved = (await db.ref(`progress/${account.studyId}/${account.uid}`).get()).val() || {};
   const progress = { completed: saved.completed || {}, sessions: saved.sessions || {},
     activeSession: saved.activeSession || {}, choices: saved.choices || {} };
@@ -467,7 +470,16 @@ exports.preparePlay = onCall(options, async req => {
   if (!samePosition || (!matchedLevel && !matchedChoice)) {
     fail('Your study progress or assignment has changed. Return to the study screen to resume.', 'failed-precondition');
   }
-  return { ok: true, progress };
+  // Record an opaque, short-lived authorization for this exact play before gameplay
+  // starts. Firebase RTDB progress can change while a level runs (other tabs,
+  // researcher edits); the result must still be preserved for review.
+  const playToken = randomBytes(24).toString('hex');
+  await db.ref(`playAuthorizations/${account.studyId}/${account.uid}/${playToken}`).set({
+    week, sessionId, index, levelId,
+    ...(choiceIndex !== undefined ? { choiceIndex, selectionPlay } : {}),
+    expiresAt: Date.now() + 24 * 60 * 60 * 1000
+  });
+  return { ok: true, progress, playToken };
 });
 /** Save an accepted result in the SAME Realtime Database transaction as progress.
  * Its pendingResults record acts as a durable outbox if delivery to a linked
@@ -476,7 +488,15 @@ exports.preparePlay = onCall(options, async req => {
 exports.submitResult = onCall(options, async req => {
   const account = await profile(req);
   if (account.role !== 'participant') fail('Participant permission required', 'permission-denied');
-  const { data } = req.data || {};
+  const { data, playToken } = req.data || {};
+  if (typeof playToken !== 'string' || !/^[a-f0-9]{48}$/.test(playToken))
+    fail('This play has no valid server authorization. Sign in and start the level again.', 'failed-precondition');
+  const authorization = (await db.ref(`playAuthorizations/${account.studyId}/${account.uid}/${playToken}`).get()).val();
+  if (!authorization || !Number.isFinite(authorization.expiresAt) || authorization.expiresAt < Date.now() ||
+      authorization.week !== data?.week || authorization.sessionId !== data?.sessionId ||
+      authorization.index !== data?.assignmentIndex || authorization.levelId !== data?.levelId ||
+      authorization.choiceIndex !== data?.choiceIndex || authorization.selectionPlay !== data?.selectionPlay)
+    fail('Play authorization expired or does not match the completed level. Contact a researcher and retain a backup.', 'failed-precondition');
   if (!data || JSON.stringify(data).length > 800000 || data.schemaVersion !== 1 || data.studyId !== account.studyId ||
       data.participantId !== account.participantId || data.group !== (account.group || '') ||
       typeof data.sessionId !== 'string' || !/^-?\d+-\d+$/.test(data.sessionId) ||
@@ -484,17 +504,18 @@ exports.submitResult = onCall(options, async req => {
       !data.sessionId.startsWith(`${data.week}-`)) fail('Invalid study result');
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings || !settings.enabled) fail('Study disabled', 'failed-precondition');
-  const weeks = account.weeksOverride || settings.weeks || { '1': [] };
+  const weeks = effectiveWeeks(account.weeksOverride || settings.weeks);
   const sourceSteps = weeks[String(data.week)] || [];
   const sourceStep = sourceSteps[data.assignmentIndex];
-  const selection = isSelection(sourceStep);
+  const selection = authorization.choiceIndex !== undefined;
   if (selection) {
     if (!Number.isInteger(data.choiceIndex) || !Number.isInteger(data.selectionPlay) || data.selectionPlay < 0 ||
-        data.choiceIndex < 0 || data.choiceIndex >= sourceStep.choices.length ||
-        sourceStep.choices[data.choiceIndex].levelId !== data.levelId) fail('Invalid selected level result');
-  } else if (!isLevel(sourceStep) || data.choiceIndex !== undefined || data.levelId !== sourceStep.levelId) {
-    fail('This level does not match the assigned study step', 'failed-precondition');
-  }
+        data.choiceIndex < 0 || data.choiceIndex > 8 ||
+        (isSelection(sourceStep) && sourceStep.choices?.[data.choiceIndex]?.levelId !== data.levelId))
+      fail('Invalid selected level result');
+  } // The validated play authorization is authoritative for an in-flight play.
+  // A researcher may edit the timeline after a level starts: retain its result
+  // for manual review rather than reject a real participant's completed play.
   const key = `${data.sessionId}_${data.assignmentIndex}_${selection ? data.selectionPlay : 0}`;
   const record = { ...data, completedAt: new Date().toISOString() };
   const stateRef = db.ref(`progress/${account.studyId}/${account.uid}`);
@@ -524,10 +545,22 @@ exports.submitResult = onCall(options, async req => {
     const done = [...(progress.completed[String(week)] || [])];
     const index = steps.findIndex((_, i) => !done.includes(`${sessionId}:${i}`));
     if ((timing.beforeStart && week !== 0) || timing.afterEnd || sessionsDone >= timing.cap ||
-        week !== data.week || sessionId !== data.sessionId || index !== data.assignmentIndex || index < 0) return;
+        week !== data.week || sessionId !== data.sessionId || index !== data.assignmentIndex || index < 0 ||
+        (selection ? !isSelection(steps[index]) || steps[index].choices?.[data.choiceIndex]?.levelId !== data.levelId :
+          !isLevel(steps[index]) || steps[index].levelId !== data.levelId)) {
+      // The play was explicitly authorized at launch. Do not invent progress,
+      // but durably save the evidence with a review marker, including if a study
+      // timeline was edited during play. The researcher can reconcile later.
+      progress.pendingResults[key] = { ...record, reviewRequired: true };
+      return progress;
+    }
     if (selection) {
-      if (data.selectionPlay !== count || (sourceStep.playthroughs > 0 && count >= sourceStep.playthroughs) ||
-          !unlockedChoice(sourceStep, data.choiceIndex, week, counts)) return;
+      const currentChoice = steps[index];
+      if (data.selectionPlay !== count || (currentChoice.playthroughs > 0 && count >= currentChoice.playthroughs) ||
+          !unlockedChoice(currentChoice, data.choiceIndex, week, counts)) {
+        progress.pendingResults[key] = { ...record, reviewRequired: true };
+        return progress;
+      }
       counts[String(data.choiceIndex)] = (counts[String(data.choiceIndex)] || 0) + 1;
       progress.choices[countsKey] = counts;
       if (sourceStep.playthroughs > 0 && count + 1 >= sourceStep.playthroughs) done.push(`${sessionId}:${index}`);
@@ -552,7 +585,7 @@ exports.submitResult = onCall(options, async req => {
   const latest = transaction.committed ? transaction.snapshot.val() : (await stateRef.get()).val();
   const staged = latest?.pendingResults?.[key];
   if (!staged) fail('Could not stage result safely', 'internal');
-  const url = (await db.ref(`studyIndex/${account.studyId}/databaseURL`).get()).val();
+  const url = (await db.ref(`studyIndex/${account.studyId}/databaseURL`).get()).val() || null;
   const path = `results/${account.studyId}/${account.uid}/${key}`;
   let queued = false;
   try {
@@ -566,7 +599,7 @@ exports.submitResult = onCall(options, async req => {
     queued = true;
   }
   const state = (await stateRef.get()).val() || latest;
-  return { ok: true, queued, progress: {
+  return { ok: true, queued, reviewRequired: !!staged.reviewRequired, progress: {
     completed: state.completed || {}, sessions: state.sessions || {},
     activeSession: state.activeSession || {}, choices: state.choices || {}
   } };

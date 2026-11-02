@@ -101,7 +101,7 @@ export function validateSettings(value: StudySettings): string[] {
   if (value?.endDate && (!/^\d{4}-\d{2}-\d{2}$/.test(value.endDate) || Number.isNaN(Date.parse(value.endDate)))) issues.push('Invalid end date');
   if (value?.dateRangeEnabled !== false && value?.endDate && value.endDate < value.startDate) issues.push('End date must not precede start date');
   if (!Number.isInteger(value?.maxSessionsPerWeek) || value.maxSessionsPerWeek < 1 || value.maxSessionsPerWeek > 50) issues.push('Sessions per week must be between 1 and 50');
-  if ((value?.weeks == null && value?.weeklyEnabled !== false) || (value?.weeks != null && (typeof value.weeks !== 'object' || Array.isArray(value.weeks)))) issues.push('Invalid study timeline');
+  if (value?.weeks != null && (typeof value.weeks !== 'object' || Array.isArray(value.weeks))) issues.push('Invalid study timeline');
   else Object.entries(value.weeks || {}).forEach(([week, steps]) => {
     if (!/^(?:-1|0|[1-9]\d*)$/.test(week) || !Array.isArray(steps) || steps.length > 40) { issues.push(`Invalid week ${week}`); return; }
     steps.forEach((step, i) => {

@@ -60,3 +60,9 @@ assert(scoreboard.indexOf('this.createStudyCompletionScreen();') < scoreboard.in
   'Research sessions must bypass guest scoreboard controls');
 assert(runtime.includes('pendingSave = promise'), 'Duplicate completion clicks must coalesce');
 console.log('PASS: clean research login, participant credentials, JSON exports, per-user duration, study-only result submission and retry');
+
+// Research dashboard regression checks: consistent action sizes, no level IDs, and informative disabled login.
+assert(css.includes('.study-list-card') && css.includes('.study-remove-study') && css.includes('.study-remove-level'), 'Study and library row sizing missing');
+assert(dashboard.includes("node('strong', label, level.name);"), 'Uploaded levels should show their display name');
+assert(!dashboard.includes("node('small', label, `library:${level.id}`)"), 'Uploaded level ID should not be displayed');
+assert(fs.readFileSync(path.resolve(__dirname, '../src/ts/core/game.ts'), 'utf8').includes('Account disabled by admin.'), 'Disabled-account message missing');

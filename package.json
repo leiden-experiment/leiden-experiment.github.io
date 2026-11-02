@@ -11,7 +11,7 @@
       "email": "j.a.rijsdijk@student.tudelft.nl"
     }
   ],
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "A serious game about sonification of hand and finger movements",
   "main": "src/electron/main.js",
   "scripts": {

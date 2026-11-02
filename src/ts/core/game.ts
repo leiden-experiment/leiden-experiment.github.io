@@ -71,7 +71,9 @@ function promptLogin() {
           startGame();
         }
       }
-    } catch (reason) { error.textContent = reason instanceof Error ? reason.message : String(reason); }
+    } catch (reason) { error.textContent = (reason && typeof reason === 'object' && 'code' in reason &&
+      (reason as { code?: string }).code === 'auth/user-disabled') ? 'Account disabled by admin.' :
+      reason instanceof Error ? reason.message : String(reason); }
     finally { button.disabled = false; }
   };
   for (const input of [username, password]) input.addEventListener('keydown', event => {
@@ -82,7 +84,9 @@ function promptLogin() {
     const input = el(wrapper, 'input'); input.type = 'file'; input.accept = '.json,.pizzicato-study.json'; input.className = 'study-login-file';
     input.onchange = async () => {
       try { if (!input.files?.[0]) return; importOfflinePack(JSON.parse(await input.files[0].text())); promptLogin(); }
-      catch (reason) { error.textContent = reason instanceof Error ? reason.message : String(reason); }
+      catch (reason) { error.textContent = (reason && typeof reason === 'object' && 'code' in reason &&
+      (reason as { code?: string }).code === 'auth/user-disabled') ? 'Account disabled by admin.' :
+      reason instanceof Error ? reason.message : String(reason); }
     };
   }
   if (deployment.allowGuest) {

@@ -52,6 +52,7 @@ const moduleObject={exports:{}};
 const fauxRequire=name => {
   if (name === 'firebase-functions/v2/https') return { onCall: (_, handler) => handler, HttpsError };
   if (name === 'firebase-admin') return {};
+  if (name === 'node:crypto') return require('node:crypto');
   if (name === 'firebase-admin/app') return {
     getApps: () => apps, initializeApp: (args={}, name='[DEFAULT]') => { const app={name,options:args}; apps.push(app); return app; },
     applicationDefault: () => ({})
@@ -74,6 +75,15 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   await central.ref('accounts/user-one').set({uid:'user-one',username:'participant01',participantId:'participant01',studyId:'research1',role:'participant',active:true});
   await central.ref('accounts/admin-one').set({uid:'admin-one',username:'owner',role:'admin',active:true});
   await central.ref('studyMembers/research1/user-one').set(true);
+  // An RTDB-empty timeline can be returned as null. No-schedule studies must
+  // still save/reload cleanly with the central database as their default.
+  const emptyStudy = await api.saveStudy(request('admin-one', {
+    id: 'emptytest', settings: {...settings, title:'No weekly restrictions',weeks:null}
+  }));
+  assert.equal(emptyStudy.id,'emptytest');
+  const emptySaved = await api.getStudySettings(request('admin-one',{studyId:'emptytest'}));
+  assert.deepEqual(JSON.parse(JSON.stringify(emptySaved.settings.weeks)), {'1':[]});
+  assert(!emptySaved.databaseURL, 'linked results database is optional');
   await assert.rejects(api.preparePlay(request('user-one', {week:1,sessionId:'1-1',index:1,levelId:'legacy:Trained'})),
     /progress or assignment has changed/, 'Server must not authorize playing a later slide');
   let done=await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-1',index:0,stepType:'start'}));
@@ -82,11 +92,12 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   assert(permitted.ok && permitted.progress.completed['1'].includes('1-1:0'));
   await assert.rejects(api.preparePlay(request('user-one', {week:1,sessionId:'1-1',index:1,levelId:'legacy:Nosound'})),
     /progress or assignment has changed/, 'Server must reject a different level');
-  const first=await api.submitResult(request('user-one',{data:result}));
+  await assert.rejects(api.submitResult(request('user-one',{data:result,playToken:'0'.repeat(48)})), /authorization/, 'forged plays must be rejected');
+  const first=await api.submitResult(request('user-one',{data:result,playToken:permitted.playToken}));
   assert(first.ok && !first.queued);
   assert(first.progress.completed['1'].includes('1-1:1'));
   assert.equal((await central.ref('results/research1/user-one/1-1_1_0').get()).val().result.layersStats[0].correct,20);
-  const repeat=await api.submitResult(request('user-one',{data:result}));
+  const repeat=await api.submitResult(request('user-one',{data:result,playToken:permitted.playToken}));
   assert(repeat.ok);
   assert.equal(repeat.progress.completed['1'].length,2,'a duplicate cannot advance the study');
   // Linked results database is unavailable: central durable outbox retains submission.
@@ -95,8 +106,9 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   const nextSessionStart=await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-2',index:0,stepType:'start'}));
   assert(nextSessionStart.ok);
   studyDatabase.setFailDelivery(true);
+  const nextPermit=await api.preparePlay(request('user-one', {week:1,sessionId:'1-2',index:1,levelId:'legacy:Trained'}));
   const nextResult={...result,sessionId:'1-2'};
-  const queued=await api.submitResult(request('user-one',{data:nextResult}));
+  const queued=await api.submitResult(request('user-one',{data:nextResult,playToken:nextPermit.playToken}));
   assert(queued.ok && queued.queued && queued.progress.completed['1'].includes('1-2:1'));
   assert((await central.ref('progress/research1/user-one/pendingResults/1-2_1_0').get()).val(), 'result is durable while study database is offline');
   // Navigating past the level must not erase pending results.
@@ -105,10 +117,26 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   const exported=await api.exportResults(request('admin-one',{studyId:'research1'}));
   assert(exported.results.some(v=>v.sessionId==='1-2' && v.deliveryStatus==='awaiting-delivery'), 'pending result must be exportable');
   studyDatabase.setFailDelivery(false);
-  const retry=await api.submitResult(request('user-one',{data:nextResult}));
+  const retry=await api.submitResult(request('user-one',{data:nextResult,playToken:nextPermit.playToken}));
   assert(retry.ok && !retry.queued);
   assert(!(await central.ref('progress/research1/user-one/pendingResults/1-2_1_0').get()).val());
   assert((await studyDatabase.ref('results/research1/user-one/1-2_1_0').get()).val());
+  // A play authorized before a researcher edits the schedule must never be lost:
+  // it is saved for review without inventing a matching progression update.
+  await central.ref('studyIndex/research1/databaseURL').set('');
+  await central.ref('studies/research1/settings/weeks/1').set(settings.weeks[1]);
+  await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-3',index:0,stepType:'start'}));
+  const stalePermit = await api.preparePlay(request('user-one',{week:1,sessionId:'1-3',index:1,levelId:'legacy:Trained'}));
+  // Reproduce the reported 400: another session moves the server progress
+  // after this level was authorized, without erasing its recorded result.
+  const progressBefore = (await central.ref('progress/research1/user-one').get()).val();
+  await central.ref('progress/research1/user-one/activeSession/1').set('1-99');
+  const retained = await api.submitResult(request('user-one',{data:{...result,sessionId:'1-3'},playToken:stalePermit.playToken}));
+  assert(retained.ok && retained.reviewRequired, 'progress drift must archive a play for review instead of returning 400');
+  const archived=(await central.ref('results/research1/user-one/1-3_1_0').get()).val();
+  assert(archived && archived.reviewRequired, 'the admin database must store pre-authorized plays with reviewRequired flag');
+  assert(!(await central.ref('progress/research1/user-one').get()).val().completed['1'].includes('1-3:1'), 'progress mismatch must not fabricate completion');
+  await central.ref('progress/research1/user-one/activeSession/1').set(progressBefore.activeSession['1']);
   await central.ref('levelLibrary/testlevel').set({id:'testlevel',name:'Test'});
   await central.ref('levelIndex/testlevel').set({id:'testlevel',name:'Test'});
   await central.ref('studies/research1/settings/weeks/1').set([{type:'level',levelId:'library:testlevel'}]);

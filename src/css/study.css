@@ -245,3 +245,17 @@
 .study-admin-dashboard .study-compact-card > :last-child { margin-bottom:0!important; padding-bottom:0!important; }
 .study-shell.study-login .study-login-card { border-color:#5e5e5e; box-shadow:none; }
 .study-shell.study-login .study-login-card button { border-radius:0!important; }
+
+/* v1.8.2: compact lists and consistently sized study/library row actions. */
+.study-admin-dashboard .study-list-card,
+.study-admin-dashboard .study-library-card { padding-bottom:0!important; }
+.study-admin-dashboard .study-list-card > .study-list,
+.study-admin-dashboard .study-library-card > div:last-child { margin-bottom:0!important; padding-bottom:0!important; }
+.study-admin-dashboard .study-list-card .study-row:last-child,
+.study-admin-dashboard .study-library-card .study-level-row:last-child { border-bottom:0; }
+.study-admin-dashboard .study-list-card .study-row > .study-btn,
+.study-admin-dashboard .study-level-row > .study-btn { height:40px!important; min-height:40px!important; box-sizing:border-box; }
+.study-admin-dashboard .study-list-card .study-row .study-remove-study,
+.study-admin-dashboard .study-level-row .study-remove-level { height:40px!important; min-height:40px!important; width:40px!important; min-width:40px!important; padding:5px!important; line-height:1!important; }
+.study-admin-dashboard .study-level-upload input[type=file] { height:42px!important; padding:0 10px!important; line-height:40px!important; }
+.study-admin-dashboard .study-level-upload input[type=file]::file-selector-button { height:32px; min-height:32px; margin-top:4px; margin-right:10px; vertical-align:middle; padding:4px 10px; border:1px solid #666; border-radius:0; background:#333; color:#eee; cursor:pointer; }
