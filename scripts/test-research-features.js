@@ -15,11 +15,11 @@ function loadTS(filename) {
   m._compile(output.outputText, full); return m.exports;
 }
 const { encryptCredentials, decryptCredentials } = require('./admin-vault');
-const user = { email: 'researcher@example.edu', password: crypto.randomBytes(24).toString('base64url') };
+const user = { username: 'leadresearcher', password: crypto.randomBytes(24).toString('base64url') };
 const secret = 'this-is-a-long-unique-vault-phrase-!z2';
 const vault = encryptCredentials(user, secret);
 assert(!JSON.stringify(vault).includes(user.password));
-assert(!JSON.stringify(vault).includes(user.email));
+assert(!JSON.stringify(vault).includes(user.username));
 assert.deepEqual(decryptCredentials(vault, secret), user);
 assert.throws(() => decryptCredentials(vault, secret + 'wrong'), /auth|unable|decrypt|error|Unsupported/i);
 assert.throws(() => encryptCredentials(user, 'short'));

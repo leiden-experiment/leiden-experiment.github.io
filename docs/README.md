@@ -8,7 +8,7 @@
 
 | Place | What it holds |
 | --- | --- |
-| **Central Firebase project** (the *administrator project*) | Firebase Authentication for logins; **default Realtime Database** for studies, participant/moderator profiles, schedules, published JSON levels, and progress; deployed Cloud Functions for protected operations. |
+| **Central Firebase project** (the *administrator project*) | Firebase Authentication for username/password logins (internal email identifiers); **default Realtime Database** for studies, participant/moderator profiles, schedules, published JSON levels, and progress; deployed Cloud Functions for protected operations. |
 | **Study results database** (optional, recommended for this test) | A **second Realtime Database instance** for results from a specific study. You link its URL when creating/editing the study. The main database still holds the study settings, accounts, and shared levels. |
 | **Your computer** | A browser website started by `npm start`, plus a local file containing **public** Firebase web settings. It connects to real online Firebase; you do **not** need GitHub Pages to test. |
 | **GitHub Pages** (optional) | Hosts the same browser website. It is **not** a database or a Firebase backend. |
@@ -50,7 +50,7 @@ firebase login
 ### Step 3 — Create the central administrator Firebase project
 
 1. Open <https://console.firebase.google.com/> and click **Create/Add project**. Choose a name such as `pizzicato-research-test`. Keep a note of the **Project ID** (not just its display name).
-2. In **Build → Authentication → Sign-in method**, enable **Email/Password** and save.
+2. In **Build → Authentication → Sign-in method**, enable **Email/Password** and save. **Pizzicato still shows usernames**, not email addresses: Firebase internally stores each user as `username@pizzicato.com`. No mailbox is needed, and these addresses must not be used for email verification or password recovery.
 3. In **Build → Realtime Database**, click **Create database**, choose a location, and select **locked mode**. This is the **default (central/admin) database**. Copy its full HTTPS **database URL**. Use *Realtime Database*, not Firestore.
 4. Click the **gear icon → Project settings → General → Your apps → Web (`</>`)** and register a Web app. Under **SDK setup and configuration**, choose **Config**. Keep this screen open. Later you need its public `apiKey`, `authDomain`, `projectId`, and `appId` values.
 5. In **Authentication → Settings → Authorized domains**, make sure **`localhost`** is allowed for local testing (add it if necessary). Later, for GitHub Pages, add the Pages **hostname** too.
@@ -71,17 +71,17 @@ Wait until it finishes successfully. This deploys the protected Cloud Functions 
 ### Step 5 — Create your administrator login
 
 1. In Firebase Console, open **gear icon → Project settings → Service accounts** and click **Generate new private key**. Download the **Admin SDK service-account JSON** and put it **outside** the repository in a secure location (for example, your private Documents folder). **Never put it on GitHub or give it to researchers who only need to log in.**
-2. In the Pizzicato terminal, use your real email address and the full path to that downloaded file:
+2. Choose an **administrator username** (4–40 characters, starting with a letter; letters/numbers/underscore/hyphen only). In the Pizzicato terminal, use the username and the full path to the downloaded key:
 
    ```sh
-   npm run admin:create -- researcher@university.edu "/FULL/PATH/TO/service-account.json"
+   npm run admin:create -- leadresearcher "/FULL/PATH/TO/service-account.json"
    ```
 
    **Windows path example:** `"C:\Users\YourName\Documents\service-account.json"`. **Mac path example:** `"/Users/YourName/Documents/service-account.json"`.
-3. The terminal shows an administrator **password once**. Save the email and password in a password manager. Firebase Authentication—not a file on GitHub—checks them when you log in. If that email already has an account, the command grants admin access but does **not** replace its password.
-4. To add a second trusted lead administrator, repeat the command with a different email. Give researchers their **login email/password**, *never* the Admin SDK private key.
+3. The terminal shows an administrator **password once**. Save the **username and password** in a password manager. Firebase Authentication—not a file on GitHub—checks them. If an administrator with that username already exists, the command keeps the original password. If a *non-administrator* already has the username, it refuses to promote that account.
+4. To add another trusted lead administrator, repeat the command using a **different username**. Give researchers only their **username/password**, *never* the Admin SDK private key. Usernames are **case-insensitive and unique across all roles and studies** within the central Firebase project.
 
-**Optional — prepare encrypted login credentials before Firebase is ready:** Instead of `admin:create`, you can use `npm run admin:prepare -- researcher@university.edu "/SAFE/FOLDER/admin-vault.json"`, enter a separate 20+ character encryption passphrase, and save the displayed login password. Later, after downloading the Admin SDK key and installing the `functions` dependencies, activate it with `npm run admin:activate -- "/SAFE/FOLDER/admin-vault.json" "/FULL/PATH/TO/service-account.json"`. **Use either this route OR `admin:create` for the first account, not both for the same email.** The AES-256-GCM vault is only an encrypted backup; keep the passphrase separately, and do **not** rely on a committed encrypted file as your website login system. Prefer keeping even encrypted backups outside public GitHub.
+**Optional — prepare encrypted login credentials before Firebase is ready:** Instead of `admin:create`, you can use `npm run admin:prepare -- leadresearcher "/SAFE/FOLDER/admin-vault.json"`, enter a separate 20+ character encryption passphrase, and save the displayed login password. Later, after downloading the Admin SDK key and installing the `functions` dependencies, activate it with `npm run admin:activate -- "/SAFE/FOLDER/admin-vault.json" "/FULL/PATH/TO/service-account.json"`. **Use either this route OR `admin:create` for the first account, not both for the same username.** The AES-256-GCM vault is only an encrypted backup; keep the passphrase separately, and do **not** rely on a committed encrypted file as your website login system. Prefer keeping even encrypted backups outside public GitHub.
 
 ### Step 6 — Connect this computer's web version to the central database
 
@@ -110,7 +110,7 @@ Wait until it finishes successfully. This deploys the protected Cloud Functions 
    ```
 
 2. A browser may open automatically. Otherwise open the address displayed by the terminal, usually <http://localhost:8080/>.
-3. Sign in with the **administrator email and password** from Step 5. You should see **Pizzicato · Research administration** with a **Create new study** button.
+3. Sign in with the **administrator username and password** from Step 5 (e.g. `leadresearcher`, **not** `leadresearcher@pizzicato.com`). You should see **Pizzicato · Research administration** with a **Create new study** button.
 4. Leave the terminal running while using the game. To stop the local web server later, press **Ctrl+C**. Firebase information stays saved online.
 
 **This is already the full online website running locally**: no GitHub deployment required. You still need internet to authenticate and save to Firebase.
@@ -147,6 +147,8 @@ This is recommended for testing the study-to-database link. It is **not** a seco
 6. In Firebase Console, open the **second results database → Data** (if linked) and check for records under **`results/test_study_01/`**. The central database still contains study configuration, accounts, shared levels and participant progression. If you used the default database instead, results are stored there.
 7. Try starting the study again as the participant: the **one completed session per week** limit should prevent a second full session. If something does not match, fix the test study before adding real participants.
 
+**If you upgraded from an earlier Pizzicato version with email-based admin accounts or `@pizzicato.example` participant/moderator accounts:** use the migration command in Step 11a **before trying to sign in with their new usernames**. New installations do not need migration.
+
 **First-time setup is finished.** Return to Step 11 next time.
 
 ---
@@ -164,6 +166,21 @@ This is recommended for testing the study-to-database link. It is **not** a seco
 7. When finished, close the browser window and press **Ctrl+C** in the terminal to stop the local web server. The data remains in Firebase.
 
 **After pulling new code:** in the repository folder run `git pull` (if using Git), `npm install`, `npm install --prefix functions` if backend dependencies changed, and rerun `firebase deploy --only functions,database --project YOUR-PROJECT-ID` **only if the backend/rules changed**. Then restart `npm start`. Back up your project and test before updating a live study.
+
+### Step 11a — Existing accounts only: switch an old login to a username
+
+**Skip this section for a brand-new Firebase project.** If a Firebase account was created with an actual email address (older admin accounts), or internally with `@pizzicato.example` (older participants/moderators), **updating the website alone will not convert it**. A trusted administrator must migrate it once. This keeps the **same Firebase UID, password, roles, group assignments, and study data**.
+
+1. Make sure `npm run setup:web` was completed for the **existing central Firebase project** and you still have its private service-account JSON from Step 5. Back up the Firebase Authentication user list and Realtime Database first.
+2. Find the account's existing email **in Firebase Console → Authentication → Users**. For example, it might be `researcher@university.edu` or `testplayer01@pizzicato.example`. This is the **only time** you need that old email: for the administrator's one-time migration command.
+3. From the repository folder, type (replace all three example values):
+
+   ```sh
+   npm run account:migrate -- "researcher@university.edu" leadresearcher "/FULL/PATH/TO/service-account.json"
+   ```
+
+4. Repeat for every older account. Each username must be unique (ignoring upper/lowercase); a collision stops the change. Ask the user to **sign out** of older sessions and sign back in using **only** the new username and their **existing password**.
+5. Password-reset emails will **not** reach these internal identifiers. For moderator passwords, use the dashboard's **Set new password** control. For an administrator password change, use a trusted Firebase Admin SDK operation or your organization's secure account-management process. **Do not email passwords or use Firebase email recovery with `@pizzicato.com`**.
 
 ### Step 12 — Optional: publish the same game on GitHub Pages (`main` or `dev`)
 
@@ -192,7 +209,7 @@ For the technical maintainer; **not necessary** for local browser testing.
 | --- | --- |
 | `git`, `node` or `npm` is not recognized | Install Git/Node.js from Step 1, then restart the terminal. |
 | Website starts as a guest instead of asking for login | Run `npm run check:web`. If it says `guest`, rerun `npm run setup:web` with Firebase (`y`) and **restart** `npm start`. |
-| Firebase login fails | Check administrator email/password, enabled **Email/Password** provider, central project ID, and (if relevant) authorized domain. Participant login uses the chosen username, not an email address. |
+| Firebase login fails | Check administrator username/password, enabled **Email/Password** provider, central project ID, and (if relevant) authorized domain. All roles log in using their chosen username, not an email address. |
 | You can sign in, but the dashboard says `functions/not-found` or permissions error | Check `firebase deploy --only functions,database --project YOUR-PROJECT-ID`, that web setup uses the **same** central project, and that the administrator account was created there. |
 | Saving a study says it cannot write to its linked database | Check the **second Realtime Database URL**, instance/project permissions, and that Blaze is active. For a first test, leave the optional study URL blank and use the default database until linking is fixed. |
 | Custom level will not upload/play | Upload a supported **Level Designer `.json`**, not an MP4. Try the bundled levels first. Use a new library ID for each revision. |
@@ -202,7 +219,7 @@ For the technical maintainer; **not necessary** for local browser testing.
 
 ## Research-data and security reminders
 
-- The **admin/service-account JSON, password, and optional vault passphrase must stay private**. Firebase Authentication holds login credentials; neither plain nor encrypted login credentials belong in the public browser code. A protected encrypted vault is only a backup, not a sign-in database.
+- The **admin/service-account JSON, password, and optional vault passphrase must stay private**. Firebase Authentication holds the username-derived internal identifiers and login credentials; neither plain nor encrypted login credentials belong in the public browser code. A protected encrypted vault is only a backup, not a sign-in database.
 - A linked study results database stores **results only**; shared custom levels, study definitions, accounts and progress remain in the central database. Study settings are created through the administrator dashboard, not by manually pasting user credentials into Firebase.
 - **Use pseudonymous participant IDs.** Check consent, access control, backup, retention/deletion policy, and ethical approval before enrolling real participants. For critical research data, export and back up regularly.
 - Online results may be retained in a **central recovery queue** if a linked results database is unreachable. A download that says **partial** is *not a complete dataset*. Automatic recovery/re-delivery is not fully implemented; verify both exports and database data before relying on them.

@@ -2,6 +2,7 @@ import { FirebaseApp, initializeApp } from 'firebase/app';
 import { Auth, getAuth, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFunctions, httpsCallable, Functions } from 'firebase/functions';
 import { deployment } from './deployment';
+import { emailForUsername } from './username';
 import { Account, PublishedLevel, StudySettings, StudySummary, Progress, ResultEnvelope } from './types';
 
 let app: FirebaseApp | null = null;
@@ -17,7 +18,7 @@ function ensureServices() {
 }
 export async function loginOnline(username: string, password: string) {
   ensureServices();
-  const email = username.includes('@') ? username : `${username}@pizzicato.example`;
+  const email = emailForUsername(username);
   const credential = await signInWithEmailAndPassword(auth!, email, password);
   const token = await credential.user.getIdTokenResult(true);
   const profile = await callBackend<{ account: Account }>('getProfile', {});

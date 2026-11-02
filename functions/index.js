@@ -10,9 +10,9 @@ const auth = getAuth();
 const options = { region: 'europe-west1', maxInstances: 20 };
 const fail = (message, code = 'invalid-argument') => { throw new HttpsError(code, message); };
 const idValid = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(value);
-const usernameValid = value => typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_-]{3,39}$/.test(value);
+const { normalizeUsername, emailForUsername } = require('./username');
+const usernameValid = value => { try { normalizeUsername(value); return true; } catch { return false; } };
 const isLevel = step => step && (!step.type || step.type === 'level');
-const emailFor = name => name.includes('@') ? name.toLowerCase() : `${name.toLowerCase()}@pizzicato.example`;
 async function profile(req) {
   if (!req.auth) fail('Login required', 'unauthenticated');
   // Check disabled users and revoked sessions on every privileged call, not just at sign-in.
@@ -24,7 +24,7 @@ async function profile(req) {
     fail('Session expired or revoked; sign in again', 'unauthenticated');
   const snap = await db.ref(`accounts/${req.auth.uid}`).get();
   const account = snap.val();
-  if (req.auth.token.superadmin === true) return { ...account, uid: req.auth.uid, username: account?.username || req.auth.token.email || 'administrator', role: 'admin', active: true };
+  if (req.auth.token.superadmin === true) return { ...account, uid: req.auth.uid, username: account?.username || authUser.displayName || (authUser.email || '').split('@')[0] || 'administrator', role: 'admin', active: true };
   if (!account || !account.active) fail('Account disabled or not enrolled', 'permission-denied');
   return { ...account, uid: req.auth.uid };
 }
@@ -128,8 +128,9 @@ exports.provisionAccount = onCall(options, async req => {
   if (startDate && (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || Number.isNaN(Date.parse(startDate)))) fail('Invalid participant start date');
   if (typeof group !== 'string' || group.length > 100) fail('Invalid group');
   if (!(await db.ref(`studies/${studyId}/settings`).get()).exists()) fail('Study not found', 'not-found');
-  const user = await auth.createUser({ email: emailFor(username), password, displayName: username, disabled: false });
-  const account = { uid: user.uid, username, role, studyId, participantId: role === 'participant' ? username : '', group, startDate, active: true };
+  const name = normalizeUsername(username);
+  const user = await auth.createUser({ email: emailForUsername(name), password, displayName: name, disabled: false });
+  const account = { uid: user.uid, username: name, role, studyId, participantId: role === 'participant' ? name : '', group, startDate, active: true };
   try { await db.ref().update({ [`accounts/${user.uid}`]: account, [`studyMembers/${studyId}/${user.uid}`]: true }); }
   catch (error) { await auth.deleteUser(user.uid); throw error; }
   return { uid: user.uid };

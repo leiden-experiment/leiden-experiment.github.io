@@ -26,7 +26,7 @@ export function getOfflinePack(): OfflinePack | null {
 }
 export async function loginOffline(username: string, password: string): Promise<OfflinePack> {
   const pack = getOfflinePack();
-  if (!pack || username !== pack.account.username || !pack.account.active) throw new Error('Invalid offline account');
+  if (!pack || username.toLowerCase() !== pack.account.username.toLowerCase() || !pack.account.active) throw new Error('Invalid offline account');
   const candidate = await derive(password, pack.salt, pack.iterations);
   // Digest comparison is not guaranteed constant-time in a browser; offline packs are not a hardened secret store.
   if (candidate !== pack.verifier) throw new Error('Invalid offline account');

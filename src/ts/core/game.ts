@@ -40,18 +40,18 @@ function promptLogin() {
   const wrapper = el(root, 'main'); wrapper.className = 'study-card';
   el(wrapper, 'h1', deployment.mode === 'offline' ? 'Pizzicato · Offline participant login' : 'Pizzicato · Research login');
   const error = el(wrapper, 'p'); error.setAttribute('role', 'alert');
-  const username = el(wrapper, 'input'); username.placeholder = 'Username'; username.autocomplete = 'username';
+  const username = el(wrapper, 'input'); username.placeholder = 'Username (not an email)'; username.autocomplete = 'username'; username.type = 'text';
   const password = el(wrapper, 'input'); password.placeholder = 'Password'; password.type = 'password'; password.autocomplete = 'current-password';
   const button = el(wrapper, 'button', 'Sign in');
   button.onclick = async () => {
     button.disabled = true; error.textContent = '';
     try {
       if (deployment.mode === 'offline') {
-        const pack = await loginOffline(username.value, password.value);
+        const pack = await loginOffline(username.value.trim(), password.value);
         setStudySession({ account: pack.account, settings: pack.settings, mode: 'offline' }, undefined, pack.levels);
         startGame();
       } else {
-        const { account } = await loginOnline(username.value, password.value);
+        const { account } = await loginOnline(username.value.trim(), password.value);
         if (account.role === 'admin' || account.role === 'moderator') {
           await showDashboard(root, account, async () => { await logoutOnline(); promptLogin(); });
         } else {

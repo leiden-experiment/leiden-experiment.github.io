@@ -25,7 +25,8 @@ This is a serious game developed for the Master's course "Building Serious Games
 | `npm run check:web` | Check which Firebase project will be used |
 | `npm run start:guest` | Run a guest-only browser demo |
 | `npm run serve:build` | Test a production website build locally |
-| `npm run admin:create -- EMAIL PATH` | Create a Firebase administrator (trusted machine only) |
+| `npm run admin:create -- USERNAME PATH` | Create a Firebase administrator (trusted machine only) |
+| `npm run account:migrate -- OLD_EMAIL USERNAME KEY_PATH` | Migrate a legacy Firebase login without changing its password or UID |
 | `npm run deploy` | Show GitHub Pages deployment instructions |
 
 ## Project Structure
@@ -73,6 +74,6 @@ That one guide covers:
 3. **Everyday use:** run the local website, publish shared custom JSON levels, create/edit studies, manage moderators and participants, and export results.
 4. **Optional deployment:** publish `main` or `dev` to GitHub Pages, use guest mode, and review offline/desktop options.
 
-The research system uses Firebase Authentication for passwords, the central Realtime Database for study settings and shared level data, and optional linked Realtime Database instances for per-study results. Administrator account creation is performed locally on a trusted computer; no passwords or administrator keys are built into the public browser application.
+All users log in with a **username**, never a visible email address; the app uses `username@pizzicato.com` internally for Firebase Authentication. The research system uses Firebase Authentication for passwords, the central Realtime Database for study settings and shared level data, and optional linked Realtime Database instances for per-study results. Administrator account creation is performed locally on a trusted computer; no passwords or administrator keys are built into the public browser application.
 
 **This remains development/research software:** a live Firebase integration, browser gameplay, access controls, camera permissions and study-data export must be tested end-to-end with fictional participants before real research use.
