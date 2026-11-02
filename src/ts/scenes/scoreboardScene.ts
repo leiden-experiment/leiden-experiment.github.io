@@ -19,7 +19,6 @@ export default class Scoreboard extends HandScene {
   private level: Level;
   private levelStats: LevelStats;
   private studySaved: boolean = false;
-  private studySaving: boolean = false;
 
   constructor() {
     super('scoreboard');
@@ -37,10 +36,42 @@ export default class Scoreboard extends HandScene {
     this.scene.start(getStudySession() ? 'studySession' : 'mainMenu');
   }
 
+  /** Research: show a simple transition, never the guest scoreboard or CSV controls. */
+  private createStudyCompletionScreen() {
+    this.add.text(this.center.x, 340, 'Level complete', {
+      font: '60px Courier New', color: '#ffffff', align: 'center'
+    }).setOrigin(.5);
+    const status = this.add.text(this.center.x, 480, 'Saving your progress…', {
+      font: '28px Courier New', color: '#ffffff', align: 'center', wordWrap: { width: 1400 }
+    }).setOrigin(.5);
+    let saving = false;
+    let retry: Button | null = null;
+    const save = async () => {
+      if (saving || this.studySaved) return;
+      saving = true;
+      if (retry) { retry.setVisible(false); retry.text?.setVisible(false); }
+      status.setText('Saving your progress…');
+      try {
+        await recordLevelCompletion(JSON.parse(JSON.stringify(this.levelStats)));
+        this.studySaved = true;
+        status.setText('Progress saved.');
+        // Cleanup is performed before advancing to the next study screen.
+        this.exit();
+      } catch (reason) {
+        status.setText('Could not save. Check your connection, then press Retry Save.\n' +
+          (reason instanceof Error ? reason.message : String(reason)));
+        if (!retry) retry = new Button(this, 'RETRY SAVE', this.center.x, 760, () => { void save(); });
+        retry.setVisible(true); retry.text?.setVisible(true);
+        console.error('Study result submission failed', reason);
+      } finally { saving = false; }
+    };
+    void save();
+  }
+
   preload() {
     this.level = this.scene.settings.data as Level;
     this.levelStats = this.level.score.levelStats;
-    if (config.autoSaveCSV) {
+    if (!getStudySession() && config.autoSaveCSV) {
       autoSaveToCSV(this.level.score.levelStats);
     }
   }
@@ -49,17 +80,8 @@ export default class Scoreboard extends HandScene {
     super.create();
     this.studySaved = !getStudySession();
     if (getStudySession()) {
-      this.studySaving = true;
-      const status = this.add.text(this.scale.width / 2, 895, 'Saving study result...', {
-        font: '24px Courier New', color: '#ffffff', align: 'center'
-      }).setOrigin(0.5);
-      const save = async () => {
-        try { await recordLevelCompletion(JSON.parse(JSON.stringify(this.levelStats))); this.studySaved = true; status.setText('Study result saved.'); }
-        catch (reason) { this.studySaved = false; status.setText('Could not save study result. Click here to retry.'); console.error(reason); }
-        finally { this.studySaving = false; }
-      };
-      status.setInteractive().on('pointerdown', () => { if (!this.studySaved && !this.studySaving) { this.studySaving = true; void save(); } });
-      void save();
+      this.createStudyCompletionScreen();
+      return;
     }
 
     this.back = new Button(

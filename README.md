@@ -138,7 +138,7 @@ This is recommended for testing the study-to-database link. It is **not** a seco
 4. Check **Restrict study to a start/end date** if you want to block play before the start date or after the end date. For this test, turn it **on**, set **Start date** to today, and leave **End date** empty. When the date restriction is off but the weekly option is on, **Week 1 reference date** sets the calendar week numbering without blocking participants before that date.
 5. In the **Study timeline**, drag the slide rectangles to arrange **Start → Play level → Break → Play level → End**. The blue **Drop here** marker shows exactly where the slide will be inserted. Click a slide to edit its contents. Use **×** on a slide to delete it. Use a bundled level initially and choose **1** loop for faster testing.
 6. Optional: check **Override default gameplay settings** to edit the settings as labeled switches and number fields. Check **Use group-specific gameplay settings** to add groups with their own settings. Hover over or focus the **ⓘ** beside any setting to see a short explanation.
-7. Check **Enable participant access** and click **Create study**. The study will appear in the list with its generated ID. Saving performs a write test if you provided a separate results database URL. Resolve any connection error before proceeding.
+7. Click **Create study**. Participant access is enabled automatically, and the system generates the study ID. Saving performs a write test if you provided a separate results database URL. Resolve any connection error before proceeding.
 
 **Multiple weeks:** When **Weekly study** is checked, use **+ Add week** to create another horizontal row. Week 2 begins seven days after the Week 1 reference/start date. Pretest and posttest rows are also available. Each populated row must include a playable level. If Weekly study is unchecked, only the Week 1 row is used, but other rows are preserved if you re-enable weekly scheduling later.
 
@@ -148,7 +148,7 @@ This is recommended for testing the study-to-database link. It is **not** a seco
 2. Enter a test participant username such as `testplayer01`, a password of at least **12 characters**, and optionally a group name. Leave the individual start date blank to use the study's settings. Click **+ Add participant**.
 3. Open a **private/incognito browser window** at the same local web address. Sign in with the test participant username/password, not the administrator credentials.
 4. Complete the Start → Play → Break → Play → End timeline. Return to the administrator window.
-5. From **Manage study → Participants & results**, select **Download results** for that participant. You can also select **Export study results** from **Manage study** for a study-wide JSON/CSV export.
+5. From **Manage study → Participants & results**, select **Download JSON** for that participant. Select **Download all participant data (JSON)** at the top of **Participants & results** for one combined export.
 6. Check Firebase Console → your **study results database → Data** for records under **`results/YOUR_GENERATED_STUDY_ID/`**. The administrator database still contains the study configuration, user accounts, uploaded levels, and progression records.
 7. Test the weekly limit: after completing the single allowed weekly session, the participant should be unable to start another full session until their next week. If you disabled Weekly study, there is no weekly cap.
 
@@ -165,12 +165,23 @@ This is recommended for testing the study-to-database link. It is **not** a seco
 1. Open the repository folder in a terminal and run **`npm start`**. Open the address displayed in the terminal (often <http://localhost:8080/>) and sign in with your administrator or moderator username/password.
 2. **Create and edit studies:** use **Studies → + Create study** or **Manage study → Study settings & timeline**. Study IDs are generated automatically. Toggle weekly scheduling or start/end date restrictions as needed; edit slides in the horizontal timeline and click **Save changes**. Only administrators can edit studies.
 3. **Upload shared levels:** use **Shared level library** in the top navigation, select a `.json` exported by Pizzicato Level Designer, enter a display name, and click **Upload level**. Its unique ID is generated automatically. Choose this level in any study's Play Level slide. An edited level must be published as a new entry (existing IDs are immutable).
-4. **Manage participants and results:** use **Studies → Manage study → Participants & results** to create participants, change their groups or individual start dates, activate/deactivate them, and download results. Use **Export study results** in the study's management page for all participants.
+4. **Manage participants and results:** use **Studies → Manage study → Participants & results** to create participants, edit group assignments and start dates inline, change usernames/passwords, activate/deactivate accounts, and download JSON results. Use **Download all participant data (JSON)** at the top of the participant page for all participants.
 5. **Manage moderators:** use **Studies → Manage study → Moderator accounts** (administrator only). Create a username/password, disable or re-enable a login, reset its password, or permanently remove it. Each moderator belongs to the study where you created the account; moderators may view and export its results but cannot edit study settings or manage accounts.
 6. **Gameplay overrides:** in **Study settings & timeline**, check **Override default gameplay settings** to edit the main settings. Check **Use group-specific gameplay settings** to create groups with separate settings, initially copied from the current defaults. Give participants the exact group name to apply these settings. Use **ⓘ** for short tooltips.
 7. Use **Back**, **Studies**, **Shared level library**, and **Sign out** in the persistent top navigation. To stop the local server, press **Ctrl+C** in its terminal; data remains in Firebase.
 
 **After pulling new code:** run `git pull` (if using Git), then `npm install`. If the update changes Cloud Functions or database rules (this dashboard update does), run `npm install --prefix functions` and redeploy with `firebase deploy --only functions,database --project YOUR-PROJECT-ID`. Restart `npm start` and test with sample accounts before a live study.
+
+
+### Participant sessions and per-person schedules
+
+In **Study settings & timeline**, turn on **Limit each participant to a number of weeks** when appropriate. Set the number of weeks and choose either a researcher-assigned start date or the participant’s first login. The latter is written automatically to Firebase on first participant login. A separate global start/end-date restriction can also be enabled.
+
+Under **Participants & results**, choose a study group (or **None**) from the dropdown. To update an existing participant, open **Edit assignment**, change the group and, if applicable, use the calendar field to adjust the start date, then **Save assignment**. **Change username** and **Change password** update Firebase Authentication; the participant UID stays the same, preserving prior results. **Download JSON** downloads one person's results; **Download all participant data (JSON)** downloads the entire study.
+
+The Leiden-style login screen accepts only username and password, with **Show password**. During a study, results are sent once between levels rather than during loops. A participant sees an explicit **Retry Save** button if sending fails. After completing a scheduled session, a thank-you screen appears instead of the guest scoreboard.
+
+**Upgrading from earlier versions:** The online dashboard, participant scheduling, and duplicate-completion handling require redeploying the latest Cloud Functions (`firebase deploy --only functions,database --project pizzicato-admin`) as well as updating the website. Use dummy participants to check database writes and completion before resuming an active study.
 
 ### Step 11a — Existing accounts only: migrate old email-based logins
 
@@ -204,7 +215,7 @@ For the technical maintainer; **not necessary** for local browser testing.
 
 - **Guest demo without Firebase:** run `npm run start:guest` in the repository folder. This does **not** sign in to a study or save results to the online database. Stop with **Ctrl+C**.
 - **Local production-build preview:** run `npm run serve:build`, then visit <http://localhost:8080/>. It uses the current local web configuration and requires a working internet connection for online mode. Stop with **Ctrl+C**.
-- **Offline participant packs and desktop applications (advanced):** in the online administrator dashboard, open **Manage study → Participants & results** and choose **Offline pack**; distribute the pack and its separately chosen 12+ character password securely. An offline app must be built with `mode: offline` and `allowGuest: false`, with no Firebase web config. Packaging scripts include `npm run build:win`, `npm run build:mac` and `npm run build:linux`. These builds and the offline security model require separate validation: locally exported results are not automatically uploaded, and offline packs cannot be remotely revoked. This is **not the same** as `npm start`, which connects live to Firebase.
+- **Offline participant packs and desktop applications (advanced):** offline participant packs remain a code-level capability but the button has been removed from the research dashboard. Provisioning offline packs now requires the advanced developer workflow; do not assume researchers can generate them in the browser. An offline app must be built with `mode: offline` and `allowGuest: false`, with no Firebase web config. Packaging scripts include `npm run build:win`, `npm run build:mac` and `npm run build:linux`. These builds and the offline security model require separate validation: locally exported results are not automatically uploaded, and offline packs cannot be remotely revoked. This is **not the same** as `npm start`, which connects live to Firebase.
 
 ---
 

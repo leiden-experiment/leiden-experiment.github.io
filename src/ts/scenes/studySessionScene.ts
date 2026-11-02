@@ -5,7 +5,7 @@ import { levels } from './loadingScene';
 import { LevelConverter } from '../util/levelConverter';
 import { UploadedLevelManager } from '../managers/uploadedLevelManager';
 import { defaultConfig, updateConfig } from '../managers/storageManager';
-import { getStudyPlan, getStudySession, setPendingAssignment, publishedLevels, advanceScreenStep } from '../study/runtime';
+import { getStudyPlan, getStudySession, setPendingAssignment, publishedLevels, advanceScreenStep, hasJustFinishedSession } from '../study/runtime';
 import { studyApi } from '../study/firebaseClient';
 import { downloadResults } from '../study/offline';
 import { TrackData } from '../level/trackTypes';
@@ -29,6 +29,7 @@ export default class StudySessionScene extends HandScene {
       ? `You have finished this week's sessions. Come back in ${daysUntil} day${daysUntil === 1 ? '' : 's'}.`
       : 'You have completed the maximum sessions for this week.';
     const message = plan?.afterEnd ? 'This study has ended. Thank you for participating.' :
+      hasJustFinishedSession() ? 'Thank you for playing today! Your progress has been recorded. Please come back for your next session.' :
       plan?.beforeStart && plan.week !== 0 ? 'Your training programme has not started yet.' :
       plan?.capped ? cappedText :
       !plan?.assignments.length ? 'There are no activities scheduled for this week.' :
@@ -36,7 +37,7 @@ export default class StudySessionScene extends HandScene {
       'Session complete! Thank you for playing.';
     this.add.text(this.center.x, 430, message, { font: '31px Courier New', color: '#ffffff', align: 'center', wordWrap: { width: 1500 } }).setOrigin(.5);
     this.status = this.add.text(this.center.x, 620, '', { font: '25px Courier New', color: '#ffd676', align: 'center', wordWrap: { width: 1500 } }).setOrigin(.5);
-    if (plan && !plan.capped && step) {
+    if (plan && !plan.capped && !hasJustFinishedSession() && step) {
       if (isLevelStep(step)) {
         new Button(this, 'PLAY\nLEVEL', this.center.x + 300, 810, () => { void this.playLevel(); });
         new Button(this, 'SETUP\nCAMERA', this.center.x - 300, 810, () => this.scene.start('calibration'));
@@ -44,7 +45,7 @@ export default class StudySessionScene extends HandScene {
         const buttonText = step.type === 'end' ? 'FINISH\nSESSION' : step.type === 'break' ? 'RESUME\nPLAYING' : 'CONTINUE';
         let busy = false;
         new Button(this, buttonText, this.center.x, 810, () => {
-          if (busy) return; busy = true; this.status.setText('Saving your progress...');
+          if (busy) return; busy = true; this.status.setText('Continuing…');
           void advanceScreenStep(step).then(() => this.scene.restart()).catch(reason => {
             busy = false; this.status.setText(reason instanceof Error ? reason.message : String(reason));
           });
@@ -85,7 +86,8 @@ export default class StudySessionScene extends HandScene {
       }
       if (!level.track.data?.bpm?.[assignment.bpmIndex]) throw new Error('Assigned BPM index does not exist in this level');
       updateConfig({ ...defaultConfig, ...session.settings.defaultConfig, ...(session.settings.groupConfigs?.[session.account.group || ''] || {}), ...assignment.configOverride,
-        skipLayersAutomatically: true, skipLayersAutomaticallyAfterLoop: assignment.loops });
+        skipLayersAutomatically: true, skipLayersAutomaticallyAfterLoop: assignment.loops,
+        autoSaveCSV: false }); // Research results are sent once, between levels; never during gameplay.
       level.setBPM(assignment.bpmIndex);
       setPendingAssignment(plan.week, plan.sessionId, plan.index, plan.assignments.length, assignment);
       this.scene.start('level', level);

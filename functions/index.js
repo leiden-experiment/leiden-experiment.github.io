@@ -38,6 +38,8 @@ function validateSettings(s) {
       typeof s.startDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s.startDate) || Number.isNaN(Date.parse(s.startDate)) ||
       (s.weeklyEnabled !== undefined && typeof s.weeklyEnabled !== 'boolean') ||
       (s.dateRangeEnabled !== undefined && typeof s.dateRangeEnabled !== 'boolean') ||
+      (s.durationWeeks !== undefined && (!Number.isInteger(s.durationWeeks) || s.durationWeeks < 1 || s.durationWeeks > 104)) ||
+      (s.participantStartMode !== undefined && !['manual','first-login'].includes(s.participantStartMode)) ||
       (s.endDate && (!/^\d{4}-\d{2}-\d{2}$/.test(s.endDate) || Number.isNaN(Date.parse(s.endDate)) || s.endDate < s.startDate)) ||
       !Number.isInteger(s.maxSessionsPerWeek) || s.maxSessionsPerWeek < 1 || s.maxSessionsPerWeek > 50 ||
       !s.weeks || typeof s.weeks !== 'object' || Array.isArray(s.weeks)) fail('Invalid study settings');
@@ -85,14 +87,17 @@ function studyTiming(settings, account, weeks, progress) {
   const start = account.startDate || settings.startDate;
   const now = new Date();
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const beforeStart = dates && today < Date.parse(`${start}T00:00:00Z`);
-  const afterEnd = dates && !!settings.endDate && today > Date.parse(`${settings.endDate}T00:00:00Z`);
+  const beforeStart = (dates && today < Date.parse(`${settings.startDate}T00:00:00Z`)) ||
+    (!!settings.durationWeeks && today < Date.parse(`${start}T00:00:00Z`));
+  const elapsedWeeks = weekOf(start);
+  const afterEnd = (dates && !!settings.endDate && today > Date.parse(`${settings.endDate}T00:00:00Z`)) ||
+    (!!settings.durationWeeks && elapsedWeeks > settings.durationWeeks);
   const current = weekly ? weekOf(start) : 1;
   const lastWeek = Math.max(1, ...Object.keys(weeks).map(Number).filter(n => n > 0));
   const week = weekly && weeks['0'] && !(progress.sessions['0'] || 0) ? 0 :
-    weekly && current > lastWeek && weeks['-1'] ? -1 : current;
+    weekly && current > lastWeek && weeks['-1'] && !(progress.sessions['-1'] || 0) ? -1 : current;
   const cap = weekly ? (week <= 0 ? 1 : settings.maxSessionsPerWeek) : Number.MAX_SAFE_INTEGER;
-  return { week, beforeStart, afterEnd, cap };
+  return { week, beforeStart, afterEnd: afterEnd || (weekly && current > lastWeek && (!weeks['-1'] || !!progress.sessions['-1'])), cap };
 }
 exports.getProfile = onCall(options, async req => ({ account: await profile(req) }));
 exports.listStudies = onCall(options, async req => {
@@ -146,7 +151,12 @@ exports.provisionAccount = onCall(options, async req => {
       typeof password !== 'string' || password.length < 12 || password.length > 128) fail('Invalid participant or moderator fields');
   if (startDate && (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || Number.isNaN(Date.parse(startDate)))) fail('Invalid participant start date');
   if (typeof group !== 'string' || group.length > 100) fail('Invalid group');
-  if (!(await db.ref(`studies/${studyId}/settings`).get()).exists()) fail('Study not found', 'not-found');
+  const settings = (await db.ref(`studies/${studyId}/settings`).get()).val();
+  if (!settings) fail('Study not found', 'not-found');
+  if (role === 'participant') {
+    if (group && !Object.prototype.hasOwnProperty.call(settings.groupConfigs || {}, group)) fail('Unknown study group');
+    if (settings.durationWeeks && settings.participantStartMode !== 'first-login' && !startDate) fail('Participant start date required');
+  }
   const name = normalizeUsername(username);
   const user = await auth.createUser({ email: emailForUsername(name), password, displayName: name, disabled: false });
   const account = { uid: user.uid, username: name, role, studyId, participantId: role === 'participant' ? name : '', group, startDate, active: true };
@@ -185,13 +195,40 @@ exports.resetModeratorPassword = onCall(options, async req => {
   await auth.revokeRefreshTokens(uid);
   return { ok: true };
 });
+
+/** Update managed credentials without changing UID, study membership, or participant result key. */
+exports.updateAccountCredentials = onCall(options, async req => {
+  const operator = await profile(req); requireAdmin(operator);
+  const { uid, username, password } = req.data || {};
+  if (!idValid(uid)) fail('Invalid account');
+  const target = (await db.ref(`accounts/${uid}`).get()).val();
+  if (!target || !['moderator', 'participant'].includes(target.role)) fail('Not a managed account', 'permission-denied');
+  const change = {};
+  if (username !== undefined) {
+    if (!usernameValid(username)) fail('Invalid username');
+    const name = normalizeUsername(username);
+    if (name !== target.username) { change.email = emailForUsername(name); change.displayName = name; }
+  }
+  if (password !== undefined) {
+    if (typeof password !== 'string' || password.length < 12 || password.length > 128) fail('Use a password of 12–128 characters');
+    change.password = password;
+  }
+  if (!Object.keys(change).length) return { ok: true };
+  await auth.updateUser(uid, change); // Firebase Auth enforces global username uniqueness.
+  if (change.displayName) await db.ref(`accounts/${uid}/username`).set(change.displayName);
+  if (change.password) await auth.revokeRefreshTokens(uid);
+  return { ok: true };
+});
 exports.setParticipant = onCall(options, async req => {
   const operator = await profile(req); requireAdmin(operator); const { uid, changes } = req.data || {};
   const target = (await db.ref(`accounts/${uid}`).get()).val();
   if (!target || target.role !== 'participant' || !changes || typeof changes !== 'object') fail('Invalid participant');
   const permitted = {};
   if (Object.prototype.hasOwnProperty.call(changes, 'group')) {
-    if (typeof changes.group !== 'string' || changes.group.length > 100) fail('Invalid group'); permitted.group = changes.group;
+    if (typeof changes.group !== 'string' || changes.group.length > 100) fail('Invalid group');
+    const settings = (await db.ref(`studies/${target.studyId}/settings`).get()).val();
+    if (changes.group && !Object.prototype.hasOwnProperty.call(settings?.groupConfigs || {}, changes.group)) fail('Unknown study group');
+    permitted.group = changes.group;
   }
   if (Object.prototype.hasOwnProperty.call(changes, 'startDate')) {
     if (changes.startDate && (!/^\d{4}-\d{2}-\d{2}$/.test(changes.startDate) || Number.isNaN(Date.parse(changes.startDate)))) fail('Invalid start date');
@@ -242,6 +279,11 @@ exports.getParticipantBundle = onCall(options, async req => {
   if (account.role !== 'participant') fail('Participant login required', 'permission-denied');
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings || !settings.enabled) fail('Study is not enabled', 'failed-precondition');
+  if (settings.participantStartMode === 'first-login' && !account.startDate) {
+    const today = new Date().toISOString().slice(0, 10);
+    const started = await db.ref(`accounts/${account.uid}/startDate`).transaction(value => value || today);
+    account.startDate = started.snapshot.val();
+  }
   const saved = (await db.ref(`progress/${account.studyId}/${account.uid}`).get()).val() || {};
   const progress = { completed: saved.completed || {}, sessions: saved.sessions || {}, activeSession: saved.activeSession || {} };
   return { account, settings: account.weeksOverride ? { ...settings, weeks: account.weeksOverride } : settings, progress };
@@ -327,7 +369,12 @@ exports.submitResult = onCall(options, async req => {
     if (sid !== expectedSessionId || ix !== expectedIndex || n >= maxSessions) return;
     return progress;
   });
-  if (!transaction.committed) fail('Concurrent or duplicate completion; refresh your session', 'aborted');
+  if (!transaction.committed) {
+    const latest = (await stateRef.get()).val() || {};
+    if ((latest.completed?.[String(data.week)] || []).includes(`${data.sessionId}:${data.assignmentIndex}`))
+      return { ok: true, duplicate: true };
+    fail('Study progress changed in another session. Sign in again before retrying.', 'failed-precondition');
+  }
   const destinationDB = destination((await db.ref(`studyIndex/${account.studyId}/databaseURL`).get()).val());
   try { await destinationDB.ref(resultPath).set(safeRecord); }
   catch (err) {

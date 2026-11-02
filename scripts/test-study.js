@@ -47,6 +47,19 @@ const boundedStudy = { ...freeStudy, dateRangeEnabled: true, endDate: '2026-11-0
 assert.equal(getNextAssignment(boundedStudy, emptyProgress(), boundedStudy.startDate, new Date('2026-11-02T00:00:00Z')).capped, true);
 assert.equal(getNextAssignment(boundedStudy, emptyProgress(), boundedStudy.startDate, new Date('2026-11-02T00:00:00Z')).afterEnd, true);
 assert(validateSettings({ ...boundedStudy, endDate: '2026-01-01' }).length > 0);
+// Participant-specific duration, first-login anchored scheduling and completion.
+const perPerson = { ...freeStudy, durationWeeks: 3, participantStartMode: 'first-login' };
+assert.deepEqual(validateSettings(perPerson), []);
+assert.equal(getNextAssignment(perPerson, emptyProgress(), '2026-10-26', new Date('2026-11-09T12:00:00Z')).afterEnd, false);
+assert.equal(getNextAssignment(perPerson, emptyProgress(), '2026-10-26', new Date('2026-11-16T12:00:00Z')).afterEnd, true);
+assert.equal(getNextAssignment(perPerson, emptyProgress(), '2026-11-09', new Date('2026-11-09T12:00:00Z')).afterEnd, false);
+assert.equal(getNextAssignment(perPerson, emptyProgress(), '2026-11-09', new Date('2026-11-08T12:00:00Z')).beforeStart, true);
+assert.equal(getNextAssignment({ ...perPerson, dateRangeEnabled: true, startDate: '2026-11-15' }, emptyProgress(), '2026-11-09', new Date('2026-11-10T12:00:00Z')).beforeStart, true); // global start still enforced
+assert(validateSettings({ ...perPerson, durationWeeks: 0 }).length > 0);
+assert(validateSettings({ ...perPerson, durationWeeks: 105 }).length > 0);
+const finite = { ...study, weeks: { '1': [{ levelId: 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 2 }] }, weeklyEnabled: true,
+  dateRangeEnabled: false, durationWeeks: 1 };
+assert.equal(getNextAssignment(finite, emptyProgress(), '2026-11-02', new Date('2026-11-10T12:00:00Z')).afterEnd, true);
 const backendCode = fs.readFileSync(path.resolve(__dirname, '../functions/index.js'), 'utf8');
 assert(backendCode.includes('studyTiming(settings, account, weeks, progress)'));
 assert(backendCode.includes('studyTiming(settings, account, assignedWeeks, current)'));

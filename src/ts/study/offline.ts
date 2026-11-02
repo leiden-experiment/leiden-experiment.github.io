@@ -1,5 +1,4 @@
 import { Account, Progress, StudySettings, ResultEnvelope, emptyProgress } from './types';
-import { resultsCSV } from './results';
 export interface OfflinePack { schemaVersion: 1; account: Account; settings: StudySettings; salt: string; verifier: string; iterations: number; levels: Record<string, unknown> }
 const KEY = 'pizzicato.study.offline.v1';
 const RESULTS = 'pizzicato.study.results.v1';
@@ -61,7 +60,6 @@ export function downloadFile(name: string, value: string, mime = 'application/js
 export async function downloadResults(studyId: string, participantId: string) {
   const data = await getLocalResults(studyId, participantId);
   downloadFile(`pizzicato-${studyId}-${participantId}-results.json`, JSON.stringify(data, null, 2));
-  downloadFile(`pizzicato-${studyId}-${participantId}-results.csv`, resultsCSV(data), 'text/csv');
 }
 
 export function saveLocalProgress(studyId: string, participantId: string, progress: Progress): void {

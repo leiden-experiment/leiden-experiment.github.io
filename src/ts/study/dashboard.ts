@@ -2,8 +2,7 @@ import { studyApi, callBackend } from './firebaseClient';
 import { Account, StudySettings, StudySummary, defaultStudySettings, validateSettings, isLevelStep } from './types';
 import { createFlowBoard } from './flowBoard';
 import { LevelConverter } from '../util/levelConverter';
-import { createOfflinePack, downloadFile } from './offline';
-import { resultsCSV } from './results';
+import { downloadFile } from './offline';
 import { gameplayDefaults, gameplayOptions, GameplayValue, validateGameplayConfig } from './gameplayFields';
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, text?: string): HTMLElementTagNameMap[K] {
@@ -20,6 +19,15 @@ function field(parent: HTMLElement, title: string, value = '', kind: 'input' | '
   const caption = node('span', label, title); if (help) tooltip(caption, help);
   const control = document.createElement(kind); control.value = value; if (help) control.title = help;
   label.appendChild(control); return control;
+}
+function groupSelect(parent: HTMLElement, title: string, names: string[], selected = '', help = 'Optional study group or condition.') {
+  const label = node('label', parent); label.className = 'study-field';
+  const caption = node('span', label, title); tooltip(caption, help);
+  const dropdown = node('select', label);
+  const none = node('option', dropdown, 'None'); none.value = '';
+  for (const name of names) { const item = node('option', dropdown, name); item.value = name; }
+  dropdown.value = names.includes(selected) ? selected : '';
+  return dropdown;
 }
 function check(parent: HTMLElement, title: string, checked: boolean, help: string) {
   const label = node('label', parent); label.className = 'study-check';
@@ -77,8 +85,8 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
   const backBtn = action(navButtons, '← Back', () => goBack());
   action(navButtons, 'Studies', () => navigate('Studies', showStudies));
   if (user.role === 'admin') action(navButtons, 'Shared level library', () => navigate('Shared level library', showLibrary));
-  const account = node('span', nav, `${user.username} · ${user.role}`); account.className = 'study-account';
-  action(nav, 'Sign out', onExit);
+  const account = node('span', nav, user.username); account.className = 'study-account';
+  const signOut = action(nav, 'Sign out', onExit); signOut.classList.add('study-signout');
   const frame = node('div', root); frame.className = 'study-layout';
   const breadcrumb = node('p', frame); breadcrumb.className = 'study-breadcrumb';
   const output = node('main', frame);
@@ -106,24 +114,12 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
   async function studyApiCallSettings(studyId: string) {
     return callBackend<{ settings: StudySettings; databaseURL?: string }>('getStudySettings', { studyId });
   }
-  async function exportStudy(id: string) {
-    const { results, partial } = await studyApi.exportResults(id);
-    if (partial) alert('The linked database is unavailable. This export only includes recovery-queue results.');
-    downloadJSON(`pizzicato-${id}-all.json`, results);
-    downloadFile(`pizzicato-${id}-all.csv`, resultsCSV(results), 'text/csv');
-  }
   async function showStudies() {
     const page = section(output, 'Studies');
     const commands = actions(page);
     if (user.role === 'admin') {
       action(commands, '+ Create study', () => navigate('Create study', () => editStudy('', { ...defaultStudySettings(), weeklyEnabled: false, dateRangeEnabled: false }), true), 'primary');
-      const template = node('input', commands); template.type = 'file'; template.accept = '.json,application/json'; template.title = 'Optional: import a previously saved study template';
-      action(commands, 'Import study template', async () => {
-        if (!template.files?.[0]) throw new Error('Choose a JSON template first');
-        const settings = JSON.parse(await template.files[0].text()) as StudySettings;
-        const errors = validateSettings(settings); if (errors.length) throw new Error(errors.join('\n'));
-        navigate('Create study from template', () => editStudy('', settings));
-      });
+
     }
     const list = node('div', page); list.className = 'study-list'; node('p', list, 'Loading studies…');
     const { studies } = await studyApi.listStudies();
@@ -133,13 +129,12 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     for (const study of studies) {
       const row = node('div', list); row.className = 'study-row';
       const title = node('div', row); title.className = 'study-row-title';
-      node('strong', title, study.title); node('small', title, `ID ${study.id} · ${study.enabled ? 'Enabled' : 'Disabled'}`);
+      node('strong', title, study.title);
       action(row, 'Manage study', () => navigate(study.title, () => showStudy(study)), 'primary');
     }
   }
   function showStudy(study: StudySummary) {
     const page = section(output, study.title);
-    const details = node('p', page, `Study ID: ${study.id}`); details.className = 'study-muted';
     const buttons = actions(page);
     if (user.role === 'admin') {
       action(buttons, 'Study settings & timeline', () => navigate('Edit ' + study.title, async () => {
@@ -151,14 +146,12 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       action(buttons, 'Moderator accounts', () => navigate(`Moderators · ${study.title}`, () => showModerators(study)));
     }
     action(buttons, 'Participants & results', () => navigate(`Participants · ${study.title}`, () => showRoster(study)));
-    action(buttons, 'Export study results', () => exportStudy(study.id));
   }
   function editStudy(id: string, data: StudySettings, databaseURL = '') {
     const page = section(output, id ? `Edit study: ${data.title}` : 'Create study');
     const basic = node('div', page); basic.className = 'study-form-grid';
     const title = field(basic, 'Study title', data.title, 'input', 'The name shown to researchers and participants.');
     const db = field(basic, 'Study results database URL (optional)', databaseURL, 'input', 'A separate Firebase Realtime Database for results; leave empty to use the central database.');
-    const enabled = check(basic, 'Enable participant access', data.enabled, 'Only enabled studies can be played by participants.');
     const welcome = field(page, 'Welcome message', data.introText, 'textarea', 'Text shown before the next assigned level.');
     const options = section(page, 'Schedule options'); options.classList.add('study-subsection');
     const weekly = check(options, 'Weekly study (different timeline for each week)', data.weeklyEnabled !== false,
@@ -171,13 +164,27 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const dates = node('div', options); dates.className = 'study-form-grid';
     const start = field(dates, 'Start date', data.startDate, 'input', 'The first permitted date and week-1 anchor for weekly studies.'); start.type = 'date';
     const end = field(dates, 'End date (optional)', data.endDate || '', 'input', 'After this date participants cannot start or continue sessions.'); end.type = 'date';
+    const perParticipant = check(options, 'Limit each participant to a number of weeks', !!data.durationWeeks,
+      'End each participant’s access after the chosen number of weeks from their personal start date.');
+    const durationBlock = node('div', options); durationBlock.className = 'study-form-grid';
+    const duration = field(durationBlock, 'Weeks per participant', String(data.durationWeeks || 3), 'input', 'For example, 3 ends access after three 7-day periods.');
+    duration.type = 'number'; duration.min = '1'; duration.max = '104'; duration.step = '1';
+    const modeLabel = node('label', durationBlock); modeLabel.className = 'study-field';
+    const modeHeading = node('span', modeLabel, 'Participant start date determined by');
+    tooltip(modeHeading, 'Manual: set the date on each participant. First login: record it automatically when they sign in for the first time.');
+    const startMode = node('select', modeLabel);
+    for (const [value, text] of [['manual', 'Researcher assigns a date'], ['first-login', 'First participant login']]) {
+      const option = node('option', startMode, text); option.value = value;
+    }
+    startMode.value = data.participantStartMode || 'manual';
+
     const sync = () => {
-      weeklyBlock.hidden = !weekly.checked; dates.hidden = !(dateEnabled.checked || weekly.checked);
+      weeklyBlock.hidden = !weekly.checked; durationBlock.hidden = !perParticipant.checked; dates.hidden = !(dateEnabled.checked || weekly.checked);
       end.closest('label')!.hidden = !dateEnabled.checked;
       start.closest('label')!.querySelector('span')!.firstChild!.textContent = dateEnabled.checked ? 'Start date' : 'Week 1 reference date';
       board.setWeekly(weekly.checked);
     };
-    weekly.addEventListener('change', sync); dateEnabled.addEventListener('change', sync);
+    weekly.addEventListener('change', sync); dateEnabled.addEventListener('change', sync); perParticipant.addEventListener('change', sync);
     const timelineHost = section(page, 'Study timeline'); timelineHost.classList.add('study-subsection');
     const board = createFlowBoard(timelineHost, data.weeks, () => {}, weekly.checked);
     void studyApi.listLevels().then(({ levels }) => {
@@ -226,7 +233,10 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         endDate: dateEnabled.checked ? end.value : '',
         weeklyEnabled: weekly.checked, dateRangeEnabled: dateEnabled.checked,
         maxSessionsPerWeek: weekly.checked ? Number(limit.value) : data.maxSessionsPerWeek || 3,
-        enabled: enabled.checked, weeks: board.getWeeks(),
+        enabled: true,
+        ...(perParticipant.checked ? { durationWeeks: Number(duration.value),
+          participantStartMode: startMode.value as 'manual' | 'first-login' } : {}),
+        weeks: board.getWeeks(),
         defaultConfig: defaultEnabled.checked ? readDefaults() : {}, groupConfigs,
       };
       const errors = validateSettings(settings); if (errors.length) throw new Error(errors.join('\n'));
@@ -270,14 +280,33 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
   async function showRoster(study: StudySummary) {
     const page = section(output, `Participants · ${study.title}`);
     const canEdit = user.role === 'admin';
+    const controls = actions(page);
+    action(controls, 'Download all participant data (JSON)', async () => {
+      const { results, partial } = await studyApi.exportResults(study.id);
+      if (partial) alert('The linked database is unavailable. The export includes any queued results, but may be incomplete.');
+      downloadJSON(`pizzicato-${study.id}-all-participants.json`, results);
+    }, 'primary');
+    const settings = (await studyApiCallSettings(study.id)).settings;
+    if (!page.isConnected) return;
+    const groups = Object.keys(settings.groupConfigs || {});
+    const showStartDate = settings.dateRangeEnabled !== false || !!settings.durationWeeks;
+    const requiredStartDate = !!settings.durationWeeks && settings.participantStartMode !== 'first-login';
+    const dateHelp = settings.participantStartMode === 'first-login'
+      ? 'Leave blank to record the date on first login, or enter an override.'
+      : 'Sets the personal start date and weekly schedule anchor.';
     if (canEdit) {
       const create = node('div', page); create.className = 'study-form-grid';
-      const username = field(create, 'New participant username', '', 'input', 'Participant sign-in username.');
+      const username = field(create, 'New participant username', '', 'input', 'Username used to sign in.');
       const password = field(create, 'Password', '', 'input', 'At least 12 characters.'); password.type = 'password';
-      const group = field(create, 'Group / condition', '', 'input', 'Use a group name defined in this study’s gameplay settings.');
-      const start = field(create, 'Participant start date (optional)', '', 'input', 'Overrides the study’s week anchor and, when date limits are enabled, its start date.'); start.type = 'date';
-      action(page, '+ Add participant', async () => {
-        await studyApi.provisionAccount(study.id, username.value, password.value, 'participant', group.value, start.value);
+      const group = groupSelect(create, 'Group / condition', groups);
+      let start: HTMLInputElement | undefined;
+      if (showStartDate) {
+        start = field(create, requiredStartDate ? 'Participant start date' : 'Participant start date (optional)', '', 'input', dateHelp);
+        start.type = 'date'; start.required = requiredStartDate;
+      }
+      action(actions(page), '+ Add participant', async () => {
+        if (requiredStartDate && !start?.value) throw new Error('Choose a participant start date.');
+        await studyApi.provisionAccount(study.id, username.value.trim(), password.value, 'participant', group.value, start?.value || '');
         navigate(`Participants · ${study.title}`, () => showRoster(study), false);
       }, 'primary');
     }
@@ -287,39 +316,51 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const participants = accounts.filter(a => a.role === 'participant');
     if (!participants.length) node('p', results, 'No participants yet.');
     for (const member of participants) {
-      const row = node('div', results); row.className = 'study-row';
+      const row = node('div', results); row.className = 'study-row study-participant-row';
       const details = node('div', row); details.className = 'study-row-title';
-      node('strong', details, member.username); node('small', details, `${member.group || 'No group'} · ${member.active ? 'Active' : 'Disabled'}`);
-      action(row, 'Download results', async () => {
+      node('strong', details, member.username);
+      node('small', details, `Group: ${member.group || 'None'} · ${member.active ? 'Active' : 'Disabled'}`);
+      const commands = actions(row); commands.classList.add('study-row-actions');
+      action(commands, 'Download JSON', async () => {
         const { results: data, partial } = await studyApi.exportResults(study.id, member.uid);
         if (partial) alert('The linked results database is unavailable. This export may be incomplete.');
         downloadJSON(`pizzicato-${study.id}-${member.username}.json`, data);
-        downloadFile(`pizzicato-${study.id}-${member.username}.csv`, resultsCSV(data), 'text/csv');
       });
       if (canEdit) {
-        action(row, member.active ? 'Deactivate' : 'Reactivate', async () => {
+        const editPanel = node('div', results); editPanel.className = 'study-inline-edit'; editPanel.hidden = true;
+        const fields = node('div', editPanel); fields.className = 'study-form-grid';
+        const assignmentGroup = groupSelect(fields, 'Group / condition', groups, member.group || '');
+        let assignmentDate: HTMLInputElement | undefined;
+        if (showStartDate) {
+          assignmentDate = field(fields, requiredStartDate ? 'Participant start date' : 'Participant start date (optional)', member.startDate || '', 'input', dateHelp);
+          assignmentDate.type = 'date'; assignmentDate.required = requiredStartDate;
+        }
+        const saveActions = actions(editPanel);
+        action(saveActions, 'Save assignment', async () => {
+          if (requiredStartDate && !assignmentDate?.value) throw new Error('Choose a participant start date.');
+          await studyApi.setParticipant(member.uid, { group: assignmentGroup.value, ...(showStartDate ? { startDate: assignmentDate?.value || '' } : {}) });
+          navigate(`Participants · ${study.title}`, () => showRoster(study), false);
+        }, 'primary');
+        action(saveActions, 'Cancel', () => { editPanel.hidden = true; });
+        action(commands, 'Edit assignment', () => { editPanel.hidden = !editPanel.hidden; });
+        action(commands, 'Change username', async () => {
+          const name = prompt('New username', member.username);
+          if (name === null || name.trim() === member.username) return;
+          await studyApi.updateAccountCredentials(member.uid, name.trim());
+          navigate(`Participants · ${study.title}`, () => showRoster(study), false);
+        });
+        action(commands, 'Change password', async () => {
+          const password = prompt('New password (at least 12 characters)');
+          if (password === null) return;
+          await studyApi.updateAccountCredentials(member.uid, undefined, password);
+          alert('Password updated. Share it securely.');
+        });
+        action(commands, member.active ? 'Deactivate' : 'Reactivate', async () => {
           await studyApi.setAccountActive(member.uid, !member.active);
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
         });
-        action(row, 'Edit assignment', async () => {
-          const groupName = prompt('Group / condition', member.group || ''); if (groupName === null) return;
-          const startDate = prompt('Participant start date (YYYY-MM-DD or blank)', member.startDate || ''); if (startDate === null) return;
-          const schedule = prompt('Custom schedule JSON (blank uses the study schedule)', member.weeksOverride ? JSON.stringify(member.weeksOverride, null, 2) : '');
-          if (schedule === null) return;
-          await studyApi.setParticipant(member.uid, { group: groupName, startDate, weeksOverride: schedule.trim() ? JSON.parse(schedule) : null });
-          navigate(`Participants · ${study.title}`, () => showRoster(study), false);
-        });
-        action(row, 'Offline pack', async () => {
-          const secret = prompt('Create an offline password (at least 12 characters)'); if (!secret) return;
-          const detail = await studyApiCallSettings(study.id);
-          if (member.weeksOverride) detail.settings.weeks = member.weeksOverride;
-          const levels: Record<string, unknown> = {};
-          const assigned = new Set(Object.values(detail.settings.weeks).flat().filter(a => isLevelStep(a) && a.levelId.startsWith('library:')).map(a => isLevelStep(a) ? a.levelId.slice('library:'.length) : ''));
-          for (const id of assigned) levels[id] = (await studyApi.getLevel(id)).level.data;
-          downloadJSON(`offline-${study.id}-${member.username}.pizzicato-study.json`, await createOfflinePack(member, detail.settings, secret, levels));
-        });
-        action(row, 'Remove', async () => {
-          if (!confirm(`Remove participant ${member.username}? Existing results will be retained.`)) return;
+        action(commands, 'Remove', async () => {
+          if (!confirm(`Remove ${member.username}? Existing results are retained.`)) return;
           await studyApi.removeAccount(member.uid);
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
         }, 'danger');
@@ -332,7 +373,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const editor = node('div', page); editor.className = 'study-form-grid';
     const file = node('input', editor); file.type = 'file'; file.accept = '.json,application/json'; file.title = 'Choose a Level Designer JSON export.';
     const levelName = field(editor, 'Display name', '', 'input', 'The name researchers see when assigning a level.');
-    action(page, 'Upload level', async () => {
+    action(editor, 'Upload level', async () => {
       if (!file.files?.[0]) throw new Error('Select a level JSON file first');
       const converted = LevelConverter.convert(JSON.parse(await file.files[0].text()));
       const name = levelName.value.trim() || file.files[0].name.replace(/\.json$/i, '');

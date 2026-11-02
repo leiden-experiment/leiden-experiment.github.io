@@ -34,7 +34,8 @@ export async function callBackend<T>(name: string, data: object): Promise<T> {
 export const studyApi = {
   listModerators: () => callBackend<{ moderators: Account[] }>('listModerators', {}),
   listStudies: () => callBackend<{ studies: StudySummary[] }>('listStudies', {}),
-  saveStudy: (id: string, settings: StudySettings, databaseURL?: string) => callBackend<{ id: string }>('saveStudy', { id, settings, databaseURL }),
+  saveStudy: (id: string, settings: StudySettings, databaseURL?: string) =>
+    callBackend<{ id: string }>('saveStudy', { id, settings, ...(databaseURL ? { databaseURL } : {}) }),
   listParticipants: (studyId: string) => callBackend<{ accounts: Account[] }>('listParticipants', { studyId }),
   provisionAccount: (studyId: string, username: string, password: string, role: 'participant' | 'moderator', group = '', startDate = '') =>
     callBackend<{ uid: string }>('provisionAccount', { studyId, username, password, role, group, startDate }),
@@ -43,10 +44,14 @@ export const studyApi = {
   advanceStep: (week: number, sessionId: string, index: number, stepType: string) => callBackend<{ ok: boolean }>('advanceStudyStep', { week, sessionId, index, stepType }),
   removeAccount: (uid: string) => callBackend<{ ok: boolean }>('removeAccount', { uid }),
   resetModeratorPassword: (uid: string, password: string) => callBackend<{ ok: boolean }>('resetModeratorPassword', { uid, password }),
+  updateAccountCredentials: (uid: string, username?: string, password?: string) =>
+    callBackend<{ ok: boolean }>('updateAccountCredentials', { uid, ...(username !== undefined ? { username } : {}),
+      ...(password !== undefined ? { password } : {}) }),
   listLevels: () => callBackend<{ levels: PublishedLevel[] }>('listLevels', {}),
   saveLevel: (id: string, name: string, data: unknown) => callBackend<{ id: string }>('saveLevel', { id, name, data }),
   getLevel: (id: string) => callBackend<{ level: PublishedLevel }>('getLevel', { id }),
   fetchParticipant: () => callBackend<{ account: Account; settings: StudySettings; progress: Progress }>('getParticipantBundle', {}),
   saveResult: (data: ResultEnvelope, progress: Progress) => callBackend<{ ok: boolean }>('submitResult', { data, progress }),
-  exportResults: (studyId: string, uid?: string) => callBackend<{ results: ResultEnvelope[]; partial?: boolean }>('exportResults', { studyId, uid }),
+  exportResults: (studyId: string, uid?: string) =>
+    callBackend<{ results: ResultEnvelope[]; partial?: boolean }>('exportResults', { studyId, ...(uid ? { uid } : {}) }),
 };

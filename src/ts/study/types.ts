@@ -22,6 +22,8 @@ export interface StudySettings {
   weeklyEnabled?: boolean; // absent = true for earlier saved studies
   dateRangeEnabled?: boolean; // absent = true for earlier saved studies
   endDate?: string;
+  durationWeeks?: number; // Optional number of weeks allowed after each participant starts.
+  participantStartMode?: 'manual' | 'first-login';
   maxSessionsPerWeek: number;
   weeks: Record<string, StudyStep[]>; // 0 = pretest, -1 = posttest, >= 1 = ordinary weeks
   defaultConfig?: Record<string, unknown>;
@@ -60,7 +62,7 @@ export interface PublishedLevel { id: string; name: string; data?: unknown; upda
 export function defaultStudySettings(title = 'New study'): StudySettings {
   return {
     title, description: '', introText: 'Welcome to the study.',
-    startDate: new Date().toISOString().slice(0, 10), maxSessionsPerWeek: 3, enabled: false,
+    startDate: new Date().toISOString().slice(0, 10), maxSessionsPerWeek: 3, enabled: true,
     weeks: { '1': [
       { type: 'start', text: 'Welcome! When you are ready, press Continue.' },
       { type: 'level', levelId: 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 3 },
@@ -76,6 +78,8 @@ export function validateSettings(value: StudySettings): string[] {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value?.startDate || '') || Number.isNaN(Date.parse(value.startDate))) issues.push('Invalid week anchor/start date');
   if (value?.weeklyEnabled !== undefined && typeof value.weeklyEnabled !== 'boolean') issues.push('Invalid weekly study option');
   if (value?.dateRangeEnabled !== undefined && typeof value.dateRangeEnabled !== 'boolean') issues.push('Invalid date limit option');
+  if (value?.durationWeeks !== undefined && (!Number.isInteger(value.durationWeeks) || value.durationWeeks < 1 || value.durationWeeks > 104)) issues.push('Participant duration must be 1–104 weeks');
+  if (value?.participantStartMode && !['manual', 'first-login'].includes(value.participantStartMode)) issues.push('Invalid participant start mode');
   if (value?.endDate && (!/^\d{4}-\d{2}-\d{2}$/.test(value.endDate) || Number.isNaN(Date.parse(value.endDate)))) issues.push('Invalid end date');
   if (value?.dateRangeEnabled !== false && value?.endDate && value.endDate < value.startDate) issues.push('End date must not precede start date');
   if (!Number.isInteger(value?.maxSessionsPerWeek) || value.maxSessionsPerWeek < 1 || value.maxSessionsPerWeek > 50) issues.push('Sessions per week must be between 1 and 50');
@@ -111,18 +115,21 @@ export function getNextAssignment(settings: StudySettings, progress: Progress, s
   const dated = settings.dateRangeEnabled !== false;
   const current = weekly ? calculateStudyWeek(startDate, now) : 1;
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const beforeStart = dated && today < Date.parse(`${startDate}T00:00:00Z`);
-  const afterEnd = dated && !!settings.endDate && today > Date.parse(`${settings.endDate}T00:00:00Z`);
+  const beforeStart = (dated && today < Date.parse(`${settings.startDate}T00:00:00Z`)) ||
+    (!!settings.durationWeeks && today < Date.parse(`${startDate}T00:00:00Z`));
+  const afterEnd = (dated && !!settings.endDate && today > Date.parse(`${settings.endDate}T00:00:00Z`)) ||
+    (!!settings.durationWeeks && calculateStudyWeek(startDate, now) > settings.durationWeeks);
   const lastWeek = Math.max(1, ...Object.keys(settings.weeks).map(Number).filter(n => n > 0));
+  const finished = weekly && current > lastWeek && (!settings.weeks['-1'] || !!progress.sessions['-1']);
   const week = weekly && settings.weeks['0'] && !(progress.sessions['0'] || 0) ? 0 :
-    weekly && current > lastWeek && settings.weeks['-1'] ? -1 : current;
+    weekly && current > lastWeek && settings.weeks['-1'] && !(progress.sessions['-1'] || 0) ? -1 : current;
   const assignments = settings.weeks[String(week)] || [];
   const sessionNo = (progress.sessions[String(week)] || 0) + 1;
   const sessionId = progress.activeSession[String(week)] || `${week}-${sessionNo}`;
   const done = progress.completed[String(week)] || [];
   const index = assignments.findIndex((_, i) => !done.includes(`${sessionId}:${i}`));
   return { week, assignments, sessionId, index, complete: assignments.length > 0 && index === -1,
-    capped: (beforeStart && week !== 0) || afterEnd || (weekly && (progress.sessions[String(week)] || 0) >= (week <= 0 ? 1 : settings.maxSessionsPerWeek)), beforeStart, afterEnd };
+    capped: (beforeStart && week !== 0) || afterEnd || finished || (weekly && (progress.sessions[String(week)] || 0) >= (week <= 0 ? 1 : settings.maxSessionsPerWeek)), beforeStart, afterEnd: afterEnd || finished };
 }
 export function markAssignmentComplete(progress: Progress, week: number, sessionId: string, index: number, total: number): Progress {
   const next: Progress = JSON.parse(JSON.stringify(progress));

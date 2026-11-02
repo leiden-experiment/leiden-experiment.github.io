@@ -29,20 +29,30 @@ const root = document.createElement('div'); root.id = 'pizzicato-gateway';
 document.body.appendChild(root);
 const background = document.createElement('div'); background.id = 'background_image'; document.body.appendChild(background);
 function startGame() {
-  root.replaceChildren(); root.classList.remove('study-shell', 'study-admin-dashboard'); root.style.display = 'none';
+  root.replaceChildren(); root.classList.remove('study-shell', 'study-login', 'study-admin-dashboard'); root.style.display = 'none';
   if (!game) game = new Phaser.Game(config);
 }
 function el<K extends keyof HTMLElementTagNameMap>(parent: HTMLElement, tag: K, label?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag); if (label) node.textContent = label; parent.appendChild(node); return node;
 }
 function promptLogin() {
-  root.style.display = 'block'; root.classList.remove('study-admin-dashboard'); root.classList.add('study-shell'); root.replaceChildren();
-  const wrapper = el(root, 'main'); wrapper.className = 'study-card';
-  el(wrapper, 'h1', deployment.mode === 'offline' ? 'Pizzicato · Offline participant login' : 'Pizzicato · Research login');
-  const error = el(wrapper, 'p'); error.setAttribute('role', 'alert');
-  const username = el(wrapper, 'input'); username.placeholder = 'Username (not an email)'; username.autocomplete = 'username'; username.type = 'text';
-  const password = el(wrapper, 'input'); password.placeholder = 'Password'; password.type = 'password'; password.autocomplete = 'current-password';
-  const button = el(wrapper, 'button', 'Sign in');
+  root.style.display = 'flex';
+  root.classList.remove('study-admin-dashboard'); root.classList.add('study-shell', 'study-login');
+  root.replaceChildren();
+  const wrapper = el(root, 'main'); wrapper.className = 'study-login-card';
+  el(wrapper, 'h1', deployment.mode === 'offline' ? 'Offline Experiment Login' : 'Experiment Login');
+  const usernameLabel = el(wrapper, 'label', 'Username');
+  const username = el(usernameLabel, 'input'); username.placeholder = 'Username';
+  username.autocomplete = 'username'; username.type = 'text'; username.name = 'username';
+  const passwordLabel = el(wrapper, 'label', 'Password');
+  const password = el(passwordLabel, 'input'); password.placeholder = 'Password';
+  password.type = 'password'; password.name = 'password'; password.autocomplete = 'current-password';
+  const show = el(wrapper, 'label'); show.className = 'study-login-show';
+  const showInput = el(show, 'input'); showInput.type = 'checkbox';
+  el(show, 'span', 'Show password');
+  showInput.onchange = () => { password.type = showInput.checked ? 'text' : 'password'; };
+  const error = el(wrapper, 'p'); error.className = 'study-login-error'; error.setAttribute('role', 'alert');
+  const button = el(wrapper, 'button', 'Login'); button.type = 'button';
   button.onclick = async () => {
     button.disabled = true; error.textContent = '';
     try {
@@ -53,6 +63,7 @@ function promptLogin() {
       } else {
         const { account } = await loginOnline(username.value.trim(), password.value);
         if (account.role === 'admin' || account.role === 'moderator') {
+          root.classList.remove('study-login'); root.style.display = 'block';
           await showDashboard(root, account, async () => { await logoutOnline(); promptLogin(); });
         } else {
           const bundle = await studyApi.fetchParticipant();
@@ -63,18 +74,21 @@ function promptLogin() {
     } catch (reason) { error.textContent = reason instanceof Error ? reason.message : String(reason); }
     finally { button.disabled = false; }
   };
-  password.addEventListener('keydown', event => { if (event.key === 'Enter') button.click(); });
+  for (const input of [username, password]) input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') button.click();
+  });
   if (deployment.mode === 'offline') {
-    el(wrapper, 'p', getOfflinePack() ? 'Offline study pack installed.' : 'Import the participant-specific offline study pack first.');
-    const input = el(wrapper, 'input'); input.type = 'file'; input.accept = '.json,.pizzicato-study.json';
+    el(wrapper, 'p', getOfflinePack() ? 'Offline study pack installed.' : 'Import your offline participant pack first.');
+    const input = el(wrapper, 'input'); input.type = 'file'; input.accept = '.json,.pizzicato-study.json'; input.className = 'study-login-file';
     input.onchange = async () => {
       try { if (!input.files?.[0]) return; importOfflinePack(JSON.parse(await input.files[0].text())); promptLogin(); }
       catch (reason) { error.textContent = reason instanceof Error ? reason.message : String(reason); }
     };
   }
   if (deployment.allowGuest) {
-    const guest = el(wrapper, 'button', 'Play as guest'); guest.onclick = startGame;
+    const guest = el(wrapper, 'button', 'Play as guest'); guest.type = 'button'; guest.onclick = startGame;
   }
 }
+
 if (deployment.mode === 'guest') startGame();
 else promptLogin();

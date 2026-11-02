@@ -87,3 +87,36 @@
   .study-admin-dashboard .study-card { padding:16px; }
   .study-admin-dashboard .study-row { align-items:flex-start; }
 }
+
+/* Research gateway adopts the centered Leiden experiment login layout. */
+.study-shell.study-login { display:flex; justify-content:center; align-items:center; padding:24px; background:rgba(0,0,0,.35); }
+.study-shell.study-login .study-login-card { width:min(100%,560px); margin:0 auto; display:flex; flex-direction:column; gap:18px; background:rgba(0,0,0,.87); color:#22ff59; padding:38px; border:1px solid #188f35; border-radius:12px; box-shadow:0 0 24px rgba(0,255,70,.24); }
+.study-shell.study-login .study-login-card h1 { font-size:2.15rem; text-align:center; color:#33ff66; text-shadow:0 0 10px rgba(30,255,70,.5); margin:0 0 4px; }
+.study-shell.study-login .study-login-card label { display:grid; gap:7px; color:#a1ffad; }
+.study-shell.study-login .study-login-card input:not([type=checkbox]) { height:50px; padding:11px 14px; border:1px solid #38c75b; color:#e7ffea; background:rgba(0,0,0,.8); }
+.study-shell.study-login .study-login-card input:focus { outline:2px solid #5af474; outline-offset:2px; }
+.study-shell.study-login .study-login-card button { width:100%; min-height:48px; background:#147b32; border:1px solid #45e36b; color:#fff; border-radius:6px; font-weight:650; }
+.study-shell.study-login .study-login-card button:hover { background:#209640; }
+.study-login-show { display:flex!important; gap:8px!important; align-items:center; font-size:13px; }
+.study-login-error { color:#ffb8ac; min-height:1em; margin:0; }
+.study-login-file { font-size:13px; }
+/* Dashboard navigation and list actions share predictable sizing. */
+.study-admin-dashboard .study-nav { flex-wrap:nowrap; gap:12px; padding:9px clamp(14px,3vw,40px); }
+.study-admin-dashboard .study-nav-links { display:flex; flex:1; flex-wrap:nowrap; min-width:0; gap:7px; }
+.study-admin-dashboard .study-nav button { min-height:36px; height:36px; white-space:nowrap; padding:7px 12px; }
+.study-admin-dashboard .study-nav .study-signout { height:32px; min-height:32px; padding:5px 10px; font-size:12px; }
+.study-admin-dashboard .study-account { max-width:170px; overflow:hidden; text-overflow:ellipsis; }
+.study-admin-dashboard .study-form-grid > button { height:41px; align-self:end; width:100%; }
+.study-participant-row { display:flex; align-items:center; gap:12px; }
+.study-participant-row .study-row-title { flex:1 1 170px; }
+.study-participant-row .study-row-actions { display:flex; gap:5px; justify-content:flex-end; flex:0 1 auto; }
+.study-admin-dashboard .study-row-actions button { padding:6px 9px; min-height:34px; font-size:12px; white-space:nowrap; }
+.study-inline-edit { background:#f7faff; border:1px solid #ccd9eb; padding:14px; margin:0 0 12px; border-radius:5px; }
+.study-inline-edit[hidden] { display:none; }
+@media(max-width:900px){
+ .study-admin-dashboard .study-nav { overflow-x:auto; }
+ .study-admin-dashboard .study-nav-links { flex:0 0 auto; }
+ .study-admin-dashboard .study-nav .study-account { margin-left:auto; }
+ .study-participant-row .study-row-actions { flex-wrap:wrap; }
+}
+@media(max-width:600px){.study-shell.study-login .study-login-card { padding:24px; }}
