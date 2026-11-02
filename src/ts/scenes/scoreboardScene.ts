@@ -8,7 +8,7 @@ import { escapeKey, scoreboardBackgroundAudioFeintness } from '../core/config';
 
 import { ToggleButton } from '../ui/toggleButton';
 import { PlayableTrackLayerData } from '../level/trackTypes';
-import { getStudySession, recordLevelCompletion } from '../study/runtime';
+import { getStudySession, recordLevelCompletion, wasLastStudyResultQueued } from '../study/runtime';
 
 const capitalize = s => (s && s[0].toUpperCase() + s.slice(1)) || '';
 
@@ -54,7 +54,7 @@ export default class Scoreboard extends HandScene {
       try {
         await recordLevelCompletion(JSON.parse(JSON.stringify(this.levelStats)));
         this.studySaved = true;
-        status.setText('Progress saved.');
+        status.setText(wasLastStudyResultQueued() ? 'Result secured in the admin database; transfer pending.' : 'Progress saved.');
         // Cleanup is performed before advancing to the next study screen.
         this.exit();
       } catch (reason) {

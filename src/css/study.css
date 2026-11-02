@@ -164,3 +164,43 @@
  .study-admin-dashboard .study-roster-item .study-row { flex-wrap:wrap; }
  .study-admin-dashboard .study-row-actions { margin-left:0; }
 }
+
+/* v1.7: dark research administration with compact cards and readable actions. */
+.study-admin-dashboard { background:#0d1421; color:#e6edf8; color-scheme:dark; }
+.study-admin-dashboard .study-nav { background:#111d2d; border-color:#304056; box-shadow:0 1px 5px #080d17; }
+.study-admin-dashboard .study-brand { color:#f1f5fb; }
+.study-admin-dashboard .study-card { background:#182436; color:#e6edf8; border-color:#304258; box-shadow:0 1px 3px #0b1320; }
+.study-admin-dashboard .study-card h2,.study-admin-dashboard .study-card h3 { color:#f0f4fb; }
+.study-admin-dashboard .study-subsection { background:#132033; border-color:#33465d; }
+.study-admin-dashboard label { color:#d6e1ef; }
+.study-admin-dashboard .study-muted,.study-admin-dashboard .study-row-title small,.study-admin-dashboard .study-tooltip { color:#a9b7c9; }
+.study-admin-dashboard .study-row,.study-admin-dashboard .study-roster-item { border-color:#344359; }
+.study-admin-dashboard button,.study-admin-dashboard .study-btn { background:#27384f; border-color:#486079; color:#e9f1ff; }
+.study-admin-dashboard button:hover:not(:disabled) { background:#374b66; border-color:#6c87a4; }
+.study-admin-dashboard .study-btn-primary { color:#fff; background:#2868a4; border-color:#3984c3; }
+.study-admin-dashboard .study-btn-primary:hover:not(:disabled) { background:#347dbd; border-color:#5f9fda; }
+.study-admin-dashboard .study-btn-danger { color:#ffc7c5; background:#46282f; border-color:#87525a; }
+.study-admin-dashboard .study-btn-danger:hover:not(:disabled) { background:#65313c; }
+.study-admin-dashboard input:not([type=checkbox]),.study-admin-dashboard textarea,.study-admin-dashboard select { background:#0f1b2d; color:#f0f5fc; border-color:#4b627e; }
+.study-admin-dashboard input[type=password] { border:1px solid #4b627e!important; box-shadow:none!important; background:#0f1b2d!important; }
+.study-admin-dashboard input:focus,.study-admin-dashboard select:focus,.study-admin-dashboard textarea:focus { outline:2px solid #77b4ef; border-color:#77b4ef; }
+.study-admin-dashboard .study-check input,.study-admin-dashboard .study-config-field input[type=checkbox] { accent-color:#418dd1; }
+.study-admin-dashboard .study-group-panel,.study-admin-dashboard .study-week-row,.study-admin-dashboard .study-slide-editor { background:#192a40; border-color:#3c5069; }
+.study-admin-dashboard .study-slide { background:#25374f; border-color:#53708e; color:#e8f2ff; }
+.study-admin-dashboard .study-slide-selected { background:#21476a; outline-color:#8fc5fa; }
+.study-admin-dashboard .study-slide small { color:#becde0; }
+.study-admin-dashboard .study-drop-indicator { background:#183d61; border-color:#6bb4ff; color:#e6f5ff; }
+.study-admin-dashboard .study-inline-edit,.study-admin-dashboard .study-individual-config { background:#15283f; border-color:#425a76; }
+.study-admin-dashboard .study-slide-delete { color:#e9b0b0; }
+.study-admin-dashboard .study-slide-delete:hover { background:#5f2837; color:#fff; }
+.study-admin-dashboard .study-full-actions { display:block; width:100%; }
+.study-admin-dashboard .study-full-actions > button { display:block; width:100%; min-height:43px; }
+.study-admin-dashboard .study-compact-card { padding-bottom:12px; }
+.study-admin-dashboard .study-compact-card > :last-child { margin-bottom:0; }
+.study-admin-dashboard .study-compact-card > .study-roster:last-child,
+.study-admin-dashboard .study-compact-card > .study-list:last-child { padding-bottom:0; }
+.study-admin-dashboard .study-roster-item:last-child { border-bottom:0; }
+.study-admin-dashboard .study-remove-icon { width:35px!important; min-width:35px!important; height:34px; min-height:34px; padding:4px!important; font-size:21px!important; line-height:1!important; flex:0 0 auto; }
+.study-admin-dashboard .study-participant-row .study-row-actions button:not(.study-remove-icon) { width:auto; min-width:0; padding:5px 9px; font-size:12px; }
+.study-admin-dashboard .study-row-actions { flex-wrap:wrap; justify-content:flex-end; }
+@media(max-width:780px){ .study-admin-dashboard .study-row-actions { justify-content:flex-start; } }

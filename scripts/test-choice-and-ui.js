@@ -30,8 +30,8 @@ for (const invalid of [{...choice,playthroughs:-1},{...choice,choices:[]}, {...c
   const candidate={...settings,weeks:{'1':[invalid]}}; assert(validateSettings(candidate).length>0);
 }
 const backend = fs.readFileSync(path.join(__dirname,'../functions/index.js'),'utf8');
-assert(backend.includes('unlockedChoice(step, choice, week, counts)'));
-assert(backend.includes('progress.choices[key] = counts'));
+assert(backend.includes('unlockedChoice(sourceStep, data.choiceIndex, week, counts)'));
+assert(backend.includes('progress.choices[countsKey] = counts'));
 assert(backend.includes("stepType === 'selection'"));
 assert(backend.includes('firebasePassword(password)'));
 assert(backend.includes('customConfig:') || backend.includes('permitted.customConfig'));

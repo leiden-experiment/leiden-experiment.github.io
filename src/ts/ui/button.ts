@@ -15,6 +15,7 @@ import {
 import { config } from '../managers/storageManager';
 import HandScene from '../scenes/handScene';
 import setInteraction from '../util/interaction';
+import { getStudySession } from '../study/runtime';
 
 export class Button extends MatterSprite {
   public readonly scene: HandScene;
@@ -142,7 +143,10 @@ export class Button extends MatterSprite {
       },
     };
 
-    this.scene.hand.addPinchCheck(buttonPinchFinger, this, newCallbacks);
+    // Research UI menus should be mouse-only: a tracked hand must not
+    // accidentally activate Continue, Setup Camera, Retry or other controls.
+    // Guest mode retains its legacy pinch-to-click behavior.
+    if (!getStudySession()) this.scene.hand.addPinchCheck(buttonPinchFinger, this, newCallbacks);
 
     this.pointerDownHandler = onTriggerStart;
     this.on('pointerdown', this.pointerDownHandler);

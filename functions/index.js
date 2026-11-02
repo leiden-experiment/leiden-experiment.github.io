@@ -161,6 +161,32 @@ exports.saveStudy = onCall(options, async req => {
     [`studyIndex/${id}`]: { title: settings.title, enabled: !!settings.enabled, databaseURL: url || '' } });
   return { id };
 });
+/** Remove from the active dashboard without destroying research results.
+ * Existing accounts are disabled and linked study results are retained for audit.
+ */
+exports.removeStudy = onCall(options, async req => {
+  const operator = await profile(req); requireAdmin(operator);
+  const { studyId } = req.data || {};
+  if (!idValid(studyId)) fail('Invalid study ID');
+  const studyRef = db.ref(`studies/${studyId}/settings`);
+  const settings = (await studyRef.get()).val();
+  if (!settings || !(await db.ref(`studyIndex/${studyId}`).get()).exists()) fail('Study not found', 'not-found');
+  // Disable access before the study disappears from the list. Never delete results/progress.
+  await studyRef.child('enabled').set(false);
+  const members = Object.keys((await db.ref(`studyMembers/${studyId}`).get()).val() || {});
+  const failures = [];
+  for (const uid of members) {
+    try {
+      const member = (await db.ref(`accounts/${uid}`).get()).val();
+      if (!member || member.studyId !== studyId || !['participant','moderator'].includes(member.role)) continue;
+      await auth.updateUser(uid, { disabled: true });
+      await db.ref(`accounts/${uid}/active`).set(false);
+    } catch (error) { failures.push(uid); }
+  }
+  if (failures.length) fail('Could not disable all study accounts; study remains in list. Retry.', 'failed-precondition');
+  await db.ref().update({ [`studyIndex/${studyId}`]: null, [`studies/${studyId}/archivedAt`]: new Date().toISOString() });
+  return { ok: true };
+});
 exports.listModerators = onCall(options, async req => {
   const operator = await profile(req); requireAdmin(operator);
   const accounts = (await db.ref('accounts').get()).val() || {};
@@ -338,7 +364,7 @@ exports.advanceStudyStep = onCall(options, async req => {
   const weeks = account.weeksOverride || settings.weeks;
   const ref = db.ref(`progress/${account.studyId}/${account.uid}`);
   const transaction = await ref.transaction(value => {
-    const progress = { completed: value?.completed || {}, sessions: value?.sessions || {}, activeSession: value?.activeSession || {}, choices: value?.choices || {} };
+    const progress = { completed: value?.completed || {}, sessions: value?.sessions || {}, activeSession: value?.activeSession || {}, choices: value?.choices || {}, pendingResults: value?.pendingResults || {} };
     const timing = studyTiming(settings, account, weeks, progress);
     if (week !== timing.week || (timing.beforeStart && week !== 0) || timing.afterEnd) return;
     const assignments = weeks[String(week)] || [];
@@ -354,7 +380,7 @@ exports.advanceStudyStep = onCall(options, async req => {
       const counts = progress.choices[choiceKey(week, sid, ix)] || {};
       if (step.playthroughs !== 0 || !Object.values(counts).some(n => n > 0)) return;
     }
-    const copy = { completed: { ...progress.completed }, sessions: { ...progress.sessions }, activeSession: { ...progress.activeSession }, choices: { ...progress.choices } };
+    const copy = { completed: { ...progress.completed }, sessions: { ...progress.sessions }, activeSession: { ...progress.activeSession }, choices: { ...progress.choices }, pendingResults: { ...progress.pendingResults } };
     const entries = [...done, `${sid}:${ix}`];
     copy.completed[String(week)] = entries;
     if (assignments.every((_, i) => entries.includes(`${sid}:${i}`))) {
@@ -364,22 +390,57 @@ exports.advanceStudyStep = onCall(options, async req => {
     return copy;
   });
   if (!transaction.committed) fail('This step is no longer available; refresh your session', 'failed-precondition');
-  return { ok: true };
+  const saved = transaction.snapshot.val() || {};
+  return { ok: true, progress: { completed: saved.completed || {}, sessions: saved.sessions || {},
+    activeSession: saved.activeSession || {}, choices: saved.choices || {} } };
 });
+/** Save an accepted result in the SAME Realtime Database transaction as progress.
+ * Its pendingResults record acts as a durable outbox if delivery to a linked
+ * study database fails, so retries cannot lose completed research data.
+ */
 exports.submitResult = onCall(options, async req => {
   const account = await profile(req);
   if (account.role !== 'participant') fail('Participant permission required', 'permission-denied');
   const { data } = req.data || {};
   if (!data || JSON.stringify(data).length > 800000 || data.schemaVersion !== 1 || data.studyId !== account.studyId ||
-      data.participantId !== account.participantId || data.group !== (account.group || '') || !/^-?\d+-\d+$/.test(data.sessionId) ||
-      !Number.isInteger(data.week) || !Number.isInteger(data.assignmentIndex)) fail('Invalid result');
+      data.participantId !== account.participantId || data.group !== (account.group || '') ||
+      typeof data.sessionId !== 'string' || !/^-?\d+-\d+$/.test(data.sessionId) ||
+      !Number.isInteger(data.week) || !Number.isInteger(data.assignmentIndex) ||
+      !data.sessionId.startsWith(`${data.week}-`)) fail('Invalid study result');
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings || !settings.enabled) fail('Study disabled', 'failed-precondition');
   const weeks = account.weeksOverride || settings.weeks;
+  const sourceSteps = weeks[String(data.week)] || [];
+  const sourceStep = sourceSteps[data.assignmentIndex];
+  const selection = isSelection(sourceStep);
+  if (selection) {
+    if (!Number.isInteger(data.choiceIndex) || !Number.isInteger(data.selectionPlay) || data.selectionPlay < 0 ||
+        data.choiceIndex < 0 || data.choiceIndex >= sourceStep.choices.length ||
+        sourceStep.choices[data.choiceIndex].levelId !== data.levelId) fail('Invalid selected level result');
+  } else if (!isLevel(sourceStep) || data.choiceIndex !== undefined || data.levelId !== sourceStep.levelId) {
+    fail('This level does not match the assigned study step', 'failed-precondition');
+  }
+  const key = `${data.sessionId}_${data.assignmentIndex}_${selection ? data.selectionPlay : 0}`;
+  const record = { ...data, completedAt: new Date().toISOString() };
   const stateRef = db.ref(`progress/${account.studyId}/${account.uid}`);
   const transaction = await stateRef.transaction(value => {
-    const progress = { completed: { ...(value?.completed || {}) }, sessions: { ...(value?.sessions || {}) },
-      activeSession: { ...(value?.activeSession || {}) }, choices: { ...(value?.choices || {}) } };
+    const progress = {
+      completed: { ...(value?.completed || {}) }, sessions: { ...(value?.sessions || {}) },
+      activeSession: { ...(value?.activeSession || {}) }, choices: { ...(value?.choices || {}) },
+      pendingResults: { ...(value?.pendingResults || {}) }
+    };
+    // Another attempt may have advanced progress and failed during delivery.
+    if (progress.pendingResults[key]) return progress;
+    const countsKey = choiceKey(data.week, data.sessionId, data.assignmentIndex);
+    const counts = { ...(progress.choices[countsKey] || {}) };
+    const count = Object.values(counts).reduce((n, x) => n + x, 0);
+    const finishedStep = (progress.completed[String(data.week)] || []).includes(`${data.sessionId}:${data.assignmentIndex}`);
+    // An older backend may have committed progress without recording the result.
+    // Stage that already-authorized play for recovery, without advancing again.
+    if ((selection && count > data.selectionPlay) || (!selection && finishedStep)) {
+      progress.pendingResults[key] = record;
+      return progress;
+    }
     const timing = studyTiming(settings, account, weeks, progress);
     const week = timing.week;
     const steps = weeks[String(week)] || [];
@@ -387,49 +448,53 @@ exports.submitResult = onCall(options, async req => {
     const sessionId = progress.activeSession[String(week)] || `${week}-${sessionsDone + 1}`;
     const done = [...(progress.completed[String(week)] || [])];
     const index = steps.findIndex((_, i) => !done.includes(`${sessionId}:${i}`));
-    if (timing.beforeStart && week !== 0 || timing.afterEnd || sessionsDone >= timing.cap ||
+    if ((timing.beforeStart && week !== 0) || timing.afterEnd || sessionsDone >= timing.cap ||
         week !== data.week || sessionId !== data.sessionId || index !== data.assignmentIndex || index < 0) return;
-    const step = steps[index];
-    const selection = isSelection(step);
-    const key = choiceKey(week, sessionId, index);
-    const counts = { ...(progress.choices[key] || {}) };
-    const count = Object.values(counts).reduce((n, x) => n + x, 0);
-    const choice = data.choiceIndex;
     if (selection) {
-      if (!Number.isInteger(choice) || !Number.isInteger(data.selectionPlay) || data.selectionPlay !== count ||
-          (step.playthroughs > 0 && count >= step.playthroughs) ||
-          !unlockedChoice(step, choice, week, counts) || data.levelId !== step.choices[choice].levelId) return;
-      counts[String(choice)] = (counts[String(choice)] || 0) + 1;
-      progress.choices[key] = counts;
-      if (step.playthroughs > 0 && count + 1 >= step.playthroughs) done.push(`${sessionId}:${index}`);
-    } else if (!isLevel(step) || data.choiceIndex !== undefined || data.levelId !== step.levelId) return;
-    else done.push(`${sessionId}:${index}`);
+      if (data.selectionPlay !== count || (sourceStep.playthroughs > 0 && count >= sourceStep.playthroughs) ||
+          !unlockedChoice(sourceStep, data.choiceIndex, week, counts)) return;
+      counts[String(data.choiceIndex)] = (counts[String(data.choiceIndex)] || 0) + 1;
+      progress.choices[countsKey] = counts;
+      if (sourceStep.playthroughs > 0 && count + 1 >= sourceStep.playthroughs) done.push(`${sessionId}:${index}`);
+    } else done.push(`${sessionId}:${index}`);
     progress.completed[String(week)] = done;
     if (steps.every((_, i) => done.includes(`${sessionId}:${i}`))) {
       progress.sessions[String(week)] = sessionsDone + 1;
       delete progress.activeSession[String(week)];
     } else progress.activeSession[String(week)] = sessionId;
+    // One atomic commit for both the progress update and the durable result.
+    progress.pendingResults[key] = record;
     return progress;
   });
-  const key = `${data.sessionId}_${data.assignmentIndex}_${Number.isInteger(data.selectionPlay) ? data.selectionPlay : 0}`;
   if (!transaction.committed) {
-    const latest = (await stateRef.get()).val() || {};
-    const played = latest.choices?.[choiceKey(data.week, data.sessionId, data.assignmentIndex)] || {};
-    const total = Object.values(played).reduce((n, x) => n + x, 0);
-    // Retries for an already committed play are idempotent, even if progression has moved on.
-    if ((latest.completed?.[String(data.week)] || []).includes(`${data.sessionId}:${data.assignmentIndex}`) ||
-        (Number.isInteger(data.selectionPlay) && total > data.selectionPlay)) return { ok: true, duplicate: true };
-    fail('Study progress changed in another session. Sign in again before retrying.', 'failed-precondition');
+    const current = (await stateRef.get()).val() || {};
+    if (!current.pendingResults?.[key]) {
+      const timing = studyTiming(settings, account, weeks, current);
+      const sid = current.activeSession?.[String(timing.week)] || `${timing.week}-${(current.sessions?.[String(timing.week)] || 0) + 1}`;
+      fail(`Study progress has changed (expected week ${timing.week}, session ${sid}). Return to the study screen and resume before playing another level.`, 'failed-precondition');
+    }
   }
-  const record = { ...data, completedAt: new Date().toISOString() };
+  const latest = transaction.committed ? transaction.snapshot.val() : (await stateRef.get()).val();
+  const staged = latest?.pendingResults?.[key];
+  if (!staged) fail('Could not stage result safely', 'internal');
   const url = (await db.ref(`studyIndex/${account.studyId}/databaseURL`).get()).val();
   const path = `results/${account.studyId}/${account.uid}/${key}`;
-  try { await destination(url).ref(path).set(record); }
-  catch (error) {
-    await db.ref(`failedDeliveries/${account.studyId}/${account.uid}/${key}`).set(record);
-    return { ok: true, queued: true };
+  let queued = false;
+  try {
+    // Never overwrite the original play on repeat requests.
+    await destination(url).ref(path).transaction(previous => previous || staged);
+    await stateRef.child(`pendingResults/${key}`).remove();
+    await db.ref(`failedDeliveries/${account.studyId}/${account.uid}/${key}`).remove();
+  } catch (error) {
+    // The record is already committed in progress.pendingResults; do not
+    // clear it or lose the participant's valid result when the remote DB fails.
+    queued = true;
   }
-  return { ok: true };
+  const state = (await stateRef.get()).val() || latest;
+  return { ok: true, queued, progress: {
+    completed: state.completed || {}, sessions: state.sessions || {},
+    activeSession: state.activeSession || {}, choices: state.choices || {}
+  } };
 });
 exports.exportResults = onCall(options, async req => {
   const operator = await profile(req);
@@ -446,10 +511,18 @@ exports.exportResults = onCall(options, async req => {
   Object.values(users).forEach(records => Object.values(records || {}).forEach(result => output.push(result)));
   const queued = (await db.ref(`failedDeliveries/${studyId}${uid ? `/${uid}` : ''}`).get()).val() || {};
   const pendingUsers = uid ? { [uid]: queued } : queued;
-  const known = new Set(output.map(r => `${r.participantId}:${r.sessionId}:${r.assignmentIndex}`));
+  const known = new Set(output.map(r => `${r.participantId}:${r.sessionId}:${r.assignmentIndex}:${r.selectionPlay || 0}`));
   Object.values(pendingUsers).forEach(records => Object.values(records || {}).forEach(result => {
-    const key = `${result.participantId}:${result.sessionId}:${result.assignmentIndex}`;
+    const key = `${result.participantId}:${result.sessionId}:${result.assignmentIndex}:${result.selectionPlay || 0}`;
     if (!known.has(key)) { output.push({ ...result, deliveryStatus: 'recovery-queue' }); known.add(key); }
+  }));
+  // Include durable submissions awaiting delivery, even if the secondary database is down.
+  const progressSnap = (await db.ref(`progress/${studyId}${uid ? `/${uid}` : ''}`).get()).val() || {};
+  const progressUsers = uid ? { [uid]: progressSnap } : progressSnap;
+  Object.values(progressUsers).forEach(state => Object.entries(state?.pendingResults || {}).forEach(([recordKey, result]) => {
+    const resultUid = result.participantId;
+    const dedupeKey = `${resultUid}:${result.sessionId}:${result.assignmentIndex}:${result.selectionPlay || 0}`;
+    if (!known.has(dedupeKey)) { output.push({ ...result, deliveryStatus: 'awaiting-delivery' }); known.add(dedupeKey); }
   }));
   if (JSON.stringify(output).length > 8000000) fail('Results too large for a single export; export participants separately', 'resource-exhausted');
   return { results: output, partial: destinationUnavailable };

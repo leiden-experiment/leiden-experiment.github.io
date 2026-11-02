@@ -42,7 +42,7 @@ export const studyApi = {
     callBackend<{ uid: string }>('provisionAccount', { studyId, username, password, role, group, startDate, ...(customConfig ? { customConfig } : {}) }),
   setAccountActive: (uid: string, active: boolean) => callBackend<{ ok: boolean }>('setAccountActive', { uid, active }),
   setParticipant: (uid: string, changes: object) => callBackend<{ ok: boolean }>('setParticipant', { uid, changes }),
-  advanceStep: (week: number, sessionId: string, index: number, stepType: string) => callBackend<{ ok: boolean }>('advanceStudyStep', { week, sessionId, index, stepType }),
+  advanceStep: (week: number, sessionId: string, index: number, stepType: string) => callBackend<{ ok: boolean; progress?: Progress }>('advanceStudyStep', { week, sessionId, index, stepType }),
   removeAccount: (uid: string) => callBackend<{ ok: boolean }>('removeAccount', { uid }),
   resetModeratorPassword: (uid: string, password: string) => callBackend<{ ok: boolean }>('resetModeratorPassword', { uid, password }),
   updateAccountCredentials: (uid: string, username?: string, password?: string) =>
@@ -52,7 +52,8 @@ export const studyApi = {
   saveLevel: (id: string, name: string, data: unknown) => callBackend<{ id: string }>('saveLevel', { id, name, data }),
   getLevel: (id: string) => callBackend<{ level: PublishedLevel }>('getLevel', { id }),
   fetchParticipant: () => callBackend<{ account: Account; settings: StudySettings; progress: Progress }>('getParticipantBundle', {}),
-  saveResult: (data: ResultEnvelope, progress: Progress) => callBackend<{ ok: boolean }>('submitResult', { data, progress }),
+  saveResult: (data: ResultEnvelope, progress: Progress) => callBackend<{ ok: boolean; queued?: boolean; duplicate?: boolean; progress?: Progress }>('submitResult', { data, progress }),
+  removeStudy: (studyId: string) => callBackend<{ ok: boolean }>('removeStudy', { studyId }),
   exportResults: (studyId: string, uid?: string) =>
     callBackend<{ results: ResultEnvelope[]; partial?: boolean }>('exportResults', { studyId, ...(uid ? { uid } : {}) }),
 };

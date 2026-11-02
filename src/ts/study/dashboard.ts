@@ -122,7 +122,9 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const page = section(output, 'Studies');
     const commands = actions(page);
     if (user.role === 'admin') {
-      action(commands, '+ Create study', () => navigate('Create study', () => editStudy('', { ...defaultStudySettings(), weeklyEnabled: false, dateRangeEnabled: false }), true), 'primary');
+      const createStudy = action(commands, '+ Create study', () => navigate('Create study', () => editStudy('', { ...defaultStudySettings(), weeklyEnabled: false, dateRangeEnabled: false }), true), 'primary');
+      createStudy.classList.add('study-block-button');
+      commands.classList.add('study-full-actions');
 
     }
     const list = node('div', page); list.className = 'study-list'; node('p', list, 'Loading studies…');
@@ -135,10 +137,20 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       const title = node('div', row); title.className = 'study-row-title';
       node('strong', title, study.title);
       action(row, 'Manage study', () => navigate(study.title, () => showStudy(study)), 'primary');
+      if (user.role === 'admin') {
+        const remove = action(row, '×', async () => {
+          if (!confirm(`Remove study “${study.title}”?\n\nParticipants and moderators will lose access. Existing results will be retained for audit, but the study will disappear from the dashboard. This cannot be undone from the dashboard.`)) return;
+          await studyApi.removeStudy(study.id);
+          navigate('Studies', showStudies, false);
+        }, 'danger');
+        remove.title = `Remove study ${study.title}`; remove.setAttribute('aria-label', remove.title);
+        remove.classList.add('study-remove-icon');
+      }
     }
   }
   function showStudy(study: StudySummary) {
     const page = section(output, study.title);
+    page.classList.add('study-compact-card');
     const buttons = actions(page); buttons.classList.add('study-study-tabs');
     if (user.role === 'admin') {
       action(buttons, 'Edit Study', () => navigate('Edit ' + study.title, async () => {
@@ -254,6 +266,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
   }
   async function showModerators(study: StudySummary) {
     const page = section(output, `Moderator accounts · ${study.title}`);
+    page.classList.add('study-compact-card');
     node('p', page, 'Moderators may view participants and download results for this study; only administrators can manage accounts.');
     const create = node('div', page); create.className = 'study-form-grid';
     const name = field(create, 'New moderator username', '', 'input', 'At least four characters; used to sign in.');
@@ -281,14 +294,17 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         const secret = prompt('New password'); if (!secret) return;
         await studyApi.resetModeratorPassword(mod.uid, secret); alert('Password updated. Share it securely.');
       });
-      action(modActions, 'Remove', async () => {
+      const removeModerator = action(modActions, '×', async () => {
         if (!confirm(`Permanently remove ${mod.username}?`)) return;
         await studyApi.removeAccount(mod.uid); navigate(`Moderators · ${study.title}`, () => showModerators(study), false);
       }, 'danger');
+      removeModerator.title = `Remove moderator ${mod.username}`; removeModerator.setAttribute('aria-label', removeModerator.title);
+      removeModerator.classList.add('study-remove-icon');
     }
   }
   async function showRoster(study: StudySummary) {
     const page = section(output, `Participants · ${study.title}`);
+    page.classList.add('study-compact-card');
     const canEdit = user.role === 'admin';
     const controls = actions(page);
     action(controls, 'Download all participant data', async () => {
@@ -350,7 +366,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       const iconAction = (text: string, hint: string, fn: () => void | Promise<void>, style: 'primary' | 'secondary' | 'danger' = 'secondary') => {
         const button = action(commands, text, fn, style); button.title = hint; button.setAttribute('aria-label', hint); return button;
       };
-      iconAction('↓', 'Download participant results (JSON)', async () => {
+      iconAction('Download', 'Download participant results (JSON)', async () => {
         const { results: data, partial } = await studyApi.exportResults(study.id, member.uid);
         if (partial) alert('Some results could not be retrieved.');
         downloadJSON(exportName(study, member.username), data);
@@ -388,27 +404,28 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
             ...(customToggle ? { customConfig: customToggle.checked ? readCustom() : null } : {}) });
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
         }, 'primary'); save.classList.add('study-block-button');
-        iconAction('✎', 'Edit group / condition and personal settings', () => { edit.hidden = !edit.hidden; });
-        iconAction('U', 'Change username', async () => {
+        iconAction('Edit settings', 'Edit group / condition and personal settings', () => { edit.hidden = !edit.hidden; });
+        iconAction('Username', 'Change username', async () => {
           const name = prompt('New username', member.username);
           if (name === null || name.trim() === member.username) return;
           await studyApi.updateAccountCredentials(member.uid, name.trim());
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
         });
-        iconAction('P', 'Change password', async () => {
+        iconAction('Password', 'Change password', async () => {
           const password = prompt('New password'); if (password === null) return;
           await studyApi.updateAccountCredentials(member.uid, undefined, password);
           alert('Password updated. Share it privately.');
         });
-        iconAction(member.active ? '○' : '●', member.active ? 'Deactivate participant' : 'Reactivate participant', async () => {
+        iconAction(member.active ? 'Disable' : 'Enable', member.active ? 'Deactivate participant' : 'Reactivate participant', async () => {
           await studyApi.setAccountActive(member.uid, !member.active);
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
         });
-        iconAction('×', 'Remove participant (results are kept)', async () => {
+        const removeParticipant = iconAction('×', 'Remove participant (results are kept)', async () => {
           if (!confirm(`Remove ${member.username}? Existing results will be retained.`)) return;
           await studyApi.removeAccount(member.uid);
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
         }, 'danger');
+        removeParticipant.classList.add('study-remove-icon');
       }
       rows.push({ element: item, member });
     }

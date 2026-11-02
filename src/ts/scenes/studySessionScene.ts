@@ -5,7 +5,7 @@ import { levels } from './loadingScene';
 import { LevelConverter } from '../util/levelConverter';
 import { UploadedLevelManager } from '../managers/uploadedLevelManager';
 import { defaultConfig, updateConfig } from '../managers/storageManager';
-import { getStudyPlan, getStudyProgress, getStudySession, setPendingAssignment, publishedLevels, advanceScreenStep, hasJustFinishedSession } from '../study/runtime';
+import { getStudyPlan, getStudyProgress, getStudySession, setPendingAssignment, publishedLevels, advanceScreenStep, hasJustFinishedSession, wasLastStudyResultQueued } from '../study/runtime';
 import { studyApi } from '../study/firebaseClient';
 import { downloadResults } from '../study/offline';
 import { TrackData } from '../level/trackTypes';
@@ -29,7 +29,7 @@ export default class StudySessionScene extends HandScene {
       ? `You have finished this week's sessions. Come back in ${daysUntil} day${daysUntil === 1 ? '' : 's'}.`
       : 'You have completed the maximum sessions for this week.';
     const message = plan?.afterEnd ? 'This study has ended. Thank you for participating.' :
-      hasJustFinishedSession() ? 'Thank you for playing today! Your progress has been recorded. Please come back for your next session.' :
+      hasJustFinishedSession() ? (wasLastStudyResultQueued() ? 'Thank you for playing. Your result is safely stored in the administrator database and is awaiting transfer to the study database.' : 'Thank you for playing today! Your progress has been recorded. Please come back for your next session.') :
       plan?.beforeStart && plan.week !== 0 ? 'Your training programme has not started yet.' :
       plan?.capped ? cappedText :
       !plan?.assignments.length ? 'There are no activities scheduled for this week.' :
@@ -65,12 +65,15 @@ export default class StudySessionScene extends HandScene {
       } else {
         const buttonText = step.type === 'end' ? 'FINISH\nSESSION' : step.type === 'break' ? 'RESUME\nPLAYING' : 'CONTINUE';
         let busy = false;
-        new Button(this, buttonText, this.center.x, 810, () => {
-          if (busy) return; busy = true; this.status.setText('Continuing…');
+        new Button(this, buttonText, step.type === 'start' ? this.center.x + 300 : this.center.x, 810, () => {
+          if (busy) return; busy = true;
           void advanceScreenStep(step).then(() => this.scene.restart()).catch(reason => {
             busy = false; this.status.setText(reason instanceof Error ? reason.message : String(reason));
           });
         });
+        if (step.type === 'start') {
+          new Button(this, 'SETUP\nCAMERA', this.center.x - 300, 810, () => this.scene.start('calibration'));
+        }
       }
     }
     if (session.mode === 'offline') new Button(this, 'EXPORT\nRESULTS', 200, 940, () => { void downloadResults(session.account.studyId!, session.account.participantId!); });

@@ -6,11 +6,13 @@ let session: StudySession | null = null;
 let progress: Progress = emptyProgress();
 let pendingSave: Promise<void> | null = null;
 let justFinishedSession = false;
+let lastSaveQueued = false;
+export function wasLastStudyResultQueued() { return lastSaveQueued; }
 export function hasJustFinishedSession() { return justFinishedSession; }
 let pending: { week: number; sessionId: string; index: number; total: number; assignment: Assignment; choiceIndex?: number; selectionPlay?: number } | null = null;
 export let publishedLevels: Record<string, unknown> = {};
 export function setStudySession(value: StudySession, remoteProgress?: Progress, levels: Record<string, unknown> = {}) {
-  session = value; pending = null; pendingSave = null; justFinishedSession = false;
+  session = value; pending = null; pendingSave = null; justFinishedSession = false; lastSaveQueued = false;
   const account = value.account;
   progress = value.mode === 'offline' ? loadLocalProgress(account.studyId!, account.participantId!) : (remoteProgress || emptyProgress());
   publishedLevels = levels;
@@ -49,10 +51,16 @@ export function recordLevelCompletion(result: unknown): Promise<void> {
       updated = markAssignmentComplete(updated, active.week, active.sessionId, active.index, active.total);
   } else updated = markAssignmentComplete(progress, active.week, active.sessionId, active.index, active.total);
   const promise = (async () => {
-    if (activeSession.mode === 'offline') await saveLocalResult(data, updated);
-    else await studyApi.saveResult(data, updated);
-    if ((updated.sessions[String(active.week)] || 0) > (progress.sessions[String(active.week)] || 0)) justFinishedSession = true;
-    progress = updated;
+    let authoritative: Progress | undefined;
+    if (activeSession.mode === 'offline') { await saveLocalResult(data, updated); lastSaveQueued = false; }
+    else {
+      const response = await studyApi.saveResult(data, updated);
+      authoritative = response.progress;
+      lastSaveQueued = !!response.queued;
+    }
+    const confirmed = authoritative || updated;
+    if ((confirmed.sessions[String(active.week)] || 0) > (progress.sessions[String(active.week)] || 0)) justFinishedSession = true;
+    progress = confirmed;
     if (pending === active) pending = null;
   })();
   pendingSave = promise;
@@ -73,7 +81,14 @@ export async function advanceScreenStep(step: ScreenStep | LevelChoiceStep) {
   }
   const updated = markAssignmentComplete(progress, plan.week, plan.sessionId, plan.index, plan.assignments.length);
   if (session.mode === 'offline') saveLocalProgress(session.account.studyId!, session.account.participantId!, updated);
-  else await studyApi.advanceStep(plan.week, plan.sessionId, plan.index, step.type);
+  else {
+    const response = await studyApi.advanceStep(plan.week, plan.sessionId, plan.index, step.type);
+    if (response.progress) {
+      if ((response.progress.sessions[String(plan.week)] || 0) > (progress.sessions[String(plan.week)] || 0)) justFinishedSession = true;
+      progress = response.progress;
+      return;
+    }
+  }
   if ((updated.sessions[String(plan.week)] || 0) > (progress.sessions[String(plan.week)] || 0)) justFinishedSession = true;
   progress = updated;
 }
