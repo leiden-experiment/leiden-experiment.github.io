@@ -4,7 +4,7 @@ import { StudyStep, StudySettings, isLevelStep, isSelectionStep, normalizeStudyW
 export function createFlowBoard(parent: HTMLElement, source: StudySettings['weeks'], changed: (weeks: StudySettings['weeks']) => void, weekly = true) {
   let weeks: StudySettings['weeks'] = JSON.parse(JSON.stringify(normalizeStudyWeeks(source)));
   let isWeekly = weekly;
-  let availableLevels: { id: string; name: string }[] = [
+  let availableLevels: { id: string; name: string; bpm?: number }[] = [
     ...['Birthday Vibes', 'Cheerful Bliss', 'Slow Elegance', 'Trained', 'Untrained', 'Tryout', 'Nosound']
       .map(name => ({ id: `legacy:${name}`, name: `Bundled: ${name}` }))
   ];
@@ -12,12 +12,15 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
   let dragging: { week: string; index: number } | null = null;
   let destination: { week: string; index: number } | null = null;
   const board = document.createElement('div'); board.className = 'study-flow-board'; parent.appendChild(board);
-  const editor = document.createElement('div'); editor.className = 'study-slide-editor'; parent.appendChild(editor);
+  // Render the editor within the selected week, never below the entire timeline.
+  const editor = document.createElement('div'); editor.className = 'study-slide-editor';
   const make = <K extends keyof HTMLElementTagNameMap>(tag: K, into: HTMLElement, title?: string) => {
     const element = document.createElement(tag); if (title !== undefined) element.textContent = title; into.appendChild(element); return element;
   };
-  const button = (into: HTMLElement, title: string, fn: () => void) => {
-    const b = make('button', into, title); b.type = 'button'; b.onclick = fn; return b;
+  const button = (into: HTMLElement, title: string, fn: () => void, purpose: 'default' | 'add' | 'danger' = 'default') => {
+    const b = make('button', into, title); b.type = 'button'; b.onclick = fn;
+    b.classList.add('study-flow-action', `study-action-${purpose}`);
+    return b;
   };
   const trigger = () => changed(JSON.parse(JSON.stringify(weeks)));
   const placeholder = (kind: 'start' | 'level' | 'selection' | 'break' | 'end'): StudyStep => kind === 'selection'
@@ -40,9 +43,33 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
   function add(week: string, type: 'start' | 'level' | 'selection' | 'break' | 'end') {
     weeks[week].push(placeholder(type)); selected = { week, index: weeks[week].length - 1 }; trigger(); render();
   }
+  function tempoSlider(into: HTMLElement, assignment: { levelId: string; bpm?: number; bpmIndex: number }) {
+    const info = availableLevels.find(level => level.id === assignment.levelId);
+    const row = make('div', into); row.className = 'study-field study-bpm-slider';
+    const heading = make('div', row); heading.className = 'study-bpm-heading';
+    const caption = make('span', heading);
+    const original = Number.isFinite(info?.bpm) ? Math.round(info!.bpm!) : 120;
+    // The original BPM maps to the same numeric slider position as an explicit BPM.
+    // A level outside the slider's supported range can still use its authored tempo.
+    const originalPosition = Math.min(200, Math.max(60, original));
+    const slider = make('input', row);
+    slider.type = 'range'; slider.min = '60'; slider.max = '200'; slider.step = '1';
+    slider.value = String(assignment.bpm ?? originalPosition);
+    slider.title = 'Exact playback BPM (60–200). Moving the slider sets a tempo override.';
+    const updateLabel = () => { caption.textContent = `BPM: ${assignment.bpm ?? original}`; };
+    updateLabel();
+    slider.setAttribute('aria-label', 'Playback BPM');
+    slider.addEventListener('input', () => { assignment.bpm = Number(slider.value); updateLabel(); trigger(); });
+    const reset = button(heading, 'Reset BPM', () => {
+      delete assignment.bpm; slider.value = String(originalPosition); updateLabel(); trigger();
+    });
+    reset.classList.add('study-bpm-reset');
+    reset.title = `Restore the level's original tempo (${original} BPM)`;
+  }
   function edit() {
     editor.replaceChildren();
-    if (!selected) { make('p', editor, 'Click a slide to edit it. Drag a slide to a different position; the insertion marker shows where it will go. Use the × on a slide to delete it.'); return; }
+    if (!selected) { editor.hidden = true; return; }
+    editor.hidden = false;
     const { week, index } = selected;
     const step = weeks[week]?.[index]; if (!step) { selected = null; return edit(); }
     make('h3', editor, `${week === '0' ? 'Pretest' : week === '-1' ? 'Posttest' : `Week ${week}`} · Slide ${index + 1}`);
@@ -61,10 +88,10 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
       const blank = make('option', select, 'Choose a level…'); blank.value = '';
       for (const level of availableLevels) { const option = make('option', select, level.name); option.value = level.id; }
       select.value = availableLevels.some(l => l.id === step.levelId) ? step.levelId : '';
-      select.onchange = () => { if (!select.value) return; step.levelId = select.value; trigger(); render(); };
+      select.onchange = () => { if (!select.value) return; step.levelId = select.value; delete step.bpm; step.bpmIndex = 0; trigger(); render(); };
       if (!select.value) item('Existing level ID', step.levelId, value => { step.levelId = value; }, 'Keeps previously assigned levels available even if they are not currently listed.');
       if (step.levelId.startsWith('legacy:')) item('Difficulty / BPM option', String(step.bpmIndex), value => { step.bpmIndex = Number(value); }, '0 selects the first speed. Higher numbers select later speed options.');
-      else if (step.bpmIndex !== 0) { step.bpmIndex = 0; trigger(); } // Imported JSON has its own authored BPM.
+      else { step.bpmIndex = 0; tempoSlider(editor, step); }
       item('Number of loops', String(step.loops), value => { step.loops = Number(value); }, 'Loops to play before this slide completes.');
     } else if (isSelectionStep(step)) {
       item('Selection screen message', step.text, v => { step.text = v; }, 'Shown above the selectable levels.', true);
@@ -88,23 +115,30 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
         const picker = make('select', pickerLabel);
         for (const level of availableLevels) { const option = make('option', picker, level.name); option.value = level.id; }
         if (!availableLevels.some(l => l.id === choice.levelId)) { const old = make('option', picker, choice.levelId); old.value = choice.levelId; }
-        picker.value = choice.levelId; picker.onchange = () => { choice.levelId = picker.value; if (!picker.value.startsWith('legacy:')) choice.bpmIndex = 0; trigger(); render(); };
+        picker.value = choice.levelId;
+        picker.onchange = () => { choice.levelId = picker.value; choice.bpmIndex = 0; delete choice.bpm; trigger(); render(); };
         if (choice.levelId.startsWith('legacy:')) {
           const difficulty = make('label', row); difficulty.className = 'study-field'; make('span', difficulty, 'BPM option');
           const bpm = make('input', difficulty); bpm.type = 'number'; bpm.min = '0'; bpm.max = '8'; bpm.step = '1'; bpm.value = String(choice.bpmIndex);
           bpm.onchange = () => { choice.bpmIndex = Number(bpm.value); trigger(); };
-        } else if (choice.bpmIndex !== 0) { choice.bpmIndex = 0; trigger(); }
+        } else { choice.bpmIndex = 0; tempoSlider(row, choice); }
         const count = make('label', row); count.className = 'study-field'; make('span', count, 'Loops');
         const loops = make('input', count); loops.type = 'number'; loops.min = '1'; loops.max = '100'; loops.step = '1'; loops.value = String(choice.loops);
         loops.onchange = () => { choice.loops = Number(loops.value); trigger(); };
-        const remove = button(row, 'Remove level', () => { if (step.choices.length <= 1) return; step.choices.splice(i, 1); trigger(); render(); });
-        remove.disabled = step.choices.length <= 1; remove.title = 'Remove this choice';
+        const remove = button(row, '×', () => {
+          if (step.choices.length <= 1) return;
+          step.choices.splice(i, 1); trigger(); render();
+        }, 'danger');
+        remove.classList.add('study-choice-remove');
+        remove.disabled = step.choices.length <= 1;
+        remove.title = `Remove level ${i + 1}`;
+        remove.setAttribute('aria-label', remove.title);
       });
       const addChoice = button(editor, '+ Add selectable level', () => {
         if (step.choices.length >= 9) return;
         step.choices.push({ type: 'level', levelId: availableLevels[0]?.id || 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 3 });
         trigger(); render();
-      });
+      }, 'add');
       addChoice.disabled = step.choices.length >= 9;
     } else item('Participant message', step.text, value => { step.text = value; }, 'Shown on this start, break, or end screen.', true);
   }
@@ -113,12 +147,13 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
     const toolbar = make('div', board); toolbar.className = 'study-flow-toolbar';
     make('h3', toolbar, 'Visual study timeline');
     if (isWeekly) {
-      button(toolbar, '+ Add week', () => {
+      const toolbarActions = make('div', toolbar); toolbarActions.className = 'study-flow-toolbar-actions';
+      button(toolbarActions, '+ Add week', () => {
         const next = Math.max(0, ...ordered().map(Number).filter(n => n > 0)) + 1;
         weeks[String(next)] = []; selected = null; trigger(); render();
-      });
-      button(toolbar, '+ Pretest', () => { if (!weeks['0']) weeks['0'] = []; trigger(); render(); });
-      button(toolbar, '+ Posttest', () => { if (!weeks['-1']) weeks['-1'] = []; trigger(); render(); });
+      }, 'add');
+      button(toolbarActions, '+ Pre-test', () => { if (!weeks['0']) weeks['0'] = []; trigger(); render(); }, 'add');
+      button(toolbarActions, '+ Post-test', () => { if (!weeks['-1']) weeks['-1'] = []; trigger(); render(); }, 'add');
     }
     make('p', board, isWeekly
       ? 'Each row represents a different week. Drag slide thumbnails to any insertion marker, including across weeks.'
@@ -128,10 +163,15 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
       const section = make('section', board); section.className = 'study-week-row';
       const header = make('div', section); header.className = 'study-week-heading';
       make('strong', header, week === '0' ? 'Pretest' : week === '-1' ? 'Posttest' : isWeekly ? `Week ${week}` : 'Study session');
-      if (week !== '1') button(header, 'Remove row', () => {
-        if (!confirm(`Remove ${week === '0' ? 'Pretest' : week === '-1' ? 'Posttest' : `Week ${week}`} and its slides?`)) return;
-        delete weeks[week]; selected = null; trigger(); render();
-      });
+      if (week !== '1') {
+        const removeRow = button(header, '×', () => {
+          if (!confirm(`Remove ${week === '0' ? 'Pretest' : week === '-1' ? 'Posttest' : `Week ${week}`} and its slides?`)) return;
+          delete weeks[week]; selected = null; trigger(); render();
+        }, 'danger');
+        removeRow.classList.add('study-week-delete');
+        removeRow.title = 'Remove this row and its slides';
+        removeRow.setAttribute('aria-label', removeRow.title);
+      }
       const slides = make('div', section); slides.className = 'study-slides';
       const indicator = document.createElement('div'); indicator.className = 'study-drop-indicator';
       indicator.textContent = 'Drop here'; indicator.setAttribute('aria-hidden', 'true');
@@ -176,8 +216,8 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
         const remove = button(heading, '×', () => {
           if (!confirm(`Delete slide ${index + 1}?`)) return;
           weeks[week].splice(index, 1); selected = null; trigger(); render();
-        });
-        remove.className = 'study-slide-delete'; remove.title = 'Delete this slide'; remove.setAttribute('aria-label', 'Delete this slide');
+        }, 'danger');
+        remove.classList.add('study-slide-delete'); remove.title = 'Delete this slide'; remove.setAttribute('aria-label', 'Delete this slide');
         remove.onclick = event => { event.stopPropagation(); if (!confirm(`Delete slide ${index + 1}?`)) return; weeks[week].splice(index, 1); selected = null; trigger(); render(); };
         make('strong', tile, isLevelStep(step) ? availableLevels.find(l => l.id === step.levelId)?.name || step.levelId : isSelectionStep(step) ? `Choose between ${step.choices.length} levels` : step.text.slice(0, 85) || '(empty message)');
         if (isLevelStep(step)) make('small', tile, `${step.levelId.startsWith('legacy:') ? `BPM option ${step.bpmIndex} · ` : ''}${step.loops} loops`);
@@ -202,16 +242,19 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
         break: 'Pause screen with a Continue button.', end: 'Thank-you screen ending the participant session.'
       };
       for (const type of ['start', 'level', 'selection', 'break', 'end'] as const) {
-        const addButton = button(addBar, `+ ${type === 'selection' ? 'Level selection' : type === 'level' ? 'Play level' : type === 'break' ? 'Break' : type === 'start' ? 'Start' : 'End'}`, () => add(week, type));
+        const addButton = button(addBar, `+ ${type === 'selection' ? 'Level selection' : type === 'level' ? 'Play level' : type === 'break' ? 'Break' : type === 'start' ? 'Start' : 'End'}`, () => add(week, type), 'add');
         addButton.title = hints[type];
       }
+      // Position the slide editor immediately below the controls for its own week.
+      // Appending it here ensures Week 1 editor appears before Week 2, and so on.
+      if (selected?.week === week) section.appendChild(editor);
     }
     edit();
   }
   render();
   return {
     getWeeks: () => JSON.parse(JSON.stringify(weeks)) as StudySettings['weeks'],
-    setAvailableLevels: (levels: { id: string; name: string }[]) => { availableLevels = [...availableLevels.filter(x => x.id.startsWith('legacy:')), ...levels]; edit(); },
+    setAvailableLevels: (levels: { id: string; name: string; bpm?: number }[]) => { availableLevels = [...availableLevels.filter(x => x.id.startsWith('legacy:')), ...levels]; edit(); },
     setWeeks: (value: StudySettings['weeks']) => { weeks = JSON.parse(JSON.stringify(normalizeStudyWeeks(value)));
       selected = null; trigger(); render(); },
     setWeekly: (value: boolean) => { if (isWeekly !== value) { isWeekly = value; selected = null; render(); } },

@@ -132,14 +132,22 @@ export class LevelConverter {
       while (usedIds.has(result)) result = `${stem}_${suffix++}`;
       usedIds.add(result); return result;
     };
-    // Generated levels have no MP4 or pre-recorded audio backing layers.
-    // The playable layers themselves provide the backing audio as they are completed.
+    // Match the Level Editor: a shared four-bar drum loop plays behind every
+    // generated layer. Legacy MP3 levels continue using their own drum tracks.
+    layers.push({ id: 'drums', playable: false, lengthInBars: 4, soundLoopKeys: ['beat'] });
     orderedTracks.forEach((track, index) => {
       if (!track.notes.length) return;
       const id = getId(track.name, index);
       const byId = new Map(track.notes.map(n => [n.id, n]));
       const claimed = new Set<string>();
       const groups: DesignerNote[][] = [];
+      const attachAtTime = (notes: DesignerNote[], time: number) => {
+        // Match Level Editor grouping: simultaneous trigger notes form ONE
+        // target/chord rather than stacked targets in the same position.
+        const existing = groups.find(group => Math.abs(group[0].startTime - time) <= 0.1);
+        if (existing) existing.push(...notes);
+        else groups.push([...notes]);
+      };
       for (const trigger of track.notes.filter(n => n.type === 'trigger')) {
         if (claimed.has(trigger.id)) continue;
         const group = [trigger]; claimed.add(trigger.id);
@@ -153,13 +161,11 @@ export class LevelConverter {
             group.push(support); claimed.add(support.id);
           }
         }
-        groups.push(group);
+        attachAtTime(group, trigger.startTime);
       }
       for (const note of track.notes) {
         if (claimed.has(note.id)) continue;
-        const group = groups.find(g => Math.abs(g[0].startTime - note.startTime) < 0.001 && !note.triggerNote);
-        if (group) group.push(note);
-        else groups.push([note]);
+        attachAtTime([note], note.startTime);
         claimed.add(note.id);
       }
       groups.sort((a, b) => a[0].startTime - b[0].startTime);
@@ -191,7 +197,7 @@ export class LevelConverter {
       });
       const endBeat = Math.max(...track.notes.map(n => n.startTime + n.duration));
       const lengthInBars = Math.max(1, Math.ceil(endBeat / (music.numerator * 4 / music.denominator)));
-      const backgroundLayers = layers.filter(layer => layer.playable).map(layer => layer.id);
+      const backgroundLayers = layers.map(layer => layer.id);
       const layer: PlayableTrackLayerData = {
         id, playable: true, progressCount: Math.min(3, nodes.length),
         lengthInBars, previewTime: { bar: 2, step: 1, tick: 0 },

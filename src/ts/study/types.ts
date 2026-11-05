@@ -3,6 +3,8 @@ export interface Assignment {
   type?: 'level'; // omitted in existing/Leiden study templates
   levelId: string;
   bpmIndex: number;
+  /** Optional exact tempo for imported JSON levels; omitted means the authored tempo. */
+  bpm?: number;
   loops: number;
   configOverride?: Record<string, unknown>;
 }
@@ -69,6 +71,7 @@ export interface StudySummary {
   title: string;
   enabled: boolean;
   databaseURL?: string;
+  revision?: number;
 }
 export interface Account {
   uid: string;
@@ -93,8 +96,10 @@ export interface Progress {
   sessions: Record<string, number>;
   activeSession: Record<string, string>;
   choices?: Record<string, Record<string, number>>;
+  /** ISO timestamp when the most recent FULL study session was completed. */
+  lastCompletedSessionAt?: string;
 }
-export interface PublishedLevel { id: string; name: string; data?: unknown; updatedAt?: string }
+export interface PublishedLevel { id: string; name: string; data?: unknown; updatedAt?: string; bpm?: number }
 export function defaultStudySettings(title = 'New study'): StudySettings {
   return {
     title, description: '', introText: 'Welcome to the study.',
@@ -127,6 +132,7 @@ export function validateSettings(value: StudySettings): string[] {
       if (isLevelStep(step)) {
         if (typeof step.levelId !== 'string' || !/^(legacy|library|uploaded):[\w .-]{1,100}$/.test(step.levelId)) issues.push(`${week}/${i}: invalid levelId`);
         if (!Number.isInteger(step.bpmIndex) || step.bpmIndex < 0 || step.bpmIndex > 8) issues.push(`${week}/${i}: invalid bpmIndex`);
+        if (step.bpm !== undefined && (!Number.isInteger(step.bpm) || step.bpm < 60 || step.bpm > 200 || step.levelId.startsWith('legacy:'))) issues.push(`${week}/${i}: invalid custom tempo`);
         if (!Number.isInteger(step.loops) || step.loops < 1 || step.loops > 100) issues.push(`${week}/${i}: invalid loops`);
       } else if (isSelectionStep(step)) {
         if (typeof step.text !== 'string' || step.text.length > 2000 || !['all', 'sequential', 'weekly'].includes(step.unlock) ||
@@ -135,7 +141,8 @@ export function validateSettings(value: StudySettings): string[] {
         else step.choices.forEach((choice, j) => {
           if (typeof choice.levelId !== 'string' || !/^(legacy|library|uploaded):[\w .-]{1,100}$/.test(choice.levelId) ||
               !Number.isInteger(choice.bpmIndex) || choice.bpmIndex < 0 || choice.bpmIndex > 8 ||
-              !Number.isInteger(choice.loops) || choice.loops < 1 || choice.loops > 100) issues.push(`${week}/${i}/${j}: invalid selectable level`);
+              !Number.isInteger(choice.loops) || choice.loops < 1 || choice.loops > 100 ||
+              (choice.bpm !== undefined && (!Number.isInteger(choice.bpm) || choice.bpm < 60 || choice.bpm > 200 || choice.levelId.startsWith('legacy:')))) issues.push(`${week}/${i}/${j}: invalid selectable level`);
         });
       } else if (['start', 'break', 'end'].includes(step.type)) {
         if (typeof step.text !== 'string' || step.text.length > 2000) issues.push(`${week}/${i}: screen message must be at most 2,000 characters`);
@@ -186,6 +193,7 @@ export function markAssignmentComplete(progress: Progress, week: number, session
   if (Array.from({ length: total }, (_, i) => `${sessionId}:${i}`).every(x => list.includes(x))) {
     if (next.activeSession[key] === sessionId || !next.activeSession[key]) {
       next.sessions[key] = (next.sessions[key] || 0) + 1;
+      next.lastCompletedSessionAt = new Date().toISOString();
       delete next.activeSession[key];
     }
   } else next.activeSession[key] = sessionId;

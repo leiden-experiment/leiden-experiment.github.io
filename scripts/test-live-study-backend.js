@@ -64,6 +64,9 @@ const fauxRequire=name => {
 };
 vm.runInNewContext(code, {require:fauxRequire, exports:moduleObject.exports,module:moduleObject,URL,Buffer,Date,Number,JSON,Math,Object,Array,String,Set}, {filename:'functions/index.js'});
 const api=moduleObject.exports;
+const originalSaveStudy = api.saveStudy;
+// Simulate the current browser sending the revision it received at login.
+api.saveStudy = req => originalSaveStudy({ ...req, data: { ...req.data, expectedRevision: Number(central.store.studies?.[req.data.id]?.revision || 0) } });
 const request=(uid,data={})=>({auth:{uid,token:{auth_time:1}},data});
 // Test the actual TypeScript normalization used by the visual timeline editor.
 const typescript = (() => { try { return require('typescript'); }
@@ -98,6 +101,19 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
     id: 'emptytest', settings: {...settings, title:'No weekly restrictions',weeks:null}
   }));
   assert.equal(emptyStudy.id,'emptytest');
+  const snapshot = await api.getDashboardSnapshot(request('admin-one'));
+  assert(snapshot.studies.some(study => study.id === 'research1'));
+  assert(snapshot.accounts.research1.some(account => account.username === 'participant01'));
+  assert(snapshot.settings.research1.weeks['1'].length === 3);
+  assert.equal(snapshot.levels.length, 0);
+  assert(!Object.values(snapshot.progress.research1 || {}).some(item => Object.hasOwn(item, 'pendingResults')));
+  const moderatorOnly = await api.refreshStudyProgress(request('admin-one',{studyId:'research1'}));
+  assert.deepEqual(Object.keys(moderatorOnly.progress), []);
+  // A stale editor must not overwrite a newer study configuration.
+  await assert.rejects(originalSaveStudy(request('admin-one', {
+    id: 'emptytest', expectedRevision: 0, settings: { ...settings, title: 'Stale version' }
+  })), /changed in another session/);
+
   const emptySaved = await api.getStudySettings(request('admin-one',{studyId:'emptytest'}));
   assert.deepEqual(JSON.parse(JSON.stringify(emptySaved.settings.weeks)), {'1':[]});
   assert(!emptySaved.databaseURL, 'linked results database is optional');
@@ -140,7 +156,12 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   assert.equal(repeat.progress.completed['1'].length,2,'a duplicate cannot advance the study');
   // Linked results database is unavailable: central durable outbox retains submission.
   await central.ref('studyIndex/research1/databaseURL').set('https://study-test-default-rtdb.europe-west1.firebasedatabase.app/');
-  await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-1',index:2,stepType:'end'}));
+  const firstEnd = await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-1',index:2,stepType:'end'}));
+  assert.match(firstEnd.progress.lastCompletedSessionAt, /^\d{4}-\d{2}-\d{2}T/, 'full-session completion must record timestamp');
+  const repeatEnd = await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-1',index:2,stepType:'end'}));
+  assert(repeatEnd.resynced, 'repeating an already-completed screen must return current progress instead of 400');
+  assert.equal(repeatEnd.progress.lastCompletedSessionAt, firstEnd.progress.lastCompletedSessionAt);
+
   const nextSessionStart=await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-2',index:0,stepType:'start'}));
   assert(nextSessionStart.ok);
   studyDatabase.setFailDelivery(true);

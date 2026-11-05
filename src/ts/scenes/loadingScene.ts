@@ -9,7 +9,12 @@ import {
 import webcam from '../objects/webcam';
 import handTracker from '../objects/handTracker';
 import Level from '../level/level';
-import { getStudySession } from '../study/runtime';
+import { getStudySession, publishedLevels } from '../study/runtime';
+import { studyTrackKey, restoredPublishedTrack } from '../study/participantPreload';
+import { Track } from '../level/track';
+import { retimeProgrammaticLevel } from '../util/retimeProgrammaticLevel';
+import { assignedLibraryBpms, studyTrackKeyForBpm } from '../study/participantPreload';
+import HandScene from './handScene';
 import {
   defaultConfig,
   updateConfig,
@@ -56,6 +61,7 @@ export class LoadingScene extends Scene {
     this.load.image('targetOuter', absPath('assets/sprites/target_outer.png'));
     this.load.image('targetInner', absPath('assets/sprites/target_inner.png'));
     this.load.audio('pinch', absPath('assets/sounds/ui/menu_ding.mp3'));
+    this.load.audio('designerDrumBeat', absPath('assets/sounds/beat.wav'));
     this.load.image('title', absPath('assets/ui/title.png'));
     this.load.image('background', absPath('assets/ui/background.png'));
     this.load.image(
@@ -162,6 +168,40 @@ export class LoadingScene extends Scene {
     assert(this.cache.json.has('defaultConfig'), 'Failed to load default config data');
     updateDefaultConfig(this.cache.json.get('defaultConfig'));
     updateConfig({ ...defaultConfig, ...(getStudySession()?.settings.defaultConfig || {}) });
+
+    // Generate each assigned library level's audio in the initial loading screen.
+    // Its stable key stays in Phaser's audio cache between plays, so there is no
+    // repeated JSON download or heavy note synthesis during a study session.
+    if (getStudySession()) {
+      for (const [id, data] of Object.entries(publishedLevels)) {
+        this.updateText(loadingText, `PREPARING STUDY LEVEL ${id}...`);
+        const key = studyTrackKey(id);
+        const preparedTrack = restoredPublishedTrack(data);
+        if (!this.cache.json.exists(key)) this.cache.json.add(key, preparedTrack);
+        const track = new Track(this, key);
+        track.preload(this as unknown as HandScene);
+        track.setBPM(0);
+        track.generateProgrammaticLoops(track.data.layers.filter(layer => layer.playable).map(layer => layer.id));
+        // Prepare any custom tempo chosen on study slides now, rather than
+        // synthesizing its notes when the participant clicks Play.
+        for (const tempo of assignedLibraryBpms(getStudySession()!.settings, id)) {
+          if (tempo === preparedTrack.bpm[0]) continue;
+          const bpmKey = studyTrackKeyForBpm(id, tempo);
+          if (!this.cache.json.exists(bpmKey)) {
+            const adjusted = restoredPublishedTrack(data);
+            retimeProgrammaticLevel(adjusted, tempo);
+            this.cache.json.add(bpmKey, adjusted);
+          }
+          const bpmTrack = new Track(this, bpmKey);
+          bpmTrack.preload(this as unknown as HandScene);
+          bpmTrack.setBPM(0);
+          bpmTrack.generateProgrammaticLoops(bpmTrack.data.layers.filter(layer => layer.playable).map(layer => layer.id));
+        }
+        // Yield between levels so the loading screen can update, instead of
+        // blocking one long frame while synthesizing every level's piano notes.
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+      }
+    }
 
     // Launch after config is available; studySession.preload relies on it.
     const startScene = getStudySession() ? 'studySession' : initialScene;

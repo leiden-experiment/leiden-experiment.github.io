@@ -1,3 +1,4 @@
+import { isStudyTrackKey } from '../study/participantPreload';
 import HandScene from '../scenes/handScene';
 import { Button } from '../ui/button';
 import { config, saveToCSV, autoSaveToCSV } from '../managers/storageManager';
@@ -30,7 +31,7 @@ export default class Scoreboard extends HandScene {
       return;
     }
     this.level.removeBackgroundAudio();
-    if (this.level.trackKey.startsWith('temp_level_')) {
+    if (this.level.trackKey.startsWith('temp_level_') && !isStudyTrackKey(this.level.trackKey)) {
       this.level.unload();
       this.cache.json.remove(this.level.trackKey);
     }

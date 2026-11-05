@@ -15,6 +15,7 @@ import { loginOnline, logoutOnline, studyApi } from '../study/firebaseClient';
 import { getOfflinePack, importOfflinePack, loginOffline } from '../study/offline';
 import { setStudySession } from '../study/runtime';
 import { showDashboard } from '../study/dashboard';
+import { preloadAssignedLevels } from '../study/participantPreload';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.WEBGL, width: 1920, height: 1080,
@@ -52,9 +53,10 @@ function promptLogin() {
   el(show, 'span', 'Show password');
   showInput.onchange = () => { password.type = showInput.checked ? 'text' : 'password'; };
   const error = el(wrapper, 'p'); error.className = 'study-login-error'; error.setAttribute('role', 'alert');
+  const loading = el(wrapper, 'p'); loading.className = 'study-login-progress'; loading.setAttribute('role', 'status');
   const button = el(wrapper, 'button', 'Login'); button.type = 'button';
   button.onclick = async () => {
-    button.disabled = true; error.textContent = '';
+    button.disabled = true; error.textContent = ''; loading.textContent = ''; 
     try {
       if (deployment.mode === 'offline') {
         const pack = await loginOffline(username.value.trim(), password.value);
@@ -66,15 +68,19 @@ function promptLogin() {
           root.classList.remove('study-login'); root.style.display = 'block';
           await showDashboard(root, account, async () => { await logoutOnline(); promptLogin(); });
         } else {
+          loading.textContent = 'Loading study…';
           const bundle = await studyApi.fetchParticipant();
-          setStudySession({ account: bundle.account, settings: bundle.settings, mode: 'online' }, bundle.progress);
+          const levels = await preloadAssignedLevels(bundle.settings, (ready, total) => {
+            loading.textContent = total ? `Downloading levels: ${ready} / ${total}` : 'Preparing bundled levels…';
+          });
+          setStudySession({ account: bundle.account, settings: bundle.settings, mode: 'online' }, bundle.progress, levels);
           startGame();
         }
       }
     } catch (reason) { error.textContent = (reason && typeof reason === 'object' && 'code' in reason &&
       (reason as { code?: string }).code === 'auth/user-disabled') ? 'Account disabled by admin.' :
       reason instanceof Error ? reason.message : String(reason); }
-    finally { button.disabled = false; }
+    finally { loading.textContent = ''; button.disabled = false; }
   };
   for (const input of [username, password]) input.addEventListener('keydown', event => {
     if (event.key === 'Enter') button.click();

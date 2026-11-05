@@ -53,11 +53,12 @@ const mockModules = new Map([
 // catches accidental access to PlayableTrackLayerData-only properties on the
 // broader TrackLayerData interface, which a syntax-only test cannot detect.
 const scene = source(path.join(root, 'src/ts/scenes/studySessionScene.ts'));
-const layerRestoration = scene.match(/restored\.layers\.forEach\(layer => \{[\s\S]*?\n        \}\);/);
-assert(layerRestoration, 'StudySessionScene must restore RTDB-stripped arrays');
+const restoration = source(path.join(studyDir, 'participantPreload.ts'));
+const layerRestoration = restoration.match(/track\.layers\.forEach\(layer => \{[\s\S]*?\n  \}\);/);
+assert(layerRestoration, 'Preload utility must restore RTDB-stripped arrays');
 const extra = `
   import { TrackData, PlayableTrackLayerData } from '../level/trackTypes';
-  declare const restored: TrackData;
+  declare const track: TrackData;
   ${layerRestoration[0]}
   declare function testTween(): { getValue(): number | null };
   const index: number = ${match[0].replace('tween', 'testTween()')};

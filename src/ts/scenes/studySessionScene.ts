@@ -3,12 +3,14 @@ import { Button } from '../ui/button';
 import Level from '../level/level';
 import { levels } from './loadingScene';
 import { LevelConverter } from '../util/levelConverter';
+import { restoredPublishedTrack, studyTrackKey, studyTrackKeyForBpm } from '../study/participantPreload';
+import { retimeProgrammaticLevel } from '../util/retimeProgrammaticLevel';
 import { UploadedLevelManager } from '../managers/uploadedLevelManager';
 import { defaultConfig, updateConfig } from '../managers/storageManager';
 import { getStudyPlan, getStudyProgress, getStudySession, setPendingAssignment, syncStudyProgress, publishedLevels, advanceScreenStep, hasJustFinishedSession, wasLastStudyResultQueued } from '../study/runtime';
 import { studyApi } from '../study/firebaseClient';
 import { downloadResults } from '../study/offline';
-import { TrackData, PlayableTrackLayerData } from '../level/trackTypes';
+import { TrackData } from '../level/trackTypes';
 import { isLevelStep, isSelectionStep, isChoiceUnlocked, selectionKey, Assignment } from '../study/types';
 
 export default class StudySessionScene extends HandScene {
@@ -33,7 +35,7 @@ export default class StudySessionScene extends HandScene {
       plan?.beforeStart && plan.week !== 0 ? 'Your training programme has not started yet.' :
       plan?.capped ? cappedText :
       !plan?.assignments.length ? 'There are no activities scheduled for this week.' :
-      step ? `${!isLevelStep(step) ? step.text : `${session.settings.introText}\nReady to play: ${step.levelId}`}\nWEEK ${plan.week} · SESSION ${plan.sessionId.split('-')[1]} · SLIDE ${plan.index + 1}/${plan.assignments.length}` :
+      step ? (!isLevelStep(step) ? step.text : `${session.settings.introText}\nReady to play: ${this.displayLevelName(step.levelId)}`) :
       'Session complete! Thank you for playing.';
     this.add.text(this.center.x, 430, message, { font: '31px Courier New', color: '#ffffff', align: 'center', wordWrap: { width: 1500 } }).setOrigin(.5);
     this.status = this.add.text(this.center.x, 620, '', { font: '25px Courier New', color: '#ffd676', align: 'center', wordWrap: { width: 1500 } }).setOrigin(.5);
@@ -45,22 +47,37 @@ export default class StudySessionScene extends HandScene {
         const counts = (getStudyProgress().choices || {})[selectionKey(plan.week, plan.sessionId, plan.index)] || {};
         const plays = Object.values(counts).reduce((total, n) => total + n, 0);
         const selectable = step.choices.map((choice, i) => ({ choice, i })).filter(({ i }) => isChoiceUnlocked(step, i, plan.week, counts));
-        // Display responsive, clickable options without changing the research progression until play completes.
+        // 1–3 levels fit one row; 4–6 use two rows; 7–9 use three rows.
+        // Keep all labels within their buttons without overlapping the Finish action.
+        const columns = Math.min(3, selectable.length);
+        const rows = Math.ceil(selectable.length / columns);
+        const scale = rows === 1 ? .83 : rows === 2 ? .64 : .52;
+        const rowSpacing = rows === 1 ? 0 : rows === 2 ? 155 : 115;
+        const firstY = rows === 1 ? 795 : rows === 2 ? 735 : 695;
         selectable.forEach(({ choice, i }, pos) => {
-          const label = choice.levelId.replace(/^(legacy|library|uploaded):/, '').slice(0, 18);
-          const col = pos % 3;
-          const row = Math.floor(pos / 3);
-          new Button(this, `${label}\n${(counts[String(i)] || 0)} played`, this.center.x - 480 + col * 480, 720 + row * 120,
+          const col = pos % columns;
+          const row = Math.floor(pos / columns);
+          const name = this.displayLevelName(choice.levelId);
+          const label = this.choiceButtonLabel(name, counts[String(i)] || 0);
+          const x = this.center.x + (col - (columns - 1) / 2) * (columns === 2 ? 510 : 470);
+          const button = new Button(this, label, x, firstY + row * rowSpacing,
             () => { void this.playLevel(choice, i, plays); });
+          button.setScale(scale);
+          // Phaser's button label is a separate object, so scale it independently.
+          button.text?.setFontSize(rows === 1 ? 35 : rows === 2 ? 29 : 24);
+          button.text?.setWordWrapWidth(button.displayWidth * .88, true);
+          button.text?.setMaxLines(3);
         });
         if (step.playthroughs === 0 && plays > 0) {
           let busy = false;
-          new Button(this, 'FINISH\nSESSION', this.center.x, 1010, () => {
+          const finish = new Button(this, 'FINISH\nSESSION', this.center.x, 1024, () => {
             if (busy) return; busy = true;
             void advanceScreenStep(step).then(() => this.scene.restart()).catch(error => {
               busy = false; this.status.setText(error instanceof Error ? error.message : String(error));
             });
           });
+          finish.setScale(.43);
+          finish.text?.setFontSize(25);
         }
       } else {
         const buttonText = step.type === 'end' ? 'FINISH\nSESSION' : step.type === 'break' ? 'RESUME\nPLAYING' : 'CONTINUE';
@@ -78,6 +95,40 @@ export default class StudySessionScene extends HandScene {
     }
     if (session.mode === 'offline') new Button(this, 'EXPORT\nRESULTS', 200, 940, () => { void downloadResults(session.account.studyId!, session.account.participantId!); });
   }
+  private displayLevelName(levelId: string): string {
+    const [kind, ...parts] = levelId.split(':');
+    const id = parts.join(':');
+    if (kind === 'legacy') {
+      return levels.find(level => level.trackKey === id)?.track.data.displayName || id;
+    }
+    if (kind === 'library') {
+      return publishedLevels[id]?.displayName || id;
+    }
+    if (kind === 'uploaded') {
+      const track = UploadedLevelManager.loadLevelData(id) as TrackData | null;
+      return track?.displayName || id;
+    }
+    return id;
+  }
+
+  /** A maximum of two lines for the name, plus one play-count line. */
+  private choiceButtonLabel(name: string, played: number): string {
+    const words = name.trim().split(/\s+/);
+    const lines: string[] = [];
+    for (const word of words) {
+      if (lines.length >= 2) break;
+      const last = lines.length - 1;
+      if (last >= 0 && (lines[last] + ' ' + word).length <= 19) lines[last] += ' ' + word;
+      else if (word.length > 19) lines.push(word.slice(0, 18) + '…');
+      else lines.push(word);
+    }
+    const visible = lines.join(' ').replace(/…/g, '');
+    if (name.trim().length > visible.length && lines.length) {
+      lines[lines.length - 1] = lines[lines.length - 1].replace(/…$/, '').slice(0, 18) + '…';
+    }
+    return `${lines.join('\n') || 'Unnamed level'}\n${played} played`;
+  }
+
   private async playLevel(selected?: Assignment, choiceIndex?: number, selectionPlay?: number) {
     const session = getStudySession(); const plan = getStudyPlan();
     if (!session || !plan || plan.capped || plan.index < 0) return;
@@ -101,29 +152,26 @@ export default class StudySessionScene extends HandScene {
           data = UploadedLevelManager.loadLevelData(id);
         } else if (kind === 'library') {
           data = publishedLevels[id];
-          if (!data && session.mode === 'online') data = (await studyApi.getLevel(id)).level.data;
         } else throw new Error('Unsupported level identifier');
-        if (!data) throw new Error(`Level ${id} not found. Check the study library/offline pack.`);
+        if (!data) throw new Error(`Level ${id} was not preloaded. Sign out, check your connection, then sign in again.`);
         const track = data as TrackData;
         if (!Array.isArray(track.bpm) || !Array.isArray(track.layers)) throw new Error('Invalid published level');
-        const key = LevelConverter.generateTempLevelKey();
-        // Firebase RTDB strips empty arrays; restore generated-only loop keys.
-        const restored = JSON.parse(JSON.stringify(track)) as TrackData;
-        restored.layers.forEach(layer => {
-          if (!layer.soundLoopKeys && layer.playable) layer.soundLoopKeys = [];
-          if (layer.playable) {
-            const playableLayer = layer as PlayableTrackLayerData;
-            if (!playableLayer.backgroundLayers) playableLayer.backgroundLayers = [];
-          }
-        });
-        this.cache.json.add(key, restored);
+        const customBpm = assignment.bpm;
+        const key = kind === 'library' ? (customBpm ? studyTrackKeyForBpm(id, customBpm) : studyTrackKey(id))
+          : LevelConverter.generateTempLevelKey();
+        if (!this.cache.json.exists(key)) {
+          const restored = restoredPublishedTrack(track);
+          if (customBpm) retimeProgrammaticLevel(restored, customBpm);
+          this.cache.json.add(key, restored);
+        }
         level = new Level(this, key);
       }
-      if (!level.track.data?.bpm?.[assignment.bpmIndex]) throw new Error('Assigned BPM index does not exist in this level');
+      const bpmIndex = assignment.bpm === undefined ? assignment.bpmIndex : 0;
+      if (!level.track.data?.bpm?.[bpmIndex]) throw new Error('Assigned BPM index does not exist in this level');
       updateConfig({ ...defaultConfig, ...session.settings.defaultConfig, ...(session.settings.groupConfigs?.[session.account.group || ''] || {}), ...(session.account.customConfig || {}), ...assignment.configOverride,
         skipLayersAutomatically: true, skipLayersAutomaticallyAfterLoop: assignment.loops,
         autoSaveCSV: false }); // Research results are sent once, between levels; never during gameplay.
-      level.setBPM(assignment.bpmIndex);
+      level.setBPM(bpmIndex);
       // Validate the authoritative server position before expensive gameplay begins;
       // preventing stale client progression from losing a completed research play.
       if (session.mode === 'online') {

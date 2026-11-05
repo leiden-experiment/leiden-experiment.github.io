@@ -38,7 +38,8 @@ const unlockedChoice = (step, index, week, counts) => index >= 0 && index < step
     (step.unlock === 'sequential' && (index === 0 || (counts[String(index - 1)] || 0) > 0)));
 const validAssignment = a => a && typeof a.levelId === 'string' && /^(legacy|library|uploaded):[\w .-]{1,100}$/.test(a.levelId) &&
   Number.isInteger(a.bpmIndex) && a.bpmIndex >= 0 && a.bpmIndex <= 8 &&
-  Number.isInteger(a.loops) && a.loops >= 1 && a.loops <= 100;
+  Number.isInteger(a.loops) && a.loops >= 1 && a.loops <= 100 &&
+  (a.bpm === undefined || (!a.levelId.startsWith('legacy:') && Number.isInteger(a.bpm) && a.bpm >= 60 && a.bpm <= 200));
 // Mirror the public controls in src/ts/study/gameplayFields.ts. Validate API calls as well as the UI.
 const numericLimits = {
   targetSize: [0.1, 5], fingerSize: [0.1, 5], skipButtonAppearsAfterLoop: [0, 100],
@@ -156,6 +157,51 @@ exports.listStudies = onCall(options, async req => {
     .map(([id, value]) => ({ id, ...value }));
   return { studies };
 });
+function progressSummary(items) {
+  return Object.fromEntries(Object.entries(items || {}).map(([uid, entry]) => [uid, {
+    sessions: entry?.sessions || {}, completed: entry?.completed || {},
+    activeSession: entry?.activeSession || {}, choices: entry?.choices || {},
+    ...(typeof entry?.lastCompletedSessionAt === 'string' ? { lastCompletedSessionAt: entry.lastCompletedSessionAt } : {})
+  }]));
+}
+/** One permission-scoped snapshot at researcher login. This contains profiles/settings,
+ * never session results, passwords, or unpublished level bodies. */
+exports.getDashboardSnapshot = onCall(options, async req => {
+  const operator = await profile(req);
+  if (operator.role === 'participant') fail('Researcher permission required', 'permission-denied');
+  const [indexSnap, levelSnap] = await Promise.all([
+    db.ref('studyIndex').get(), operator.role === 'admin' ? db.ref('levelIndex').get() : Promise.resolve(null)
+  ]);
+  const index = indexSnap.val() || {};
+  const ids = Object.keys(index).filter(id => operator.role === 'admin' || id === operator.studyId);
+  if (ids.length > 200) fail('Too many studies for a single dashboard snapshot', 'resource-exhausted');
+  const studies = ids.map(id => ({ id, ...index[id] }));
+  const settings = {}, accounts = {}, progress = {};
+  await Promise.all(ids.map(async studyId => {
+    const [settingsSnap, memberSnap, progressSnap] = await Promise.all([
+      db.ref(`studies/${studyId}/settings`).get(),
+      db.ref(`studyMembers/${studyId}`).get(),
+      db.ref(`progress/${studyId}`).get()
+    ]);
+    if (settingsSnap.exists()) settings[studyId] = { ...settingsSnap.val(), weeks: effectiveWeeks(settingsSnap.val().weeks) };
+    const memberIds = Object.keys(memberSnap.val() || {});
+    if (memberIds.length > 1000) fail('Too many study members for a single snapshot', 'resource-exhausted');
+    accounts[studyId] = (await Promise.all(memberIds.map(uid => db.ref(`accounts/${uid}`).get())))
+      .filter(snap => snap.exists()).map(snap => snap.val());
+    progress[studyId] = progressSummary(progressSnap.val());
+  }));
+  const levels = operator.role === 'admin' ? Object.values(levelSnap.val() || {}) : [];
+  const snapshot = { studies, settings, accounts, progress, levels };
+  if (JSON.stringify(snapshot).length > 7000000) fail('Dashboard snapshot is too large. Reduce study size or enable pagination.', 'resource-exhausted');
+  return snapshot;
+});
+/** Explicitly refresh live participant progression without re-downloading study settings. */
+exports.refreshStudyProgress = onCall(options, async req => {
+  const operator = await profile(req); const { studyId } = req.data || {};
+  if (!idValid(studyId)) fail('Invalid study ID');
+  requireResearcher(operator, studyId);
+  return { progress: progressSummary((await db.ref(`progress/${studyId}`).get()).val()) };
+});
 exports.getStudySettings = onCall(options, async req => {
   const account = await profile(req); const { studyId } = req.data || {};
   if (!idValid(studyId)) fail('Invalid study ID'); requireResearcher(account, studyId);
@@ -166,26 +212,40 @@ exports.getStudySettings = onCall(options, async req => {
 });
 exports.saveStudy = onCall(options, async req => {
   const account = await profile(req); requireAdmin(account);
-  const { id, settings, databaseURL, confirmClearTimeline } = req.data || {};
+  const { id, settings, databaseURL, confirmClearTimeline, expectedRevision } = req.data || {};
   if (!idValid(id)) fail('Study ID must be 1–64 letters, digits, underscores or hyphens');
+  if (!Number.isInteger(expectedRevision) || expectedRevision < 0) fail('Study revision required. Refresh your dashboard.', 'failed-precondition');
   validateSettings(settings);
-  // Safety check: an accidental empty editor must not erase a populated study.
-  // The client must explicitly confirm when a researcher intentionally clears it.
-  const oldWeeks = effectiveWeeks((await db.ref(`studies/${id}/settings/weeks`).get()).val());
-  const previousSlides = Object.values(oldWeeks).reduce((count, slides) => count + slides.length, 0);
-  const updatedSlides = Object.values(effectiveWeeks(settings.weeks)).reduce((count, slides) => count + slides.length, 0);
-  if (previousSlides > 0 && updatedSlides === 0 && confirmClearTimeline !== true)
-    fail('This save would remove every slide from the study. Confirm clearing the timeline to proceed.', 'failed-precondition');
+  const weeks = effectiveWeeks(settings.weeks);
   const url = checkedDbUrl(databaseURL);
   if (url) {
-    // A service account must have permissions on the linked project. This test fails closed.
     try { await destination(url).ref(`studies/${id}/_linkTest`).set({ checkedAt: Date.now() }); }
     catch { fail('Cannot write to linked database; grant the Functions service account access', 'failed-precondition'); }
   }
-  await db.ref().update({ [`studies/${id}/settings`]: { ...settings, weeks: effectiveWeeks(settings.weeks) },
-    [`studyIndex/${id}`]: { title: settings.title, enabled: !!settings.enabled, databaseURL: url || '' } });
-  return { id };
+  let abortedForClearing = false;
+  // A transaction is needed even if only one admin is expected: a second browser
+  // tab or an old edit form must not silently overwrite a newer configuration.
+  const transaction = await db.ref(`studies/${id}`).transaction(current => {
+    const revision = Number(current?.revision || 0);
+    if (revision !== expectedRevision) return;
+    const oldWeeks = effectiveWeeks(current?.settings?.weeks);
+    const previousSlides = Object.values(oldWeeks).reduce((n, slides) => n + slides.length, 0);
+    const newSlides = Object.values(weeks).reduce((n, slides) => n + slides.length, 0);
+    if (previousSlides > 0 && newSlides === 0 && confirmClearTimeline !== true) {
+      abortedForClearing = true; return;
+    }
+    abortedForClearing = false;
+    return { ...(current || {}), settings: { ...settings, weeks }, revision: revision + 1 };
+  }, undefined, false);
+  if (!transaction.committed) {
+    if (abortedForClearing) fail('This save would remove every slide. Confirm clearing the timeline.', 'failed-precondition');
+    fail('This study changed in another session. Your edits were not overwritten; sign in again to refresh before saving.', 'aborted');
+  }
+  const revision = transaction.snapshot.val().revision;
+  await db.ref(`studyIndex/${id}`).set({ title: settings.title, enabled: !!settings.enabled, databaseURL: url || '', revision });
+  return { id, revision };
 });
+
 /** Remove from the active dashboard without destroying research results.
  * Existing accounts are disabled and linked study results are retained for audit.
  */
@@ -227,6 +287,25 @@ exports.listParticipants = onCall(options, async req => {
     .filter(s => s.exists()).map(s => s.val());
   return { accounts };
 });
+async function usernameAlreadyUsedMessage(name) {
+  const generic = `Username “${name}” is already in use.`;
+  try {
+    const previous = await auth.getUserByEmail(emailForUsername(name));
+    const account = (await db.ref(`accounts/${previous.uid}`).get()).val();
+    if (!account) return generic;
+    if (account.role === 'admin') return `Username “${name}” is already used by an administrator.`;
+    if (account.studyId) {
+      const study = (await db.ref(`studyIndex/${account.studyId}`).get()).val();
+      const title = study?.title || (await db.ref(`studies/${account.studyId}/settings/title`).get()).val();
+      if (title) return `Username “${name}” is already used by study “${title}”.`;
+    }
+  } catch (error) {
+    // Deleted profiles or unavailable metadata should not obscure the duplicate.
+    console.warn('Duplicate username owner lookup failed:', error?.code || error?.message);
+  }
+  return generic;
+}
+
 exports.provisionAccount = onCall(options, async req => {
   const operator = await profile(req); requireAdmin(operator);
   const { studyId, username, password, role, group = '', startDate = '', customConfig } = req.data || {};
@@ -245,7 +324,7 @@ exports.provisionAccount = onCall(options, async req => {
   let user;
   try { user = await auth.createUser({ email: emailForUsername(name), password: firebasePassword(password), displayName: name, disabled: false }); }
   catch (error) {
-    if (error?.code === 'auth/email-already-exists') fail('Username already exists. Choose a different participant or moderator username.', 'already-exists');
+    if (error?.code === 'auth/email-already-exists') fail(await usernameAlreadyUsedMessage(name), 'already-exists');
     throw error;
   }
   const account = { uid: user.uid, username: name, role, studyId, participantId: role === 'participant' ? name : '', group, startDate, ...(customConfig ? { customConfig } : {}), active: true };
@@ -347,7 +426,7 @@ exports.saveLevel = onCall(options, async req => {
   const updatedAt = new Date().toISOString();
   await db.ref().update({
     [`levelLibrary/${id}`]: { id, name, data, updatedAt },
-    [`levelIndex/${id}`]: { id, name, updatedAt }
+    [`levelIndex/${id}`]: { id, name, updatedAt, ...(Number.isFinite(data.bpm[0]) ? { bpm: data.bpm[0] } : {}) }
   }); return { id };
 });
 exports.listLevels = onCall(options, async req => {
@@ -409,7 +488,8 @@ exports.getParticipantBundle = onCall(options, async req => {
     account.startDate = started.snapshot.val();
   }
   const saved = (await db.ref(`progress/${account.studyId}/${account.uid}`).get()).val() || {};
-  const progress = { completed: saved.completed || {}, sessions: saved.sessions || {}, activeSession: saved.activeSession || {}, choices: saved.choices || {} };
+  const progress = { completed: saved.completed || {}, sessions: saved.sessions || {}, activeSession: saved.activeSession || {}, choices: saved.choices || {},
+    ...(typeof saved.lastCompletedSessionAt === 'string' ? { lastCompletedSessionAt: saved.lastCompletedSessionAt } : {}) };
   return { account, settings: { ...settings, weeks: effectiveWeeks(account.weeksOverride || settings.weeks) }, progress };
 });
 /** Advance a non-gameplay slide, with the same server-enforced weekly limits as a level result. */
@@ -423,6 +503,7 @@ exports.advanceStudyStep = onCall(options, async req => {
   if (!settings || !settings.enabled) fail('Study disabled', 'failed-precondition');
   const weeks = effectiveWeeks(account.weeksOverride || settings.weeks);
   const ref = db.ref(`progress/${account.studyId}/${account.uid}`);
+  const completedAt = new Date().toISOString();
   const transaction = await ref.transaction(value => {
     const progress = { completed: value?.completed || {}, sessions: value?.sessions || {}, activeSession: value?.activeSession || {}, choices: value?.choices || {}, pendingResults: value?.pendingResults || {} };
     const timing = studyTiming(settings, account, weeks, progress);
@@ -440,19 +521,28 @@ exports.advanceStudyStep = onCall(options, async req => {
       const counts = progress.choices[choiceKey(week, sid, ix)] || {};
       if (step.playthroughs !== 0 || !Object.values(counts).some(n => n > 0)) return;
     }
-    const copy = { completed: { ...progress.completed }, sessions: { ...progress.sessions }, activeSession: { ...progress.activeSession }, choices: { ...progress.choices }, pendingResults: { ...progress.pendingResults } };
+    const copy = { completed: { ...progress.completed }, sessions: { ...progress.sessions }, activeSession: { ...progress.activeSession }, choices: { ...progress.choices }, pendingResults: { ...progress.pendingResults },
+      ...(value?.lastCompletedSessionAt ? { lastCompletedSessionAt: value.lastCompletedSessionAt } : {}) };
     const entries = [...done, `${sid}:${ix}`];
     copy.completed[String(week)] = entries;
     if (assignments.every((_, i) => entries.includes(`${sid}:${i}`))) {
       copy.sessions[String(week)] = count + 1;
+      copy.lastCompletedSessionAt = completedAt;
       delete copy.activeSession[String(week)];
     } else copy.activeSession[String(week)] = sid;
     return copy;
   });
-  if (!transaction.committed) fail('This step is no longer available; refresh your session', 'failed-precondition');
-  const saved = transaction.snapshot.val() || {};
-  return { ok: true, progress: { completed: saved.completed || {}, sessions: saved.sessions || {},
-    activeSession: saved.activeSession || {}, choices: saved.choices || {} } };
+  // A participant may click Continue with a stale browser view (e.g. a
+  // repeated request after an earlier successful step). Never advance an
+  // unexpected step, but return authoritative progress so the client can
+  // display the correct next screen rather than trapping them in a 400 loop.
+  const saved = transaction.committed ? (transaction.snapshot.val() || {}) : ((await ref.get()).val() || {});
+  const alreadyCompleted = !transaction.committed &&
+    (saved.completed?.[String(week)] || []).includes(`${sessionId}:${index}`);
+  return { ok: true, ...(transaction.committed ? {} : { resynced: true, alreadyCompleted }),
+    progress: { completed: saved.completed || {}, sessions: saved.sessions || {},
+      activeSession: saved.activeSession || {}, choices: saved.choices || {},
+      ...(saved.lastCompletedSessionAt ? { lastCompletedSessionAt: saved.lastCompletedSessionAt } : {}) } };
 });
 /** Read-only authorization before playing an assigned level. Detects stale tabs,
  * changed study schedules, or a mismatched participant progress record before
@@ -544,7 +634,8 @@ exports.submitResult = onCall(options, async req => {
     const progress = {
       completed: { ...(value?.completed || {}) }, sessions: { ...(value?.sessions || {}) },
       activeSession: { ...(value?.activeSession || {}) }, choices: { ...(value?.choices || {}) },
-      pendingResults: { ...(value?.pendingResults || {}) }
+      pendingResults: { ...(value?.pendingResults || {}) },
+      ...(value?.lastCompletedSessionAt ? { lastCompletedSessionAt: value.lastCompletedSessionAt } : {})
     };
     // Another attempt may have advanced progress and failed during delivery.
     if (progress.pendingResults[key]) return progress;
@@ -589,6 +680,7 @@ exports.submitResult = onCall(options, async req => {
     progress.completed[String(week)] = done;
     if (steps.every((_, i) => done.includes(`${sessionId}:${i}`))) {
       progress.sessions[String(week)] = sessionsDone + 1;
+      progress.lastCompletedSessionAt = record.completedAt;
       delete progress.activeSession[String(week)];
     } else progress.activeSession[String(week)] = sessionId;
     // One atomic commit for both the progress update and the durable result.
@@ -622,7 +714,8 @@ exports.submitResult = onCall(options, async req => {
   const state = (await stateRef.get()).val() || latest;
   return { ok: true, queued, reviewRequired: !!staged.reviewRequired, progress: {
     completed: state.completed || {}, sessions: state.sessions || {},
-    activeSession: state.activeSession || {}, choices: state.choices || {}
+    activeSession: state.activeSession || {}, choices: state.choices || {},
+    ...(state.lastCompletedSessionAt ? { lastCompletedSessionAt: state.lastCompletedSessionAt } : {})
   } };
 });
 exports.exportResults = onCall(options, async req => {

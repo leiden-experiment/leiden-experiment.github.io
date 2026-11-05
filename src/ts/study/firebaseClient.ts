@@ -5,6 +5,7 @@ import { deployment } from './deployment';
 import { emailForUsername } from './username';
 import { firebasePassword } from './password';
 import { Account, PublishedLevel, StudySettings, StudySummary, Progress, ResultEnvelope } from './types';
+import type { DashboardSnapshot } from './dashboardCache';
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
@@ -33,10 +34,12 @@ export async function callBackend<T>(name: string, data: object): Promise<T> {
   return reply.data;
 }
 export const studyApi = {
+  dashboardSnapshot: () => callBackend<DashboardSnapshot>('getDashboardSnapshot', {}),
+  refreshStudyProgress: (studyId: string) => callBackend<{ progress: Record<string, Progress> }>('refreshStudyProgress', { studyId }),
   listModerators: () => callBackend<{ moderators: Account[] }>('listModerators', {}),
   listStudies: () => callBackend<{ studies: StudySummary[] }>('listStudies', {}),
-  saveStudy: (id: string, settings: StudySettings, databaseURL?: string, confirmClearTimeline = false) =>
-    callBackend<{ id: string }>('saveStudy', { id, settings, ...(databaseURL ? { databaseURL } : {}),
+  saveStudy: (id: string, settings: StudySettings, databaseURL?: string, confirmClearTimeline = false, expectedRevision = 0) =>
+    callBackend<{ id: string; revision: number }>('saveStudy', { id, settings, expectedRevision, ...(databaseURL ? { databaseURL } : {}),
       ...(confirmClearTimeline ? { confirmClearTimeline: true } : {}) }),
   listParticipants: (studyId: string) => callBackend<{ accounts: Account[] }>('listParticipants', { studyId }),
   provisionAccount: (studyId: string, username: string, password: string, role: 'participant' | 'moderator', group = '', startDate = '', customConfig?: Record<string, unknown>) =>

@@ -66,3 +66,36 @@ assert(css.includes('.study-list-card') && css.includes('.study-remove-study') &
 assert(dashboard.includes("node('strong', label, level.name);"), 'Uploaded levels should show their display name');
 assert(!dashboard.includes("node('small', label, `library:${level.id}`)"), 'Uploaded level ID should not be displayed');
 assert(fs.readFileSync(path.resolve(__dirname, '../src/ts/core/game.ts'), 'utf8').includes('Account disabled by admin.'), 'Disabled-account message missing');
+
+
+// v1.8.5 timeline and login UI regression: editor follows its own week; actions use
+// accessible intent colors with square X buttons and no inherited input glow.
+assert(board.includes("toolbar.className = 'study-flow-toolbar'"));
+assert(board.includes("toolbarActions.className = 'study-flow-toolbar-actions'"));
+for (const label of ["'+ Add week'", "'+ Pre-test'", "'+ Post-test'"]) {
+  assert(board.includes(`button(toolbarActions, ${label}`), `Week control ${label} not in common toolbar row`);
+}
+assert(board.includes('if (selected?.week === week) section.appendChild(editor)'), 'Selected slide editor must be inside its week');
+assert(!board.includes("parent.appendChild(editor)"), 'Editor must not appear after all weeks');
+assert(!board.includes('Use the × on a slide to delete it.'), 'Obsolete slide help text');
+assert(board.includes("removeRow.classList.add('study-week-delete')"), 'Square week delete icon missing');
+assert(board.includes("remove.classList.add('study-slide-delete')"), 'Square slide delete icon missing');
+assert(css.includes('grid-template-columns:repeat(3,minmax(0,1fr))'), 'Week toolbar buttons need equal widths');
+assert(css.includes('button.study-week-delete') && css.includes('button.study-slide-delete'), 'Red square delete style missing');
+for (const type of ['start','level','selection','break','end']) {
+  assert(css.includes(`.study-slide.study-slide-${type}`), `${type} slide must have a distinct tint`);
+}
+assert(dashboard.includes("button.classList.add('study-action-save')"));
+assert(dashboard.includes("button.classList.add('study-action-add')"));
+assert(css.includes('background:#1b5138!important') && css.includes('background:#193c65!important'), 'Save and add accents missing');
+assert(css.includes('.study-shell.study-login .study-login-card input:not([type=checkbox]):focus') && css.includes('box-shadow:none!important; text-shadow:none!important;'), 'Research login input must not glow');
+console.log('PASS: centered research login fields, equal week buttons, red square delete, inline slide editor, action colors and slide tints');
+
+// v1.8.6: study slides can assign exact imported-level tempos without changing
+// the canonical JSON; bundle-backed legacy levels still use BPM indexes.
+assert(board.includes("slider.type = 'range'") && board.includes("slider.max = '200'"));
+assert(board.includes('tempoSlider(editor, step)') && board.includes('tempoSlider(row, choice)'));
+assert(types.includes('bpm?: number'));
+assert(functions.includes('a.bpm >= 60 && a.bpm <= 200'));
+assert(source('src/ts/scenes/studySessionScene.ts').includes('studyTrackKeyForBpm(id, customBpm)'));
+console.log('PASS: study-level and selection-level exact BPM sliders and server-side tempo validation');

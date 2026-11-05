@@ -128,6 +128,10 @@ export default class InfoHUD extends GameObject {
       },
       trackName,
     );
+    // Long imported track names may occupy a second line, but never extend
+    // beyond the right-hand HUD column or cover the difficulty row below.
+    this.trackText.setWordWrapWidth(this.scene.width * .14, true);
+    this.trackText.setMaxLines(2);
 
     const layerName: string =
       layerInfoText +

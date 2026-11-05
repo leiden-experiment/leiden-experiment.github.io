@@ -42,7 +42,7 @@ assert.throws(()=>pw.firebasePassword(''));
 const dashboard = fs.readFileSync(path.join(__dirname,'../src/ts/study/dashboard.ts'),'utf8');
 assert(dashboard.includes('exportName(study, member.username)') && dashboard.includes('exportName(study)'));
 assert(dashboard.includes('study-search') && dashboard.includes('Save participant settings'));
-assert(dashboard.includes('customConfig: customToggle.checked'));
+assert(dashboard.includes('const customConfig = customToggle.checked ? readCustom() : undefined;')); 
 assert(dashboard.includes("navigate('Levels'"));
 assert(!dashboard.includes("node('p', frame); breadcrumb"));
 const flow = fs.readFileSync(path.join(__dirname,'../src/ts/study/flowBoard.ts'),'utf8');

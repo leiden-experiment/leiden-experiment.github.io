@@ -18,6 +18,7 @@ import {
 } from '../core/config';
 import { config } from '../managers/storageManager';
 import { NoteGenerator } from '../util/noteGenerator';
+import { restoreDesignerLevel } from '../util/restoreDesignerLevel';
 
 export class Track {
   public data: TrackData;
@@ -154,6 +155,7 @@ export class Track {
         return;
       }
 
+      if (this.trackKey.startsWith('temp_level_') && layer.id === 'drums') return;
       loopKeys.forEach(loopKey => {
         const soundKey = this.getSoundKey(layer, loopKey);
         if (!this.scene.cache.audio.exists(soundKey) && loopKey !== '') {
@@ -214,6 +216,17 @@ export class Track {
           (layer.playable && config.playableBackingTracksEnabled) ||
           (!layer.playable && config.unplayableBackingTracksEnabled)
         ) {
+          // The Level Editor uses its bundled 4-bar beat.wav loop, recorded at
+          // 90 BPM. Tempo-adjust it instead of looking for nonexistent MP3s.
+          if (this.trackKey.startsWith('temp_level_') && layer.id === 'drums') {
+            if (scene.cache.audio.exists('designerDrumBeat')) {
+              const drums = scene.sound.add('designerDrumBeat', soundConfig);
+              drums.setRate(this.data.bpm[bpmIndex] / 90);
+              drums.setVolume(0.3);
+              audioTracks.push(drums);
+            }
+            return;
+          }
           // Missing/empty soundLoopKeys denotes generated backing audio.
           if (!(layer.soundLoopKeys || []).length) {
             // For programmatic layers, try to find generated loop audio
@@ -301,6 +314,7 @@ export class Track {
         );
       }
     }
+    if (this.trackKey.startsWith('temp_level_')) restoreDesignerLevel(this.data);
     this.parseJson();
     this.preloadLoops();
     this.preloadNotes();

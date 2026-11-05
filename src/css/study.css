@@ -280,3 +280,138 @@
 .study-admin-dashboard .study-level-upload .study-file-picker:focus-within {
   outline:2px solid #ccc; outline-offset:1px;
 }
+
+/* Accessible accents for distinct actions; the dashboard remains black and gray overall. */
+.study-admin-dashboard button.study-action-add,
+.study-admin-dashboard .study-btn.study-action-add,
+.study-admin-dashboard button.study-flow-action.study-action-add {
+  background:#193c65!important; border-color:#3575af!important; color:#eef7ff!important;
+}
+.study-admin-dashboard button.study-action-add:hover:not(:disabled) {
+  background:#255287!important; border-color:#63a5e1!important;
+}
+.study-admin-dashboard button.study-action-save,
+.study-admin-dashboard .study-btn.study-action-save {
+  background:#1b5138!important; border-color:#35845b!important; color:#f0fff5!important;
+}
+.study-admin-dashboard button.study-action-save:hover:not(:disabled) {
+  background:#276a4a!important; border-color:#61ad80!important;
+}
+.study-admin-dashboard button.study-btn-danger,
+.study-admin-dashboard button.study-action-danger {
+  background:#572326!important; border-color:#a4484c!important; color:#ffe6e7!important;
+}
+.study-admin-dashboard button.study-btn-danger:hover:not(:disabled),
+.study-admin-dashboard button.study-action-danger:hover:not(:disabled) {
+  background:#783035!important; border-color:#d26368!important;
+}
+
+/* Week management: three equally sized actions on one horizontal row. */
+.study-admin-dashboard .study-flow-toolbar { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
+.study-admin-dashboard .study-flow-toolbar-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); width:100%; gap:10px; }
+.study-admin-dashboard button.study-flow-action { width:auto; }
+.study-admin-dashboard .study-flow-toolbar-actions > button.study-flow-action { width:100%; min-width:0; min-height:40px; }
+.study-admin-dashboard .study-week-heading { position:relative; min-height:36px; }
+.study-admin-dashboard button.study-week-delete,
+.study-admin-dashboard button.study-slide-delete {
+  flex:0 0 30px; width:30px!important; min-width:30px!important; height:30px!important; min-height:30px!important;
+  box-sizing:border-box; padding:0!important; display:inline-flex; align-items:center; justify-content:center;
+  background:#572326!important; border:1px solid #a4484c!important; color:#ffe6e7!important;
+  font-size:21px!important; line-height:1!important; font-weight:600;
+}
+.study-admin-dashboard button.study-week-delete:hover:not(:disabled),
+.study-admin-dashboard button.study-slide-delete:hover:not(:disabled) {
+  background:#783035!important; border-color:#d26368!important; color:#fff!important;
+}
+.study-admin-dashboard .study-slide-heading { padding-right:35px; }
+.study-admin-dashboard button.study-slide-delete { position:absolute; right:8px; top:8px; }
+.study-admin-dashboard .study-slide-editor { width:100%; box-sizing:border-box; margin-top:4px; }
+.study-admin-dashboard .study-slide-editor[hidden] { display:none!important; }
+
+/* Subtle slide-type tint helps distinguish actions without a blue overall theme. */
+.study-admin-dashboard .study-slide.study-slide-start {
+  border-left:4px solid #53a77c!important; background:#202f28!important;
+}
+.study-admin-dashboard .study-slide.study-slide-level {
+  border-left:4px solid #5c9cce!important; background:#1e2d3b!important;
+}
+.study-admin-dashboard .study-slide.study-slide-selection {
+  border-left:4px solid #a98ad2!important; background:#2d263b!important;
+}
+.study-admin-dashboard .study-slide.study-slide-break {
+  border-left:4px solid #d0a450!important; background:#363022!important;
+}
+.study-admin-dashboard .study-slide.study-slide-end {
+  border-left:4px solid #d18d9f!important; background:#35262b!important;
+}
+.study-admin-dashboard .study-slide.study-slide-selected { outline-color:#d5d5d5!important; outline-width:2px; }
+
+/* The global game stylesheet applies green input shadows; the research login must not inherit them. */
+.study-shell.study-login .study-login-card input:not([type=checkbox]),
+.study-shell.study-login .study-login-card input:not([type=checkbox]):focus,
+.study-shell.study-login .study-login-card input:not([type=checkbox]):hover {
+  box-shadow:none!important; text-shadow:none!important;
+}
+.study-shell.study-login .study-login-card input:not([type=checkbox]):focus {
+  border-color:#a4a4a4!important; outline:2px solid #b9b9b9!important; outline-offset:1px;
+}
+@media(max-width:540px){
+  .study-admin-dashboard .study-flow-toolbar-actions { gap:5px; }
+  .study-admin-dashboard .study-flow-toolbar-actions > button { font-size:12px; padding:6px 4px; }
+}
+
+/* Exact tempo control for Level Designer JSON slides, including level choices. */
+.study-admin-dashboard .study-bpm-slider { min-width:0; }
+.study-admin-dashboard .study-bpm-slider input[type=range] {
+  width:100%; height:32px; min-height:32px; padding:0; border:0;
+  background:transparent!important; box-shadow:none; accent-color:#4f9aed; cursor:pointer;
+}
+.study-admin-dashboard .study-bpm-slider button { width:100%; min-height:32px; }
+
+/* Research login: status regions occupy no space until they contain a message. */
+.study-shell.study-login .study-login-error,
+.study-shell.study-login .study-login-progress {
+  margin:0; padding:0; min-height:0; height:auto; line-height:1.4;
+}
+.study-shell.study-login .study-login-error:empty,
+.study-shell.study-login .study-login-progress:empty { display:none!important; }
+/* Neutral buttons with a hover color change, never the global green glow. */
+.study-shell.study-login .study-login-card button,
+.study-shell.study-login .study-login-card button:focus,
+.study-shell.study-login .study-login-card button:hover {
+  background:#333!important; color:#f5f5f5!important; border:1px solid #707070!important;
+  box-shadow:none!important; text-shadow:none!important; transition:background-color .15s ease!important;
+}
+.study-shell.study-login .study-login-card button:hover:not(:disabled) { background:#505050!important; }
+.study-shell.study-login .study-login-card button:focus-visible { outline:2px solid #ddd; outline-offset:2px; }
+/* Selectable level editor: level, exact BPM/difficulty, loops, and remove on one row. */
+.study-admin-dashboard .study-choice-editor {
+  display:grid; grid-template-columns:minmax(160px,2fr) minmax(190px,1.5fr) minmax(75px,.65fr) 40px;
+  gap:10px; align-items:end;
+}
+.study-admin-dashboard .study-choice-editor > .study-field { margin:0; min-width:0; }
+.study-admin-dashboard .study-choice-editor .study-bpm-slider { display:grid; grid-template-rows:22px 42px; gap:0; }
+.study-admin-dashboard .study-bpm-heading { display:flex; align-items:center; justify-content:space-between; gap:6px; min-width:0; }
+.study-admin-dashboard .study-bpm-heading span { white-space:nowrap; font-size:13px; }
+.study-admin-dashboard .study-bpm-heading button.study-bpm-reset {
+  width:auto!important; min-height:0!important; height:22px!important; padding:0 6px!important;
+  font-size:11px!important; line-height:20px!important; flex:0 0 auto;
+}
+.study-admin-dashboard .study-choice-editor .study-bpm-slider input[type=range] {
+  min-height:40px; height:40px; margin:0; padding:0;
+}
+.study-admin-dashboard .study-choice-remove {
+  width:40px!important; min-width:40px!important; height:40px!important; min-height:40px!important;
+  padding:0!important; font-size:22px!important; line-height:1!important;
+  align-self:end; display:inline-flex; align-items:center; justify-content:center;
+}
+@media(max-width:850px) {
+  .study-admin-dashboard .study-choice-editor { grid-template-columns:minmax(0,1fr) minmax(0,1fr) 80px 40px; gap:8px; }
+}
+@media(max-width:590px) {
+  .study-admin-dashboard .study-choice-editor { grid-template-columns:minmax(0,1fr) 40px; }
+  .study-admin-dashboard .study-choice-editor > .study-field:nth-of-type(1),
+  .study-admin-dashboard .study-choice-editor > .study-field:nth-of-type(2) { grid-column:1 / -1; }
+  .study-admin-dashboard .study-choice-editor > .study-field:nth-of-type(3) { grid-column:1; }
+  .study-admin-dashboard .study-choice-remove { grid-column:2; }
+}

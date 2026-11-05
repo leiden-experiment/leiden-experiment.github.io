@@ -1,3 +1,4 @@
+import { isStudyTrackKey } from '../study/participantPreload';
 import HandScene from '../scenes/handScene';
 import Level from '../level/level';
 import { escapeKey, initialScene, levelCompletionScene } from '../core/config';
@@ -43,7 +44,7 @@ export default class LevelScene extends HandScene {
       },
       () => {
         // Aborted level callback.
-        if (this.level.trackKey.startsWith('temp_level_')) {
+        if (this.level.trackKey.startsWith('temp_level_') && !isStudyTrackKey(this.level.trackKey)) {
           this.level.unload();
           this.cache.json.remove(this.level.trackKey);
         }

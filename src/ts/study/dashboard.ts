@@ -1,4 +1,6 @@
-import { studyApi, callBackend } from './firebaseClient';
+import { studyApi } from './firebaseClient';
+import { DashboardCache } from './dashboardCache';
+import { normalizeUsername } from './username';
 import { Account, StudySettings, StudySummary, defaultStudySettings, validateSettings, isLevelStep, normalizeStudyWeeks } from './types';
 import { createFlowBoard } from './flowBoard';
 import { LevelConverter } from '../util/levelConverter';
@@ -36,6 +38,9 @@ function check(parent: HTMLElement, title: string, checked: boolean, help: strin
 }
 function action(parent: HTMLElement, title: string, fn: () => void | Promise<void>, style: 'primary' | 'secondary' | 'danger' = 'secondary') {
   const button = node('button', parent, title); button.type = 'button'; button.className = `study-btn study-btn-${style}`;
+  // Color indicates intent while keeping the dashboard's subdued monochrome base.
+  if (/^(?:\+\s*)?(?:add|create|upload|new)\b/i.test(title)) button.classList.add('study-action-add');
+  if (/^(?:save|apply|update)\b/i.test(title)) button.classList.add('study-action-save');
   button.addEventListener('click', async () => { button.disabled = true; try { await fn(); } catch (err) { alert(err instanceof Error ? err.message : String(err)); } finally { button.disabled = false; } });
   return button;
 }
@@ -85,13 +90,16 @@ function gameConfigEditor(parent: HTMLElement, current: Record<string, unknown>,
 
 export async function showDashboard(root: HTMLElement, user: Account, onExit: () => void) {
   root.replaceChildren(); root.classList.add('study-shell', 'study-admin-dashboard');
+  const cache = new DashboardCache();
   const nav = node('nav', root); nav.className = 'study-nav'; nav.setAttribute('aria-label', 'Research dashboard navigation');
   const brand = node('strong', nav, 'Pizzicato'); brand.className = 'study-brand';
   const navButtons = node('div', nav); navButtons.className = 'study-nav-links';
   const backBtn = action(navButtons, '← Back', () => goBack());
   action(navButtons, 'Studies', () => navigate('Studies', showStudies));
   if (user.role === 'admin') action(navButtons, 'Levels', () => navigate('Levels', showLibrary));
-  const signOut = action(nav, `Sign Out (${user.username})`, onExit); signOut.classList.add('study-signout');
+  const signOut = action(nav, `Sign Out (${user.username})`, async () => {
+    ++navigationToken; cache.dispose(); await onExit();
+  }); signOut.classList.add('study-signout');
   const frame = node('div', root); frame.className = 'study-layout';
   const output = node('main', frame);
   type View = { label: string; render: () => void | Promise<void> };
@@ -100,13 +108,19 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
   let navigationToken = 0;
   const clear = (label: string) => {
     output.replaceChildren();
+    if (!cache.ready) node('p', output, 'Loading dashboard data…');
     backBtn.disabled = history.length === 0;
   };
   function navigate(label: string, render: () => void | Promise<void>, push = true) {
     if (push && current && current.label !== label) history.push(current);
     current = { label, render }; const token = ++navigationToken; clear(label);
     // Navigation is immediate; buttons live in the persistent nav and never await API responses.
-    Promise.resolve().then(() => render()).catch(err => {
+    Promise.resolve().then(async () => {
+      await cache.load();
+      if (token !== navigationToken) return;
+      output.replaceChildren();
+      await render();
+    }).catch(err => {
       if (token !== navigationToken) return;
       const error = section(output, 'Unable to load this page'); node('p', error, err instanceof Error ? err.message : String(err));
       action(error, 'Try again', () => navigate(label, render, false));
@@ -114,9 +128,6 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
   }
   function goBack() {
     const previous = history.pop(); if (previous) navigate(previous.label, previous.render, false);
-  }
-  async function studyApiCallSettings(studyId: string) {
-    return callBackend<{ settings: StudySettings; databaseURL?: string }>('getStudySettings', { studyId });
   }
   async function showStudies() {
     const page = section(output, 'Studies');
@@ -129,7 +140,8 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     }
     page.classList.add('study-compact-card', 'study-list-card');
     const list = node('div', page); list.className = 'study-list'; node('p', list, 'Loading studies…');
-    const { studies } = await studyApi.listStudies();
+    await cache.load();
+    const studies = cache.studies();
     if (!list.isConnected) return;
     list.replaceChildren();
     if (!studies.length) node('p', list, 'No studies yet. Create your first study above.');
@@ -142,6 +154,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         const remove = action(row, '×', async () => {
           if (!confirm(`Remove study “${study.title}”?\n\nParticipants and moderators will lose access. Existing results will be retained for audit, but the study will disappear from the dashboard. This cannot be undone from the dashboard.`)) return;
           await studyApi.removeStudy(study.id);
+          cache.removeStudy(study.id);
           navigate('Studies', showStudies, false);
         }, 'danger');
         remove.title = `Remove study ${study.title}`; remove.setAttribute('aria-label', remove.title);
@@ -154,11 +167,8 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     page.classList.add('study-compact-card');
     const buttons = actions(page); buttons.classList.add('study-study-tabs');
     if (user.role === 'admin') {
-      action(buttons, 'Edit Study', () => navigate('Edit ' + study.title, async () => {
-        const pending = section(output, 'Loading study settings…');
-        const fetched = await studyApiCallSettings(study.id);
-        if (!pending.isConnected) return;
-        output.replaceChildren(); editStudy(study.id, fetched.settings, fetched.databaseURL || '');
+      action(buttons, 'Edit Study', () => navigate('Edit ' + study.title, () => {
+        editStudy(study.id, cache.settings(study.id), cache.study(study.id)?.databaseURL || '');
       }), 'primary');
       action(buttons, 'Moderators', () => navigate(`Moderators · ${study.title}`, () => showModerators(study)));
     }
@@ -204,9 +214,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     weekly.addEventListener('change', sync); dateEnabled.addEventListener('change', sync); perParticipant.addEventListener('change', sync);
     const timelineHost = section(page, 'Study timeline'); timelineHost.classList.add('study-subsection');
     const board = createFlowBoard(timelineHost, normalizeStudyWeeks(data.weeks), () => {}, weekly.checked);
-    void studyApi.listLevels().then(({ levels }) => {
-      if (timelineHost.isConnected) board.setAvailableLevels(levels.map(l => ({ id: `library:${l.id}`, name: `Uploaded: ${l.name}` })));
-    }).catch(() => { /* Bundled levels and saved IDs remain usable. */ });
+    board.setAvailableLevels(cache.levels().map(l => ({ id: `library:${l.id}`, name: `Uploaded: ${l.name}`, bpm: l.bpm })));
     sync();
     const configs = section(page, 'Gameplay settings'); configs.classList.add('study-subsection');
     const defaultEnabled = check(configs, 'Override default gameplay settings', !!data.defaultConfig && Object.keys(data.defaultConfig).length > 0,
@@ -264,7 +272,9 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       const nowEmpty = Object.values(settings.weeks).every(slides => slides.length === 0);
       const confirmClearTimeline = !!id && originallyPopulated && nowEmpty;
       if (confirmClearTimeline && !confirm('This will delete ALL slides in this study timeline. Are you sure?')) return;
-      await studyApi.saveStudy(id || newId('study'), settings, db.value.trim() || undefined, confirmClearTimeline);
+      const studyId = id || newId('study');
+      const saved = await studyApi.saveStudy(studyId, settings, db.value.trim() || undefined, confirmClearTimeline, cache.study(studyId)?.revision || 0);
+      cache.saveStudy(studyId, settings, db.value.trim(), saved.revision);
       history.length = 0; navigate('Studies', showStudies, false);
     }, 'primary');
     saveStudyButton.classList.add('study-block-button');
@@ -277,13 +287,14 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const name = field(create, 'New moderator username', '', 'input', 'At least four characters; used to sign in.');
     const password = field(create, 'Password', '', 'input', 'Use a long password for security.'); password.type = 'password';
     const createModerator = action(page, '+ Create moderator', async () => {
-      await studyApi.provisionAccount(study.id, name.value, password.value, 'moderator');
+      const { uid } = await studyApi.provisionAccount(study.id, name.value, password.value, 'moderator');
+      cache.addAccount(study.id, { uid, username: normalizeUsername(name.value), role: 'moderator', studyId: study.id, active: true });
       alert(`Moderator ${name.value} created. Share their login securely.`);
       navigate(`Moderators · ${study.title}`, () => showModerators(study), false);
     }, 'primary');
     createModerator.classList.add('study-block-button');
     const results = node('div', page); node('p', results, 'Loading moderators…');
-    const { accounts } = await studyApi.listParticipants(study.id);
+    const accounts = cache.accounts(study.id);
     if (!results.isConnected) return; results.replaceChildren();
     const moderators = accounts.filter(a => a.role === 'moderator');
     if (!moderators.length) node('p', results, 'No moderator accounts for this study.');
@@ -293,7 +304,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       node('strong', title, mod.username); node('small', title, mod.active ? 'Active' : 'Disabled');
       const modActions = actions(row); modActions.classList.add('study-row-actions');
       action(modActions, mod.active ? 'Disable' : 'Enable', async () => {
-        await studyApi.setAccountActive(mod.uid, !mod.active); navigate(`Moderators · ${study.title}`, () => showModerators(study), false);
+        await studyApi.setAccountActive(mod.uid, !mod.active); cache.updateAccount(mod.uid, { active: !mod.active }); navigate(`Moderators · ${study.title}`, () => showModerators(study), false);
       });
       action(modActions, 'Reset password', async () => {
         const secret = prompt('New password'); if (!secret) return;
@@ -301,7 +312,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       });
       const removeModerator = action(modActions, '×', async () => {
         if (!confirm(`Permanently remove ${mod.username}?`)) return;
-        await studyApi.removeAccount(mod.uid); navigate(`Moderators · ${study.title}`, () => showModerators(study), false);
+        await studyApi.removeAccount(mod.uid); cache.removeAccount(mod.uid); navigate(`Moderators · ${study.title}`, () => showModerators(study), false);
       }, 'danger');
       removeModerator.title = `Remove moderator ${mod.username}`; removeModerator.setAttribute('aria-label', removeModerator.title);
       removeModerator.classList.add('study-remove-icon');
@@ -312,12 +323,13 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     page.classList.add('study-compact-card');
     const canEdit = user.role === 'admin';
     const controls = actions(page); controls.classList.add('study-full-actions');
-    action(controls, 'Download all participant data', async () => {
+    const exportAll = action(controls, 'Download all participant data', async () => {
       const { results, partial } = await studyApi.exportResults(study.id);
       if (partial) alert('Some linked-database results could not be retrieved; queued records are included.');
       downloadJSON(exportName(study), results);
     }, 'primary');
-    const settings = (await studyApiCallSettings(study.id)).settings;
+    exportAll.title = 'Downloads all results currently available in Firebase, including sessions recorded since you logged in.';
+    const settings = cache.settings(study.id);
     if (!page.isConnected) return;
     const groups = Object.keys(settings.groupConfigs || {});
     const showStartDate = settings.dateRangeEnabled !== false || !!settings.durationWeeks;
@@ -347,15 +359,27 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       customToggle.onchange = () => { customPanel.hidden = !customToggle.checked; };
       const createButton = action(actions(page), '+ Add participant', async () => {
         if (requiredStartDate && !start?.value) throw new Error('Choose a participant start date.');
-        await studyApi.provisionAccount(study.id, username.value.trim(), password.value, 'participant', group.value, start?.value || '', customToggle.checked ? readCustom() : undefined);
+        const customConfig = customToggle.checked ? readCustom() : undefined;
+        const { uid } = await studyApi.provisionAccount(study.id, username.value.trim(), password.value, 'participant', group.value, start?.value || '', customConfig);
+        const normalized = normalizeUsername(username.value.trim());
+        cache.addAccount(study.id, { uid, username: normalized, participantId: normalized, role: 'participant', studyId: study.id, active: true, group: group.value, startDate: start?.value || '', ...(customConfig ? { customConfig } : {}) });
         navigate(`Participants · ${study.title}`, () => showRoster(study), false);
       }, 'primary');
       createButton.classList.add('study-block-button');
     }
     const search = field(page, 'Find a participant', '', 'input', 'Filter the participant list by username or group.');
     search.placeholder = 'Search participants…'; search.classList.add('study-search');
+    const progressDescription = (uid: string) => {
+      const progress = cache.progress(study.id, uid);
+      const completed = Object.values(progress?.sessions || {}).reduce((sum, count) => sum + Number(count || 0), 0);
+      const recordedAt = progress?.lastCompletedSessionAt;
+      const date = recordedAt ? new Date(recordedAt) : null;
+      const lastCompleted = date && Number.isFinite(date.valueOf())
+        ? date.toLocaleString() : completed ? 'time not recorded for earlier sessions' : 'never';
+      return `${completed} completed session${completed === 1 ? '' : 's'} (last completed: ${lastCompleted})`;
+    };
     const results = node('div', page); results.className = 'study-roster'; node('p', results, 'Loading participants…');
-    const { accounts } = await studyApi.listParticipants(study.id);
+    const accounts = cache.accounts(study.id);
     if (!results.isConnected) return;
     results.replaceChildren();
     const participants = accounts.filter(a => a.role === 'participant').sort((a,b) => a.username.localeCompare(b.username));
@@ -367,6 +391,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       const details = node('div', row); details.className = 'study-row-title';
       node('strong', details, member.username);
       node('small', details, `Group: ${member.group || 'None'} · ${member.active ? 'Active' : 'Disabled'}${member.customConfig ? ' · Custom settings' : ''}`);
+      node('small', details, progressDescription(member.uid));
       const commands = actions(row); commands.classList.add('study-row-actions');
       const iconAction = (text: string, hint: string, fn: () => void | Promise<void>, style: 'primary' | 'secondary' | 'danger' = 'secondary') => {
         const button = action(commands, text, fn, style); button.title = hint; button.setAttribute('aria-label', hint); return button;
@@ -404,9 +429,11 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         }
         const save = action(actions(edit), 'Save participant settings', async () => {
           if (requiredStartDate && !date?.value) throw new Error('Choose a participant start date.');
-          await studyApi.setParticipant(member.uid, { group: group.value,
+          const changed: Partial<Account> = { group: group.value,
             ...(showStartDate ? { startDate: date?.value || '' } : {}),
-            ...(customToggle ? { customConfig: customToggle.checked ? readCustom() : null } : {}) });
+            ...(customToggle ? { customConfig: customToggle.checked ? readCustom() : undefined } : {}) };
+          await studyApi.setParticipant(member.uid, { ...changed, ...(customToggle && !customToggle.checked ? { customConfig: null } : {}) });
+          cache.updateAccount(member.uid, changed);
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
         }, 'primary'); save.classList.add('study-block-button');
         iconAction('Edit settings', 'Edit group / condition and personal settings', () => { edit.hidden = !edit.hidden; });
@@ -414,6 +441,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
           const name = prompt('New username', member.username);
           if (name === null || name.trim() === member.username) return;
           await studyApi.updateAccountCredentials(member.uid, name.trim());
+          cache.updateAccount(member.uid, { username: normalizeUsername(name.trim()) });
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
         });
         iconAction('Password', 'Change password', async () => {
@@ -423,11 +451,13 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         });
         iconAction(member.active ? 'Disable' : 'Enable', member.active ? 'Deactivate participant' : 'Reactivate participant', async () => {
           await studyApi.setAccountActive(member.uid, !member.active);
+          cache.updateAccount(member.uid, { active: !member.active });
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
         });
         const removeParticipant = iconAction('×', 'Remove participant (results are kept)', async () => {
           if (!confirm(`Remove ${member.username}? Existing results will be retained.`)) return;
           await studyApi.removeAccount(member.uid);
+          cache.removeAccount(member.uid);
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
         }, 'danger');
         removeParticipant.classList.add('study-remove-icon');
@@ -457,11 +487,13 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       if (!file.files?.[0]) throw new Error('Select a level JSON file first');
       const converted = LevelConverter.convert(JSON.parse(await file.files[0].text()));
       const name = levelName.value.trim() || file.files[0].name.replace(/\.json$/i, '');
-      await studyApi.saveLevel(newId('level'), name, converted);
+      const id = newId('level');
+      await studyApi.saveLevel(id, name, converted);
+      cache.addLevel({ id, name, updatedAt: new Date().toISOString(), bpm: converted.bpm[0] });
       navigate('Levels', showLibrary, false);
     }, 'primary');
     const list = node('div', page); node('p', list, 'Loading levels…');
-    const { levels } = await studyApi.listLevels();
+    const levels = cache.levels();
     if (!list.isConnected) return; list.replaceChildren();
     if (!levels.length) node('p', list, 'No custom levels uploaded yet.');
     for (const level of levels) {
@@ -473,6 +505,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         const remove = action(row, '×', async () => {
           if (!confirm(`Permanently remove level “${level.name}” from the shared library? Only unused levels can be deleted.`)) return;
           await studyApi.removeLevel(level.id);
+          cache.removeLevel(level.id);
           navigate('Levels', showLibrary, false);
         }, 'danger');
         remove.classList.add('study-remove-icon', 'study-remove-level'); remove.title = `Delete level ${level.name}`;
