@@ -63,9 +63,9 @@ console.log('PASS: clean research login, participant credentials, JSON exports, 
 
 // Research dashboard regression checks: consistent action sizes, no level IDs, and informative disabled login.
 assert(css.includes('.study-list-card') && css.includes('.study-remove-study') && css.includes('.study-remove-level'), 'Study and library row sizing missing');
-assert(dashboard.includes("node('strong', label, level.name);"), 'Uploaded levels should show their display name');
+assert(dashboard.includes("node('strong', label, uploadedDate ? `${level.name} (${uploadedDate})` : level.name);"), 'Uploaded levels should show their display name followed by an upload date if available');
 assert(!dashboard.includes("node('small', label, `library:${level.id}`)"), 'Uploaded level ID should not be displayed');
-assert(fs.readFileSync(path.resolve(__dirname, '../src/ts/core/game.ts'), 'utf8').includes('Account disabled by admin.'), 'Disabled-account message missing');
+assert(fs.readFileSync(path.resolve(__dirname, '../src/ts/study/loginErrors.ts'), 'utf8').includes('Account disabled by admin.'), 'Disabled-account message missing');
 
 
 // v1.8.5 timeline and login UI regression: editor follows its own week; actions use

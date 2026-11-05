@@ -38,8 +38,10 @@ export const studyApi = {
   refreshStudyProgress: (studyId: string) => callBackend<{ progress: Record<string, Progress> }>('refreshStudyProgress', { studyId }),
   listModerators: () => callBackend<{ moderators: Account[] }>('listModerators', {}),
   listStudies: () => callBackend<{ studies: StudySummary[] }>('listStudies', {}),
-  saveStudy: (id: string, settings: StudySettings, databaseURL?: string, confirmClearTimeline = false, expectedRevision = 0) =>
+  saveStudy: (id: string, settings: StudySettings, databaseURL?: string, confirmClearTimeline = false, expectedRevision = 0,
+      originalSettings?: StudySettings, originalDatabaseURL = '') =>
     callBackend<{ id: string; revision: number }>('saveStudy', { id, settings, expectedRevision, ...(databaseURL ? { databaseURL } : {}),
+      ...(originalSettings ? { originalSettings, originalDatabaseURL } : {}),
       ...(confirmClearTimeline ? { confirmClearTimeline: true } : {}) }),
   listParticipants: (studyId: string) => callBackend<{ accounts: Account[] }>('listParticipants', { studyId }),
   provisionAccount: (studyId: string, username: string, password: string, role: 'participant' | 'moderator', group = '', startDate = '', customConfig?: Record<string, unknown>) =>

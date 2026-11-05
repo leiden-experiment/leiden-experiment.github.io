@@ -48,6 +48,12 @@ function section(parent: HTMLElement, heading: string) { const el = node('sectio
 function actions(parent: HTMLElement) { const el = node('div', parent); el.className = 'study-actions'; return el; }
 function fileSlug(text: string) { return text.trim().replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-|-$/g, '').slice(0, 70) || 'study'; }
 function downloadJSON(name: string, data: unknown) { downloadFile(name, JSON.stringify(data, null, 2)); }
+/** The level library's updatedAt is set at upload time for generated, unique level IDs. */
+function levelDate(iso?: string): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+}
 function exportName(study: StudySummary, person = 'all-participants') {
   // Local time at the moment of download, down to the second.
   const now = new Date(); const stamp = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}-${String(now.getMinutes()).padStart(2,'0')}-${String(now.getSeconds()).padStart(2,'0')}`;
@@ -144,7 +150,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const studies = cache.studies();
     if (!list.isConnected) return;
     list.replaceChildren();
-    if (!studies.length) node('p', list, 'No studies yet. Create your first study above.');
+    if (!studies.length) node('p', list, 'No studies yet. Create your first study above.').className = 'study-empty-studies';
     for (const study of studies) {
       const row = node('div', list); row.className = 'study-row';
       const title = node('div', row); title.className = 'study-row-title';
@@ -228,12 +234,17 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const groups: GroupEntry[] = [];
     function addGroup(name: string, values: Record<string, unknown>) {
       const panel = node('section', groupsHost); panel.className = 'study-group-panel';
-      const heading = node('div', panel); heading.className = 'study-row';
+      const heading = node('div', panel); heading.className = 'study-group-heading';
       const nameField = field(heading, 'Group name', name, 'input', 'Enter this exact name when assigning a participant to this group.');
-      const removeGroup = action(panel, 'Remove group', () => { panel.remove(); const ix = groups.findIndex(g => g.panel === panel); if (ix >= 0) groups.splice(ix, 1); }, 'danger');
-      removeGroup.classList.add('study-block-button');
+      const removeGroup = action(heading, '×', () => {
+        panel.remove();
+        const ix = groups.findIndex(g => g.panel === panel);
+        if (ix >= 0) groups.splice(ix, 1);
+      }, 'danger');
+      removeGroup.classList.add('study-remove-icon', 'study-group-remove');
+      removeGroup.title = 'Remove this group';
+      removeGroup.setAttribute('aria-label', 'Remove this group');
       const read = gameConfigEditor(panel, values, { ...gameplayDefaults, ...(defaultEnabled.checked ? readDefaults() : {}) } as Record<string, GameplayValue>);
-      panel.appendChild(removeGroup);
       groups.push({ name: nameField, read, panel });
     }
     for (const [name, values] of Object.entries(data.groupConfigs || {})) addGroup(name, values);
@@ -273,7 +284,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       const confirmClearTimeline = !!id && originallyPopulated && nowEmpty;
       if (confirmClearTimeline && !confirm('This will delete ALL slides in this study timeline. Are you sure?')) return;
       const studyId = id || newId('study');
-      const saved = await studyApi.saveStudy(studyId, settings, db.value.trim() || undefined, confirmClearTimeline, cache.study(studyId)?.revision || 0);
+      const saved = await studyApi.saveStudy(studyId, settings, db.value.trim() || undefined, confirmClearTimeline, cache.study(studyId)?.revision ?? 0, id ? data : undefined, databaseURL);
       cache.saveStudy(studyId, settings, db.value.trim(), saved.revision);
       history.length = 0; navigate('Studies', showStudies, false);
     }, 'primary');
@@ -339,7 +350,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     if (canEdit) {
       const create = node('div', page); create.className = 'study-form-grid';
       const username = field(create, 'New participant username', '', 'input', 'Participant login name.');
-      const password = field(create, 'Password', '', 'input', 'One character is technically supported, but a longer password is substantially safer.'); password.type = 'password';
+      const password = field(create, 'Password', '', 'input', 'Participant login password. Share it securely.'); password.type = 'password';
       const group = groupSelect(create, 'Group / condition', groups);
       let start: HTMLInputElement | undefined;
       if (showStartDate) {
@@ -470,7 +481,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
   }
   async function showLibrary() {
     const page = section(output, 'Levels'); page.classList.add('study-compact-card', 'study-library-card');
-    node('p', page, 'Upload a JSON level once, then assign it to any study. IDs are created automatically.');
+    node('p', page, 'Upload JSON levels here once, then assign them when creating or modifying studies.');
     const editor = node('div', page); editor.className = 'study-level-upload';
     const fileLabel = node('label', editor); fileLabel.className = 'study-field'; node('span', fileLabel, 'JSON level file');
     // Render our own centered file-picker text; native file buttons are offset by
@@ -499,7 +510,8 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     for (const level of levels) {
       const row = node('div', list); row.className = 'study-row study-level-row';
       const label = node('div', row); label.className = 'study-row-title';
-      node('strong', label, level.name);
+      const uploadedDate = levelDate(level.updatedAt);
+      node('strong', label, uploadedDate ? `${level.name} (${uploadedDate})` : level.name);
       action(row, 'Download', async () => downloadJSON(`${level.id}.json`, (await studyApi.getLevel(level.id)).level.data));
       if (user.role === 'admin') {
         const remove = action(row, '×', async () => {

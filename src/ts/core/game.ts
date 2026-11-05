@@ -16,6 +16,7 @@ import { getOfflinePack, importOfflinePack, loginOffline } from '../study/offlin
 import { setStudySession } from '../study/runtime';
 import { showDashboard } from '../study/dashboard';
 import { preloadAssignedLevels } from '../study/participantPreload';
+import { friendlyLoginError } from '../study/loginErrors';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.WEBGL, width: 1920, height: 1080,
@@ -54,7 +55,7 @@ function promptLogin() {
   showInput.onchange = () => { password.type = showInput.checked ? 'text' : 'password'; };
   const error = el(wrapper, 'p'); error.className = 'study-login-error'; error.setAttribute('role', 'alert');
   const loading = el(wrapper, 'p'); loading.className = 'study-login-progress'; loading.setAttribute('role', 'status');
-  const button = el(wrapper, 'button', 'Login'); button.type = 'button';
+  const button = el(wrapper, 'button', 'Login'); button.type = 'button'; button.className = 'study-login-submit';
   button.onclick = async () => {
     button.disabled = true; error.textContent = ''; loading.textContent = ''; 
     try {
@@ -77,9 +78,7 @@ function promptLogin() {
           startGame();
         }
       }
-    } catch (reason) { error.textContent = (reason && typeof reason === 'object' && 'code' in reason &&
-      (reason as { code?: string }).code === 'auth/user-disabled') ? 'Account disabled by admin.' :
-      reason instanceof Error ? reason.message : String(reason); }
+    } catch (reason) { error.textContent = friendlyLoginError(reason); }
     finally { loading.textContent = ''; button.disabled = false; }
   };
   for (const input of [username, password]) input.addEventListener('keydown', event => {
@@ -90,9 +89,7 @@ function promptLogin() {
     const input = el(wrapper, 'input'); input.type = 'file'; input.accept = '.json,.pizzicato-study.json'; input.className = 'study-login-file';
     input.onchange = async () => {
       try { if (!input.files?.[0]) return; importOfflinePack(JSON.parse(await input.files[0].text())); promptLogin(); }
-      catch (reason) { error.textContent = (reason && typeof reason === 'object' && 'code' in reason &&
-      (reason as { code?: string }).code === 'auth/user-disabled') ? 'Account disabled by admin.' :
-      reason instanceof Error ? reason.message : String(reason); }
+      catch (reason) { error.textContent = friendlyLoginError(reason); }
     };
   }
   if (deployment.allowGuest) {

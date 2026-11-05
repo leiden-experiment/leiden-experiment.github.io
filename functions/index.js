@@ -178,12 +178,18 @@ exports.getDashboardSnapshot = onCall(options, async req => {
   const studies = ids.map(id => ({ id, ...index[id] }));
   const settings = {}, accounts = {}, progress = {};
   await Promise.all(ids.map(async studyId => {
-    const [settingsSnap, memberSnap, progressSnap] = await Promise.all([
-      db.ref(`studies/${studyId}/settings`).get(),
+    const [studySnap, memberSnap, progressSnap] = await Promise.all([
+      db.ref(`studies/${studyId}`).get(),
       db.ref(`studyMembers/${studyId}`).get(),
       db.ref(`progress/${studyId}`).get()
     ]);
-    if (settingsSnap.exists()) settings[studyId] = { ...settingsSnap.val(), weeks: effectiveWeeks(settingsSnap.val().weeks) };
+    const studyRecord = studySnap.val() || {};
+    if (studyRecord.settings) settings[studyId] = { ...studyRecord.settings, weeks: effectiveWeeks(studyRecord.settings.weeks) };
+    // The index is a convenience summary and can lag behind the transactional
+    // study record. Always send the actual revision used by saveStudy, or a
+    // researcher will receive a false "changed in another session" error.
+    const summary = studies.find(study => study.id === studyId);
+    if (summary) summary.revision = Number(studyRecord.revision || 0);
     const memberIds = Object.keys(memberSnap.val() || {});
     if (memberIds.length > 1000) fail('Too many study members for a single snapshot', 'resource-exhausted');
     accounts[studyId] = (await Promise.all(memberIds.map(uid => db.ref(`accounts/${uid}`).get())))
@@ -205,14 +211,41 @@ exports.refreshStudyProgress = onCall(options, async req => {
 exports.getStudySettings = onCall(options, async req => {
   const account = await profile(req); const { studyId } = req.data || {};
   if (!idValid(studyId)) fail('Invalid study ID'); requireResearcher(account, studyId);
-  const [s, i] = await Promise.all([db.ref(`studies/${studyId}/settings`).get(), db.ref(`studyIndex/${studyId}`).get()]);
-  if (!s.exists()) fail('Study not found', 'not-found');
-  return { settings: { ...s.val(), weeks: effectiveWeeks(s.val().weeks) },
+  const [s, i] = await Promise.all([db.ref(`studies/${studyId}`).get(), db.ref(`studyIndex/${studyId}`).get()]);
+  if (!s.val()?.settings) fail('Study not found', 'not-found');
+  return { settings: { ...s.val().settings, weeks: effectiveWeeks(s.val().settings.weeks) },
+    revision: Number(s.val().revision || 0),
     databaseURL: account.role === 'admin' ? i.val()?.databaseURL : undefined };
 });
+/** Canonicalize study settings before comparing a researcher's loaded version with
+ * the current record. Firebase RTDB may represent week-number objects as arrays
+ * and omit empty configuration objects; those changes do not represent edits.
+ */
+function studySettingsComparable(settings) {
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return null;
+  return {
+    ...settings,
+    weeks: effectiveWeeks(settings.weeks),
+    description: settings.description || '',
+    endDate: settings.endDate || '',
+    defaultConfig: settings.defaultConfig || {},
+    groupConfigs: settings.groupConfigs || {}
+  };
+}
+function stableStudyJSON(value) {
+  if (Array.isArray(value)) return '[' + value.map(stableStudyJSON).join(',') + ']';
+  if (value && typeof value === 'object') return '{' + Object.keys(value)
+    .filter(key => value[key] !== undefined && value[key] !== null).sort()
+    .map(key => JSON.stringify(key) + ':' + stableStudyJSON(value[key])).join(',') + '}';
+  return JSON.stringify(value);
+}
+function sameStudySettings(a, b) {
+  const left = studySettingsComparable(a), right = studySettingsComparable(b);
+  return left !== null && right !== null && stableStudyJSON(left) === stableStudyJSON(right);
+}
 exports.saveStudy = onCall(options, async req => {
   const account = await profile(req); requireAdmin(account);
-  const { id, settings, databaseURL, confirmClearTimeline, expectedRevision } = req.data || {};
+  const { id, settings, databaseURL, confirmClearTimeline, expectedRevision, originalSettings, originalDatabaseURL } = req.data || {};
   if (!idValid(id)) fail('Study ID must be 1–64 letters, digits, underscores or hyphens');
   if (!Number.isInteger(expectedRevision) || expectedRevision < 0) fail('Study revision required. Refresh your dashboard.', 'failed-precondition');
   validateSettings(settings);
@@ -223,23 +256,46 @@ exports.saveStudy = onCall(options, async req => {
     catch { fail('Cannot write to linked database; grant the Functions service account access', 'failed-precondition'); }
   }
   let abortedForClearing = false;
-  // A transaction is needed even if only one admin is expected: a second browser
-  // tab or an old edit form must not silently overwrite a newer configuration.
-  const transaction = await db.ref(`studies/${id}`).transaction(current => {
-    const revision = Number(current?.revision || 0);
-    if (revision !== expectedRevision) return;
-    const oldWeeks = effectiveWeeks(current?.settings?.weeks);
+  const studyRef = db.ref(`studies/${id}`);
+  // Read the authoritative study record rather than relying on the index.
+  // The RTDB SDK can invoke transaction() initially with null even when the
+  // server already contains a study (its local transaction cache is empty).
+  // Returning undefined on that first callback used to abort *every edit*.
+  const existing = (await studyRef.get()).val();
+  const currentRevision = Number(existing?.revision || 0);
+  let acceptedRevision = expectedRevision;
+  if (currentRevision !== expectedRevision) {
+    // If a cached revision is stale but the study itself has not changed,
+    // reconcile to the authoritative revision. A genuinely changed study or
+    // results database still requires the researcher to reload their edits.
+    const storedLink = ((await db.ref(`studyIndex/${id}`).get()).val()?.databaseURL || '').trim();
+    if (!originalSettings || !sameStudySettings(existing?.settings, originalSettings) ||
+        storedLink !== String(originalDatabaseURL || '').trim()) {
+      fail('This study has newer changes. Reload the dashboard before saving; your unsaved edits were not overwritten.', 'aborted');
+    }
+    acceptedRevision = currentRevision;
+  }
+  // The SDK verifies the local hash against the server. If the initial callback
+  // sees null, use the fresh server-read record to construct a provisional
+  // update. On a genuine concurrent change, Firebase rejects that hash and
+  // invokes this callback again with the latest server value; the revision
+  // check then prevents overwriting the other researcher's edits.
+  const transaction = await studyRef.transaction(current => {
+    const source = current == null && existing != null ? existing : current;
+    const revision = Number(source?.revision || 0);
+    if (revision !== acceptedRevision) return;
+    const oldWeeks = effectiveWeeks(source?.settings?.weeks);
     const previousSlides = Object.values(oldWeeks).reduce((n, slides) => n + slides.length, 0);
     const newSlides = Object.values(weeks).reduce((n, slides) => n + slides.length, 0);
     if (previousSlides > 0 && newSlides === 0 && confirmClearTimeline !== true) {
       abortedForClearing = true; return;
     }
     abortedForClearing = false;
-    return { ...(current || {}), settings: { ...settings, weeks }, revision: revision + 1 };
+    return { ...(source || {}), settings: { ...settings, weeks }, revision: revision + 1 };
   }, undefined, false);
   if (!transaction.committed) {
     if (abortedForClearing) fail('This save would remove every slide. Confirm clearing the timeline.', 'failed-precondition');
-    fail('This study changed in another session. Your edits were not overwritten; sign in again to refresh before saving.', 'aborted');
+    fail('This study has newer changes. Reload the dashboard before saving; your unsaved edits were not overwritten.', 'aborted');
   }
   const revision = transaction.snapshot.val().revision;
   await db.ref(`studyIndex/${id}`).set({ title: settings.title, enabled: !!settings.enabled, databaseURL: url || '', revision });

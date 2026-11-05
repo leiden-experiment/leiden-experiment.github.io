@@ -415,3 +415,47 @@
   .study-admin-dashboard .study-choice-editor > .study-field:nth-of-type(3) { grid-column:1; }
   .study-admin-dashboard .study-choice-remove { grid-column:2; }
 }
+
+/* Study groups: compact delete action in the top-right of each group card. */
+.study-admin-dashboard .study-group-heading {
+  display:flex; align-items:flex-start; justify-content:space-between;
+  gap:12px; width:100%; min-width:0;
+}
+.study-admin-dashboard .study-group-heading > .study-field {
+  flex:1 1 auto; min-width:0;
+}
+.study-admin-dashboard .study-group-heading > .study-group-remove {
+  flex:0 0 35px; align-self:flex-start; display:inline-flex;
+  align-items:center; justify-content:center; height:35px!important;
+  min-height:35px!important; margin-top:0; box-sizing:border-box;
+}
+
+/* Bundled levels have three discrete tempos (90, 115, 130 BPM). */
+.study-admin-dashboard .study-bundled-bpm-slider .study-bpm-heading { min-height:22px; }
+.study-admin-dashboard .study-bundled-bpm-slider input[type=range] { cursor:pointer; }
+
+/* v1.8.12: give the empty Studies state breathing room without altering populated rows. */
+.study-admin-dashboard .study-empty-studies { padding-bottom:18px; }
+/* Research login keeps its green identity without glowing text or buttons. */
+.study-shell.study-login .study-login-card h1 {
+  color:#33ff66!important;
+  text-shadow:none!important;
+}
+.study-shell.study-login .study-login-card button.study-login-submit,
+.study-shell.study-login .study-login-card button.study-login-submit:focus {
+  background:#167a35!important;
+  border-color:#299549!important;
+  color:#fff!important;
+  box-shadow:none!important;
+  text-shadow:none!important;
+}
+.study-shell.study-login .study-login-card button.study-login-submit:hover:not(:disabled) {
+  background:#209b46!important;
+  border-color:#37b85b!important;
+  box-shadow:none!important;
+  text-shadow:none!important;
+}
+.study-shell.study-login .study-login-card button.study-login-submit:focus-visible {
+  outline:2px solid #8ee6a3;
+  outline-offset:2px;
+}

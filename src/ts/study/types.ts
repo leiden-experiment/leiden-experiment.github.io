@@ -106,9 +106,9 @@ export function defaultStudySettings(title = 'New study'): StudySettings {
     startDate: new Date().toISOString().slice(0, 10), maxSessionsPerWeek: 3, enabled: true,
     weeks: { '1': [
       { type: 'start', text: 'Welcome! When you are ready, press Continue.' },
-      { type: 'level', levelId: 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 3 },
+      { type: 'level', levelId: 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 1 },
       { type: 'break', text: 'Take a short break. Press Continue when ready.' },
-      { type: 'level', levelId: 'legacy:Birthday Vibes', bpmIndex: 0, loops: 3 },
+      { type: 'level', levelId: 'legacy:Birthday Vibes', bpmIndex: 0, loops: 1 },
       { type: 'end', text: 'Thanks for playing! Come back for your next session.' },
     ] },
   };

@@ -24,9 +24,9 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
   };
   const trigger = () => changed(JSON.parse(JSON.stringify(weeks)));
   const placeholder = (kind: 'start' | 'level' | 'selection' | 'break' | 'end'): StudyStep => kind === 'selection'
-    ? { type: 'selection', text: 'Choose a level to play.', choices: [{ type: 'level', levelId: 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 3 }], unlock: 'all', playthroughs: 3 }
+    ? { type: 'selection', text: 'Choose a level to play.', choices: [{ type: 'level', levelId: 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 1 }], unlock: 'all', playthroughs: 3 }
     : kind === 'level'
-    ? { type: 'level', levelId: 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 3 }
+    ? { type: 'level', levelId: 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 1 }
     : { type: kind, text: kind === 'start' ? 'Welcome! Press Continue when ready.' :
       kind === 'break' ? 'Take a break. Press Continue when ready to play again.' :
         'Thanks for playing! Please come back for your next session.' };
@@ -66,6 +66,30 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
     reset.classList.add('study-bpm-reset');
     reset.title = `Restore the level's original tempo (${original} BPM)`;
   }
+  /** Bundled levels have three actual tempo files, not an arbitrary numeric BPM range.
+   * Keep bpmIndex in the saved format, but show the three real authored BPMs.
+   */
+  function bundledTempoSlider(into: HTMLElement, assignment: { bpmIndex: number }) {
+    const tempos = [90, 115, 130] as const;
+    const wrap = make('div', into); wrap.className = 'study-field study-bpm-slider study-bundled-bpm-slider';
+    const heading = make('div', wrap); heading.className = 'study-bpm-heading';
+    const label = make('span', heading);
+    const range = make('input', wrap);
+    range.type = 'range'; range.min = '0'; range.max = '2'; range.step = '1';
+    const initialIndex = Math.min(2, Math.max(0, Number.isInteger(assignment.bpmIndex) ? assignment.bpmIndex : 0));
+    // Older UI versions allowed unavailable values (3–8). Repair them when
+    // editing so saving an older study cannot retain a non-existent tempo.
+    if (assignment.bpmIndex !== initialIndex) { assignment.bpmIndex = initialIndex; trigger(); }
+    range.value = String(initialIndex);
+    range.title = 'Choose one of the three tempos available for bundled levels: 90, 115 or 130 BPM.';
+    range.setAttribute('aria-label', 'Bundled level tempo');
+    label.textContent = `BPM: ${tempos[initialIndex]}`;
+    range.addEventListener('input', () => {
+      assignment.bpmIndex = Number(range.value);
+      label.textContent = `BPM: ${tempos[assignment.bpmIndex]}`;
+      trigger();
+    });
+  }
   function edit() {
     editor.replaceChildren();
     if (!selected) { editor.hidden = true; return; }
@@ -73,7 +97,7 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
     const { week, index } = selected;
     const step = weeks[week]?.[index]; if (!step) { selected = null; return edit(); }
     make('h3', editor, `${week === '0' ? 'Pretest' : week === '-1' ? 'Posttest' : `Week ${week}`} · Slide ${index + 1}`);
-    make('p', editor, isLevelStep(step) ? 'Select which level to play, its difficulty, and how many loops to complete.' : 'This screen appears until the participant presses Continue.');
+    make('p', editor, isLevelStep(step) ? 'Select which level to play, its difficulty, and how many loops to complete.' : step.type === 'end' ? 'Shows the final thank-you message and automatically records session completion; there is no Continue button.' : isSelectionStep(step) ? 'Participants select an unlocked level to play.' : 'This screen appears until the participant presses Continue.');
     function item(label: string, value: string, change: (value: string) => void, help: string, multiline = false) {
       const wrap = make('label', editor); wrap.className = 'study-field';
       make('span', wrap, label); wrap.title = help;
@@ -90,7 +114,7 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
       select.value = availableLevels.some(l => l.id === step.levelId) ? step.levelId : '';
       select.onchange = () => { if (!select.value) return; step.levelId = select.value; delete step.bpm; step.bpmIndex = 0; trigger(); render(); };
       if (!select.value) item('Existing level ID', step.levelId, value => { step.levelId = value; }, 'Keeps previously assigned levels available even if they are not currently listed.');
-      if (step.levelId.startsWith('legacy:')) item('Difficulty / BPM option', String(step.bpmIndex), value => { step.bpmIndex = Number(value); }, '0 selects the first speed. Higher numbers select later speed options.');
+      if (step.levelId.startsWith('legacy:')) bundledTempoSlider(editor, step);
       else { step.bpmIndex = 0; tempoSlider(editor, step); }
       item('Number of loops', String(step.loops), value => { step.loops = Number(value); }, 'Loops to play before this slide completes.');
     } else if (isSelectionStep(step)) {
@@ -118,9 +142,7 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
         picker.value = choice.levelId;
         picker.onchange = () => { choice.levelId = picker.value; choice.bpmIndex = 0; delete choice.bpm; trigger(); render(); };
         if (choice.levelId.startsWith('legacy:')) {
-          const difficulty = make('label', row); difficulty.className = 'study-field'; make('span', difficulty, 'BPM option');
-          const bpm = make('input', difficulty); bpm.type = 'number'; bpm.min = '0'; bpm.max = '8'; bpm.step = '1'; bpm.value = String(choice.bpmIndex);
-          bpm.onchange = () => { choice.bpmIndex = Number(bpm.value); trigger(); };
+          bundledTempoSlider(row, choice);
         } else { choice.bpmIndex = 0; tempoSlider(row, choice); }
         const count = make('label', row); count.className = 'study-field'; make('span', count, 'Loops');
         const loops = make('input', count); loops.type = 'number'; loops.min = '1'; loops.max = '100'; loops.step = '1'; loops.value = String(choice.loops);
@@ -136,7 +158,7 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
       });
       const addChoice = button(editor, '+ Add selectable level', () => {
         if (step.choices.length >= 9) return;
-        step.choices.push({ type: 'level', levelId: availableLevels[0]?.id || 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 3 });
+        step.choices.push({ type: 'level', levelId: availableLevels[0]?.id || 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 1 });
         trigger(); render();
       }, 'add');
       addChoice.disabled = step.choices.length >= 9;
@@ -220,7 +242,7 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
         remove.classList.add('study-slide-delete'); remove.title = 'Delete this slide'; remove.setAttribute('aria-label', 'Delete this slide');
         remove.onclick = event => { event.stopPropagation(); if (!confirm(`Delete slide ${index + 1}?`)) return; weeks[week].splice(index, 1); selected = null; trigger(); render(); };
         make('strong', tile, isLevelStep(step) ? availableLevels.find(l => l.id === step.levelId)?.name || step.levelId : isSelectionStep(step) ? `Choose between ${step.choices.length} levels` : step.text.slice(0, 85) || '(empty message)');
-        if (isLevelStep(step)) make('small', tile, `${step.levelId.startsWith('legacy:') ? `BPM option ${step.bpmIndex} · ` : ''}${step.loops} loops`);
+        if (isLevelStep(step)) make('small', tile, `${step.levelId.startsWith('legacy:') ? `BPM ${[90, 115, 130][Math.min(2, Math.max(0, step.bpmIndex))]} · ` : ''}${step.loops} loops`);
         if (isSelectionStep(step)) make('small', tile, `${step.playthroughs === 0 ? 'Free play' : `${step.playthroughs} plays`} · ${step.unlock}`);
         tile.addEventListener('click', () => { selected = { week, index }; render(); });
         tile.addEventListener('keydown', e => {

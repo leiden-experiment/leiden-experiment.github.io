@@ -39,6 +39,26 @@ export default class StudySessionScene extends HandScene {
       'Session complete! Thank you for playing.';
     this.add.text(this.center.x, 430, message, { font: '31px Courier New', color: '#ffffff', align: 'center', wordWrap: { width: 1500 } }).setOrigin(.5);
     this.status = this.add.text(this.center.x, 620, '', { font: '25px Courier New', color: '#ffd676', align: 'center', wordWrap: { width: 1500 } }).setOrigin(.5);
+    if (step?.type === 'end' && plan && !plan.capped && !hasJustFinishedSession()) {
+      // The End slide is terminal. Record a fully completed session as soon
+      // as it is shown; don't require another, confusing Continue click.
+      this.status.setText('Saving session completion…');
+      const finish = async () => {
+        try {
+          await advanceScreenStep(step);
+          this.status.setText('Session completed. You may close this page.');
+        } catch (error) {
+          this.status.setText('Could not confirm session completion. Please retry.');
+          const retry = new Button(this, 'RETRY SAVE', this.center.x, 810, () => {
+            retry.setVisible(false); retry.text?.setVisible(false);
+            void finish();
+          });
+          retry.setScale(.65);
+        }
+      };
+      void finish();
+      return;
+    }
     if (plan && !plan.capped && !hasJustFinishedSession() && step) {
       if (isLevelStep(step)) {
         new Button(this, 'PLAY\nLEVEL', this.center.x + 300, 810, () => { void this.playLevel(); });
@@ -51,7 +71,7 @@ export default class StudySessionScene extends HandScene {
         // Keep all labels within their buttons without overlapping the Finish action.
         const columns = Math.min(3, selectable.length);
         const rows = Math.ceil(selectable.length / columns);
-        const scale = rows === 1 ? .83 : rows === 2 ? .64 : .52;
+        const scale = selectable.length === 1 ? 1.08 : rows === 1 ? .83 : rows === 2 ? .64 : .52;
         const rowSpacing = rows === 1 ? 0 : rows === 2 ? 155 : 115;
         const firstY = rows === 1 ? 795 : rows === 2 ? 735 : 695;
         selectable.forEach(({ choice, i }, pos) => {
@@ -64,7 +84,7 @@ export default class StudySessionScene extends HandScene {
             () => { void this.playLevel(choice, i, plays); });
           button.setScale(scale);
           // Phaser's button label is a separate object, so scale it independently.
-          button.text?.setFontSize(rows === 1 ? 35 : rows === 2 ? 29 : 24);
+          button.text?.setFontSize(selectable.length === 1 ? 39 : rows === 1 ? 35 : rows === 2 ? 29 : 24);
           button.text?.setWordWrapWidth(button.displayWidth * .88, true);
           button.text?.setMaxLines(3);
         });
@@ -80,7 +100,7 @@ export default class StudySessionScene extends HandScene {
           finish.text?.setFontSize(25);
         }
       } else {
-        const buttonText = step.type === 'end' ? 'FINISH\nSESSION' : step.type === 'break' ? 'RESUME\nPLAYING' : 'CONTINUE';
+        const buttonText = step.type === 'break' ? 'RESUME\nPLAYING' : 'CONTINUE';
         let busy = false;
         new Button(this, buttonText, step.type === 'start' ? this.center.x + 300 : this.center.x, 810, () => {
           if (busy) return; busy = true;
@@ -102,7 +122,13 @@ export default class StudySessionScene extends HandScene {
       return levels.find(level => level.trackKey === id)?.track.data.displayName || id;
     }
     if (kind === 'library') {
-      return publishedLevels[id]?.displayName || id;
+      // Published JSON is stored as unknown until its shape is checked. A
+      // missing/malformed level should show its identifier, not crash or fail
+      // the strict TypeScript build.
+      const published = publishedLevels[id];
+      return published && typeof published === 'object' && 'displayName' in published &&
+        typeof published.displayName === 'string' && published.displayName.trim()
+        ? published.displayName : id;
     }
     if (kind === 'uploaded') {
       const track = UploadedLevelManager.loadLevelData(id) as TrackData | null;

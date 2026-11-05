@@ -11,6 +11,7 @@ function clone(value) { return value === undefined ? undefined : JSON.parse(JSON
 function database() {
   const store = {};
   let failDelivery = false;
+  let coldTransactionOnce = false;
   function at(path) { const keys = path.split('/').filter(Boolean); return keys.reduce((item, key) => item?.[key], store); }
   function put(path, value) {
     const keys = path.split('/').filter(Boolean);
@@ -29,13 +30,20 @@ function database() {
     update: async changes => { for (const [key,value] of Object.entries(changes)) put([path,key].filter(Boolean).join('/'),value); },
     transaction: async updater => {
       if (failDelivery && path.includes('results/')) throw Error('Destination unavailable');
+      // Real RTDB transactions may invoke the callback with null before the
+      // already-existing remote record has populated their local cache.
+      if (coldTransactionOnce && path.startsWith('studies/') && at(path)) {
+        coldTransactionOnce = false;
+        const optimistic = updater(null);
+        if (optimistic === undefined) return { committed:false, snapshot:{ val: () => clone(at(path)) } };
+      }
       const next = updater(clone(at(path)));
       if (next === undefined) return { committed:false, snapshot:{ val: () => clone(at(path)) } };
       put(path,next);
       return { committed:true, snapshot:{ val: () => clone(at(path)) } };
     }
   }; }
-  return { ref:reference, store, setFailDelivery:value=> { failDelivery=value; } };
+  return { ref:reference, store, setFailDelivery:value=> { failDelivery=value; }, setColdTransactionOnce:value=> { coldTransactionOnce=value; } };
 }
 const central=database();
 const studyDatabase=database();
@@ -112,7 +120,77 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   // A stale editor must not overwrite a newer study configuration.
   await assert.rejects(originalSaveStudy(request('admin-one', {
     id: 'emptytest', expectedRevision: 0, settings: { ...settings, title: 'Stale version' }
-  })), /changed in another session/);
+  })), /newer changes|changed in another session/);
+
+  // Reproduce the user's false conflict: an old/lagging studyIndex revision
+  // differs from the version on the actual transactional study record.
+  const actualRevision = (await central.ref('studies/emptytest/revision').get()).val();
+  await central.ref('studyIndex/emptytest/revision').set(0);
+  const corrected = await api.getDashboardSnapshot(request('admin-one'));
+  const observedRevision = corrected.studies.find(study => study.id === 'emptytest').revision;
+  assert.equal(observedRevision, actualRevision, 'snapshot must expose real study revision, not stale index version');
+  central.setColdTransactionOnce(true);
+  const edited = await originalSaveStudy(request('admin-one', {
+    id: 'emptytest', expectedRevision: observedRevision, settings: {...settings, title: 'Edited using live revision', weeks: null}
+  }));
+  assert.equal(central.store.studies.emptytest.settings.title, 'Edited using live revision',
+    'RTDB transaction must not abort when its first callback receives null for an existing study');
+  assert.equal(edited.revision, actualRevision + 1, 'normal save must work after index revision diverges');
+
+  // Regression: cache/index revision can be stale even though the researcher
+  // is editing the identical study settings they originally downloaded.
+  // Accept that harmless mismatch, never a genuinely changed study.
+  const unchangedBaseline = clone(central.store.studies.emptytest.settings);
+  const outdatedRevision = edited.revision - 1;
+  const reconciled = await originalSaveStudy(request('admin-one', {
+    id: 'emptytest', expectedRevision: outdatedRevision,
+    originalSettings: unchangedBaseline, originalDatabaseURL: '',
+    settings: {...unchangedBaseline, title: 'Selection level updated', weeks: null}
+  }));
+  assert.equal(reconciled.revision, edited.revision + 1,
+    'unchanged baseline should reconcile a stale cached revision');
+  assert.equal(central.store.studies.emptytest.settings.title, 'Selection level updated');
+  await assert.rejects(originalSaveStudy(request('admin-one', {
+    id: 'emptytest', expectedRevision: outdatedRevision,
+    originalSettings: {...unchangedBaseline, title: 'A different researcher modified this'},
+    originalDatabaseURL: '',
+    settings: {...unchangedBaseline, title: 'Would overwrite another researcher'}
+  })), /newer changes/, 'stale edits must never overwrite genuinely changed settings');
+  // Also reject stale edits if the linked results database was changed.
+  await central.ref('studyIndex/emptytest/databaseURL').set('https://other-study.firebaseio.com');
+  await assert.rejects(originalSaveStudy(request('admin-one', {
+    id: 'emptytest', expectedRevision: outdatedRevision,
+    originalSettings: clone(central.store.studies.emptytest.settings), originalDatabaseURL: '',
+    settings: clone(central.store.studies.emptytest.settings)
+  })), /newer changes/, 'a changed results database is a genuine edit conflict');
+  await central.ref('studyIndex/emptytest/databaseURL').set('');
+
+  // Reproduce the exact reported action: edit a choice in an existing level
+  // selection slide and save from a dashboard with an old index revision.
+  const selectionSettings = {...settings, title:'Selection study', weeks:{1:[
+    {type:'start',text:'Welcome'},
+    {type:'selection',text:'Pick a song',unlock:'all',playthroughs:1, choices:[
+      {type:'level',levelId:'legacy:Cheerful Bliss',bpmIndex:0,loops:1},
+      {type:'level',levelId:'legacy:Trained',bpmIndex:0,loops:1}
+    ]},
+    {type:'end',text:'Thanks'}
+  ]}};
+  await central.ref('studies/choiceedit').set({settings:selectionSettings, revision:4});
+  await central.ref('studyIndex/choiceedit').set({title:'Selection study', revision:2, databaseURL:''});
+  const selectionBaseline=clone(selectionSettings);
+  const editedSelection=clone(selectionSettings);
+  editedSelection.weeks[1][1].choices[0].levelId='legacy:Birthday Vibes';
+  const afterSelectionSave=await originalSaveStudy(request('admin-one', {
+    id:'choiceedit', expectedRevision:2, originalSettings:selectionBaseline,
+    originalDatabaseURL:'', settings:editedSelection
+  }));
+  assert.equal(afterSelectionSave.revision,5);
+  assert.equal(central.store.studies.choiceedit.settings.weeks[1][1].choices[0].levelId,
+    'legacy:Birthday Vibes', 'editing one selected level must save instead of raising a false conflict');
+  await assert.rejects(originalSaveStudy(request('admin-one', {
+    id:'choiceedit', expectedRevision:2, originalSettings:selectionBaseline,
+    originalDatabaseURL:'', settings:{...selectionBaseline,title:'Should fail'}
+  })),/newer changes/, 'stale choice edits must not overwrite a genuinely changed study');
 
   const emptySaved = await api.getStudySettings(request('admin-one',{studyId:'emptytest'}));
   assert.deepEqual(JSON.parse(JSON.stringify(emptySaved.settings.weeks)), {'1':[]});

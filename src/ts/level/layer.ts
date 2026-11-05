@@ -55,6 +55,10 @@ export class PlayableLayer extends Layer {
   private nextNodeIndex: number = 0;
   private songTime_: number = 0;
   private oldTimePosition: number = 0;
+  // Track every frame across the musical wrap, even when no nodes remain queued.
+  // Otherwise, after the last node is spawned, returning early freezes this
+  // position and later loops may never spawn any targets again.
+  private lastLoopExitChecked: boolean = false;
   private startTime: number = 0;
   private time: number = 0;
   private ready: boolean = false;
@@ -89,6 +93,7 @@ export class PlayableLayer extends Layer {
     this.startTime = this.time + delay;
     this.nextNodeIndex = 0;
     this.oldTimePosition = 0;
+    this.lastLoopExitChecked = false;
 
     const barCount = Math.max(this.data.previewTime.bar, 1);
 
@@ -225,75 +230,64 @@ export class PlayableLayer extends Layer {
   }
 
   private checkForTransition(layerIndex: number, nodeIndex: number) {
-    if (
-      // Last node is being destroyed (by hit or miss).
-      nodeIndex == this.data.nodes.length - 1 &&
-      // TODO: Find a better way to do this.
-      // Check that layer has not been skipped.
-      this.level.activeLayerIndex == layerIndex
-    ) {
-      // Transition if auto skip is enabled, and the desired loop-count has been reached,
-      // or if the player's progress is sufficient
-      if (
-        (config.skipLayersAutomatically &&
-          this.level.score.getLoopCount() >=
-            config.skipLayersAutomaticallyAfterLoop) ||
-        (this.progress.canProgress() && !config.disableLayerProgression)
-      ) {
-        // Enough progress, transition to next layer / end scene.
-        this.level.transitionLayers();
-      } else {
-        // Not enough progress, increment loop counter.
-        this.level.score.incrementLoopCount();
-        this.progress.setToStarting();
-        this.infoHud.updateLoopText();
+    // The final target and the musical loop boundary may occur in different
+    // frames. Always ignore callbacks left over from a completed layer.
+    if (!this.ready || this.level.activeLayerIndex !== layerIndex) return;
 
-        if (config.autoSaveCSV) {
-          autoSaveToCSV(this.level.score.levelStats);
-        }
-      }
+    // Meeting the required progression count is sufficient, even if there
+    // are still targets later in the same loop.
+    if (!config.disableLayerProgression && this.progress.canProgress()) {
+      this.level.transitionLayers();
+      return;
     }
+
+    if (nodeIndex !== this.data.nodes.length - 1) return;
+
+    // The UI's loop limit is inclusive: with a limit of 3, finish after the
+    // third playback whether or not the progression threshold was reached.
+    if (config.skipLayersAutomatically &&
+        this.level.score.getLoopCount() >= config.skipLayersAutomaticallyAfterLoop) {
+      this.level.transitionLayers();
+      return;
+    }
+
+    this.level.score.incrementLoopCount();
+    this.progress.setToStarting();
+    this.infoHud.updateLoopText();
+    if (config.autoSaveCSV) autoSaveToCSV(this.level.score.levelStats);
   }
 
   /**
    * Handles spawning nodes, it will spawn those that would happen soon according to the previewtime set in the layer.
    */
   private handleTargetCreation() {
-    if (!this.ready) return;
+    if (!this.ready || !this.data.nodes.length) return;
 
     const layerTime = this.getDuration();
+    if (!(layerTime > 0)) return;
+    const previewTime = this.songTime_ + this.getPreviewTime();
+    const loopPreviewTime = this.songTime_ > 0
+      ? ((previewTime % layerTime) + layerTime) % layerTime
+      : previewTime;
+    const wrapped = this.songTime_ > 0 && loopPreviewTime < this.oldTimePosition;
 
-    let previewTime = this.songTime_ + this.getPreviewTime();
-    if (this.songTime_ > 0) {
-      previewTime %= layerTime;
-    }
-
-    if (this.data.nodes.length <= this.nextNodeIndex) {
-      if (previewTime < this.oldTimePosition) {
-        this.nextNodeIndex = 0;
-      } else {
-        return;
-      }
-    }
+    // Critical: update this on EVERY frame. Previously the function returned
+    // when nextNodeIndex reached nodes.length, freezing oldTimePosition and
+    // sometimes missing the next wrap. The backing audio then ran forever.
+    this.oldTimePosition = loopPreviewTime;
+    if (wrapped) this.nextNodeIndex = 0;
+    if (this.nextNodeIndex >= this.data.nodes.length) return;
 
     const nextNode = this.data.nodes[this.nextNodeIndex];
-
-    // Calculate the time position of the next node in terms of the looped layer time
     const nextNodeLoopTime =
-      this.level.track.songTimePositionToTime(nextNode.timePosition) %
-      layerTime;
-
-    if (nextNodeLoopTime <= previewTime) {
-      if ((nextNode as TrackPinchNode).finger != undefined) {
-        this.createTarget(
-          nextNode as TrackPinchNode,
-          this.level.activeLayerIndex,
-          this.nextNodeIndex,
-        );
+      this.level.track.songTimePositionToTime(nextNode.timePosition) % layerTime;
+    if (nextNodeLoopTime <= loopPreviewTime) {
+      if ((nextNode as TrackPinchNode).finger !== undefined) {
+        this.createTarget(nextNode as TrackPinchNode,
+          this.level.activeLayerIndex, this.nextNodeIndex);
       }
       this.nextNodeIndex++;
     }
-    this.oldTimePosition = previewTime;
   }
 
   public preDelayStop() {
@@ -316,6 +310,15 @@ export class PlayableLayer extends Layer {
     this.time = time;
     this.songTime_ = this.ready ? this.time - this.startTime : 0;
     this.handleTargetCreation();
+    // A safety net for a dropped target/miss callback at the end of the final
+    // loop. No additional targets are needed to end a capped study level.
+    // Allow the final note's late window to finish before advancing.
+    if (this.ready && !this.lastLoopExitChecked && config.skipLayersAutomatically &&
+        this.songTime_ >= this.getDuration() * Math.max(1, config.skipLayersAutomaticallyAfterLoop) +
+          Math.max(500, config.lateTimeDuration)) {
+      this.lastLoopExitChecked = true;
+      this.level.transitionLayers();
+    }
   }
 
   public getPreviewTime(): number {

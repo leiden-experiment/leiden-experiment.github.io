@@ -25,6 +25,6 @@ assert(preload.includes('levels[id].displayName = level.name.trim()'));
 assert(text('src/ts/level/infoHud.ts').includes('this.trackText.setWordWrapWidth'));
 assert(text('functions/index.js').includes('await usernameAlreadyUsedMessage(name)'));
 assert(text('functions/index.js').includes('studyIndex/${account.studyId}'));
-assert.equal(JSON.parse(text('package.json')).version,'1.8.7');
-assert.equal(JSON.parse(text('package-lock.json')).version,'1.8.7');
+assert(/^1\.8\.(?:[7-9]|[1-9]\d+)$/.test(JSON.parse(text('package.json')).version));
+assert.equal(JSON.parse(text('package-lock.json')).version,JSON.parse(text('package.json')).version);
 console.log('PASS: login layout, same-row BPM with exact reset, nine-choice limits, named level buttons, HUD wrap, study-specific duplicate message');
