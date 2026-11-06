@@ -22,6 +22,7 @@ import {
   targetHitOnTimeStreakImpact,
   targetMissProgressImpact,
   targetSkipProgressImpact,
+  targetDeathDuration,
 } from '../core/config';
 
 export class Layer {
@@ -53,12 +54,12 @@ export class PlayableLayer extends Layer {
   private metronome: Metronome;
 
   private nextNodeIndex: number = 0;
+  private cachedCompletionGrace: number | null = null;
   private songTime_: number = 0;
   private oldTimePosition: number = 0;
   // Track every frame across the musical wrap, even when no nodes remain queued.
   // Otherwise, after the last node is spawned, returning early freezes this
   // position and later loops may never spawn any targets again.
-  private lastLoopExitChecked: boolean = false;
   private startTime: number = 0;
   private time: number = 0;
   private ready: boolean = false;
@@ -90,10 +91,12 @@ export class PlayableLayer extends Layer {
     this.level.score.delay = delay;
 
     this.ready = true;
-    this.startTime = this.time + delay;
+    // Phaser update(time) is an absolute game-clock timestamp. A level can
+    // launch long after login, before this layer has ever received an update.
+    this.startTime = (this.scene.time.now || this.time) + delay;
     this.nextNodeIndex = 0;
     this.oldTimePosition = 0;
-    this.lastLoopExitChecked = false;
+    this.cachedCompletionGrace = null;
 
     const barCount = Math.max(this.data.previewTime.bar, 1);
 
@@ -125,7 +128,7 @@ export class PlayableLayer extends Layer {
 
   public createTarget(
     node: TrackPinchNode,
-    layerIndex: number,
+    _layerIndex: number,
     nodeIndex: number,
   ) {
     const finger: string = config.indexFingerOnly ? indexFingerId : node.finger;
@@ -158,8 +161,7 @@ export class PlayableLayer extends Layer {
 
       this.targetManager.destroyTarget(target);
 
-      // If the missed target is the last node, increment loop counter.
-      this.checkForTransition(layerIndex, nodeIndex);
+      // A loop is evaluated after its musical boundary, not when a note disappears.
     });
 
     target.setOnTargetHit(() => {
@@ -173,7 +175,6 @@ export class PlayableLayer extends Layer {
 
         this.level.score.skippedPinch(previousTarget);
 
-        this.checkForTransition(layerIndex, previousTarget.nodeIndex);
 
         this.targetManager.destroyTarget(previousTarget);
       }
@@ -223,36 +224,48 @@ export class PlayableLayer extends Layer {
 
       this.targetManager.destroyTarget(target);
 
-      this.checkForTransition(layerIndex, nodeIndex);
     });
 
     this.targetManager.addTarget(target);
   }
 
-  private checkForTransition(layerIndex: number, nodeIndex: number) {
-    // The final target and the musical loop boundary may occur in different
-    // frames. Always ignore callbacks left over from a completed layer.
-    if (!this.ready || this.level.activeLayerIndex !== layerIndex) return;
+  /** Wait until the musical loop has ended and its final target has had time
+   * to register a hit or miss. Notes at the end of a bar must not be cut off.
+   * This delay is zero when the last note resolves before the loop boundary.
+   */
+  private getLoopCompletionGrace(): number {
+    if (this.cachedCompletionGrace !== null && this.cachedCompletionGrace !== undefined) return this.cachedCompletionGrace;
+    const duration = this.getDuration();
+    const latestNote = this.data.nodes.reduce((latest, node) =>
+      Math.max(latest, this.level.track.songTimePositionToTime(node.timePosition)), 0);
+    const resolutionTime = (Number(config.onTimeDuration) || 0) / 2 +
+      (Number(config.lateTimeDuration) || 0) + targetDeathDuration;
+    this.cachedCompletionGrace = Math.max(0, latestNote + resolutionTime - duration);
+    return this.cachedCompletionGrace;
+  }
 
-    // Meeting the required progression count is sufficient, even if there
-    // are still targets later in the same loop.
-    if (!config.disableLayerProgression && this.progress.canProgress()) {
+  /** Each complete musical loop is a single progression attempt. Accumulating
+   * enough points early must NEVER skip the remaining notes in that loop.
+   * The loop counter is one-based, so a limit of 3 permits three complete plays.
+   */
+  private finishCompletedLoop() {
+    if (!this.ready) return;
+    if (this.level.getActiveLayer() !== this) return;
+    const loopCount = this.level.score.getLoopCount();
+    const duration = this.getDuration();
+    if (duration <= 0 || this.songTime_ < duration * loopCount + this.getLoopCompletionGrace()) return;
+
+    if ((!config.disableLayerProgression && this.progress.canProgress()) ||
+        (config.skipLayersAutomatically && loopCount >= Math.max(1, config.skipLayersAutomaticallyAfterLoop))) {
       this.level.transitionLayers();
       return;
     }
 
-    if (nodeIndex !== this.data.nodes.length - 1) return;
-
-    // The UI's loop limit is inclusive: with a limit of 3, finish after the
-    // third playback whether or not the progression threshold was reached.
-    if (config.skipLayersAutomatically &&
-        this.level.score.getLoopCount() >= config.skipLayersAutomaticallyAfterLoop) {
-      this.level.transitionLayers();
-      return;
-    }
-
+    // The next musical loop is a fresh scoring attempt, even if the previous
+    // loop accumulated some points but not enough to progress.
     this.level.score.incrementLoopCount();
     this.progress.setToStarting();
+    this.level.streak.stop();
     this.infoHud.updateLoopText();
     if (config.autoSaveCSV) autoSaveToCSV(this.level.score.levelStats);
   }
@@ -310,15 +323,7 @@ export class PlayableLayer extends Layer {
     this.time = time;
     this.songTime_ = this.ready ? this.time - this.startTime : 0;
     this.handleTargetCreation();
-    // A safety net for a dropped target/miss callback at the end of the final
-    // loop. No additional targets are needed to end a capped study level.
-    // Allow the final note's late window to finish before advancing.
-    if (this.ready && !this.lastLoopExitChecked && config.skipLayersAutomatically &&
-        this.songTime_ >= this.getDuration() * Math.max(1, config.skipLayersAutomaticallyAfterLoop) +
-          Math.max(500, config.lateTimeDuration)) {
-      this.lastLoopExitChecked = true;
-      this.level.transitionLayers();
-    }
+    this.finishCompletedLoop();
   }
 
   public getPreviewTime(): number {

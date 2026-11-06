@@ -48,6 +48,8 @@ export const studyApi = {
     callBackend<{ uid: string }>('provisionAccount', { studyId, username, password, role, group, startDate, ...(customConfig ? { customConfig } : {}) }),
   setAccountActive: (uid: string, active: boolean) => callBackend<{ ok: boolean }>('setAccountActive', { uid, active }),
   setParticipant: (uid: string, changes: object) => callBackend<{ ok: boolean }>('setParticipant', { uid, changes }),
+  setParticipantStage: (uid: string, stage: number | null) =>
+    callBackend<{ ok: boolean; progress: Progress }>('setParticipantStage', { uid, stage }),
   advanceStep: (week: number, sessionId: string, index: number, stepType: string) => callBackend<{ ok: boolean; progress?: Progress }>('advanceStudyStep', { week, sessionId, index, stepType }),
   removeAccount: (uid: string) => callBackend<{ ok: boolean }>('removeAccount', { uid }),
   resetModeratorPassword: (uid: string, password: string) => callBackend<{ ok: boolean }>('resetModeratorPassword', { uid, password }),

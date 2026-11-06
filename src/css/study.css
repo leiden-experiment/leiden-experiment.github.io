@@ -459,3 +459,6 @@
   outline:2px solid #8ee6a3;
   outline-offset:2px;
 }
+
+/* Timeline scheduling notes keep the pre/post-test positions and date anchors visible. */
+.study-admin-dashboard .study-stage-date-note { margin: 0; padding: 2px 0 6px; color: #bfc4ca; font-size: 13px; line-height: 1.5; }

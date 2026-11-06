@@ -89,7 +89,7 @@ export interface StudySession { account: Account; settings: StudySettings; mode:
 export interface ResultEnvelope {
   schemaVersion: 1; studyId: string; participantId: string; group: string;
   sessionId: string; week: number; assignmentIndex: number; levelId: string;
-  completedAt: string; result: unknown; choiceIndex?: number; selectionPlay?: number;
+  completedAt: string; result: unknown; levelName?: string; choiceIndex?: number; selectionPlay?: number;
 }
 export interface Progress {
   completed: Record<string, string[]>;
@@ -98,6 +98,10 @@ export interface Progress {
   choices?: Record<string, Record<string, number>>;
   /** ISO timestamp when the most recent FULL study session was completed. */
   lastCompletedSessionAt?: string;
+  /** One-session researcher stage override; automatically cleared on completion. */
+  stageOverride?: { week: number; sessionNumber: number };
+  /** A completed pre-test is followed by a fresh login before regular weeks begin. */
+  pretestPendingLogin?: boolean;
 }
 export interface PublishedLevel { id: string; name: string; data?: unknown; updatedAt?: string; bpm?: number }
 export function defaultStudySettings(title = 'New study'): StudySettings {
@@ -113,6 +117,9 @@ export function defaultStudySettings(title = 'New study'): StudySettings {
     ] },
   };
 }
+function timelineStageName(week: string): string {
+  return week === '0' ? 'Pre-test' : week === '-1' ? 'Post-test' : `Week ${week}`;
+}
 export function validateSettings(value: StudySettings): string[] {
   const issues: string[] = [];
   if (!value || typeof value.title !== 'string' || !value.title.trim() || value.title.length > 120) issues.push('Study title is required (maximum 120 characters)');
@@ -126,7 +133,7 @@ export function validateSettings(value: StudySettings): string[] {
   if (!Number.isInteger(value?.maxSessionsPerWeek) || value.maxSessionsPerWeek < 1 || value.maxSessionsPerWeek > 50) issues.push('Sessions per week must be between 1 and 50');
   if (value?.weeks != null && (typeof value.weeks !== 'object' || Array.isArray(value.weeks))) issues.push('Invalid study timeline');
   else Object.entries(value.weeks || {}).forEach(([week, steps]) => {
-    if (!/^(?:-1|0|[1-9]\d*)$/.test(week) || !Array.isArray(steps) || steps.length > 40) { issues.push(`Invalid week ${week}`); return; }
+    if (!/^(?:-1|0|[1-9]\d*)$/.test(week) || !Array.isArray(steps) || steps.length > 40) { issues.push(`Invalid ${timelineStageName(week)}`); return; }
     steps.forEach((step, i) => {
       if (!step || typeof step !== 'object') { issues.push(`${week}/${i}: invalid block`); return; }
       if (isLevelStep(step)) {
@@ -148,7 +155,7 @@ export function validateSettings(value: StudySettings): string[] {
         if (typeof step.text !== 'string' || step.text.length > 2000) issues.push(`${week}/${i}: screen message must be at most 2,000 characters`);
       } else issues.push(`${week}/${i}: unknown block type`);
     });
-    if (steps.length && !steps.some(step => isLevelStep(step) || isSelectionStep(step))) issues.push(`Week ${week} must contain at least one playable level`);
+    if (steps.length && !steps.some(step => isLevelStep(step) || isSelectionStep(step))) issues.push(`${timelineStageName(week)} must contain at least one playable level`);
   });
   if (value?.groupConfigs && (typeof value.groupConfigs !== 'object' || Array.isArray(value.groupConfigs) ||
     Object.values(value.groupConfigs).some(g => !g || typeof g !== 'object' || Array.isArray(g)))) issues.push('Invalid group configurations');
@@ -173,15 +180,19 @@ export function getNextAssignment(settings: StudySettings, progress: Progress, s
     (!!settings.durationWeeks && calculateStudyWeek(startDate, now) > settings.durationWeeks);
   const lastWeek = Math.max(1, ...Object.keys(settings.weeks || {}).map(Number).filter(n => n > 0));
   const finished = weekly && current > lastWeek && (!settings.weeks?.['-1'] || !!progress.sessions['-1']);
-  const week = weekly && settings.weeks?.['0'] && !(progress.sessions['0'] || 0) ? 0 :
+  const manual = progress.stageOverride;
+  const week = manual ? manual.week : weekly && settings.weeks?.['0'] && !(progress.sessions['0'] || 0) ? 0 :
     weekly && current > lastWeek && settings.weeks?.['-1'] && !(progress.sessions['-1'] || 0) ? -1 : current;
   const assignments = settings.weeks?.[String(week)] || [];
-  const sessionNo = (progress.sessions[String(week)] || 0) + 1;
-  const sessionId = progress.activeSession[String(week)] || `${week}-${sessionNo}`;
+  const sessionNo = manual ? manual.sessionNumber : (progress.sessions[String(week)] || 0) + 1;
+  const sessionId = manual ? `${week}-${sessionNo}` : progress.activeSession[String(week)] || `${week}-${sessionNo}`;
   const done = progress.completed[String(week)] || [];
   const index = assignments.findIndex((_, i) => !done.includes(`${sessionId}:${i}`));
   return { week, assignments, sessionId, index, complete: assignments.length > 0 && index === -1,
-    capped: (beforeStart && week !== 0) || afterEnd || finished || (weekly && (progress.sessions[String(week)] || 0) >= (week <= 0 ? 1 : settings.maxSessionsPerWeek)), beforeStart, afterEnd: afterEnd || finished };
+    capped: !!progress.pretestPendingLogin || (!manual && ((beforeStart && week !== 0) ||
+      (afterEnd && week !== -1) || finished || (weekly && (progress.sessions[String(week)] || 0) >= (week <= 0 ? 1 : settings.maxSessionsPerWeek)))),
+    beforeStart: !!progress.pretestPendingLogin || (!manual && beforeStart),
+    afterEnd: !!progress.pretestPendingLogin || (!manual && (afterEnd && week !== -1 || finished)) };
 }
 export function markAssignmentComplete(progress: Progress, week: number, sessionId: string, index: number, total: number): Progress {
   const next: Progress = JSON.parse(JSON.stringify(progress));
@@ -195,6 +206,8 @@ export function markAssignmentComplete(progress: Progress, week: number, session
       next.sessions[key] = (next.sessions[key] || 0) + 1;
       next.lastCompletedSessionAt = new Date().toISOString();
       delete next.activeSession[key];
+      if (next.stageOverride?.week === week && `${week}-${next.stageOverride.sessionNumber}` === sessionId) delete next.stageOverride;
+      if (week === 0) next.pretestPendingLogin = true;
     }
   } else next.activeSession[key] = sessionId;
   return next;

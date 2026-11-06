@@ -71,8 +71,8 @@ function promptLogin() {
         } else {
           loading.textContent = 'Loading study…';
           const bundle = await studyApi.fetchParticipant();
-          const levels = await preloadAssignedLevels(bundle.settings, (ready, total) => {
-            loading.textContent = total ? `Downloading levels: ${ready} / ${total}` : 'Preparing bundled levels…';
+          const levels = await preloadAssignedLevels(bundle.settings, (ready, total, levelName) => {
+            loading.textContent = total ? `Downloading levels: ${ready} / ${total}${levelName ? ` · ${levelName}` : ''}` : 'Preparing bundled levels…';
           });
           setStudySession({ account: bundle.account, settings: bundle.settings, mode: 'online' }, bundle.progress, levels);
           startGame();

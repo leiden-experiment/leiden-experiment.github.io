@@ -11,7 +11,7 @@ let lastSaveNeedsReview = false;
 export function wasLastStudyResultMarkedForReview() { return lastSaveNeedsReview; }
 export function wasLastStudyResultQueued() { return lastSaveQueued; }
 export function hasJustFinishedSession() { return justFinishedSession; }
-let pending: { week: number; sessionId: string; index: number; total: number; assignment: Assignment; choiceIndex?: number; selectionPlay?: number; playToken?: string } | null = null;
+let pending: { week: number; sessionId: string; index: number; total: number; assignment: Assignment; choiceIndex?: number; selectionPlay?: number; playToken?: string; levelName?: string } | null = null;
 export let publishedLevels: Record<string, unknown> = {};
 export function setStudySession(value: StudySession, remoteProgress?: Progress, levels: Record<string, unknown> = {}) {
   session = value; pending = null; pendingSave = null; justFinishedSession = false; lastSaveQueued = false; lastSaveNeedsReview = false;
@@ -26,8 +26,8 @@ export function getStudyPlan(now = new Date()) {
   if (!session) return null;
   return getNextAssignment(session.settings, progress, session.account.startDate || session.settings.startDate, now);
 }
-export function setPendingAssignment(week: number, sessionId: string, index: number, total: number, assignment: Assignment, choiceIndex?: number, selectionPlay?: number, playToken?: string) {
-  pending = { week, sessionId, index, total, assignment, choiceIndex, selectionPlay, playToken };
+export function setPendingAssignment(week: number, sessionId: string, index: number, total: number, assignment: Assignment, choiceIndex?: number, selectionPlay?: number, playToken?: string, levelName?: string) {
+  pending = { week, sessionId, index, total, assignment, choiceIndex, selectionPlay, playToken, levelName };
 }
 export function clearPendingAssignment() { pending = null; }
 export function getPendingAssignment() { return pending; }
@@ -39,6 +39,7 @@ export function pendingResultBackup(result: unknown): ResultEnvelope | null {
     schemaVersion: 1, studyId: session.account.studyId!, participantId: session.account.participantId!,
     group: session.account.group || '', week: pending.week, sessionId: pending.sessionId,
     assignmentIndex: pending.index, levelId: pending.assignment.levelId,
+    levelName: pending.levelName || pending.assignment.levelId.split(':').slice(1).join(':'),
     completedAt: new Date().toISOString(), result,
     ...(pending.choiceIndex !== undefined ? { choiceIndex: pending.choiceIndex, selectionPlay: pending.selectionPlay } : {}),
   };
@@ -52,6 +53,7 @@ export function recordLevelCompletion(result: unknown): Promise<void> {
     schemaVersion: 1, studyId: activeSession.account.studyId!, participantId: activeSession.account.participantId!,
     group: activeSession.account.group || '', sessionId: active.sessionId, week: active.week,
     assignmentIndex: active.index, levelId: active.assignment.levelId,
+    levelName: active.levelName || active.assignment.levelId.split(':').slice(1).join(':'),
     completedAt: new Date().toISOString(), result,
     ...(active.choiceIndex !== undefined ? { choiceIndex: active.choiceIndex, selectionPlay: active.selectionPlay } : {}),
   };

@@ -67,6 +67,11 @@ export default class StudySessionScene extends HandScene {
         const counts = (getStudyProgress().choices || {})[selectionKey(plan.week, plan.sessionId, plan.index)] || {};
         const plays = Object.values(counts).reduce((total, n) => total + n, 0);
         const selectable = step.choices.map((choice, i) => ({ choice, i })).filter(({ i }) => isChoiceUnlocked(step, i, plan.week, counts));
+        const remaining = step.playthroughs === 0 ? null : Math.max(0, step.playthroughs - plays);
+        this.add.text(this.center.x, 550,
+          remaining === null ? 'Unlimited plays · Choose Finish Session when done' :
+            `${remaining} play${remaining === 1 ? '' : 's'} remaining`,
+          { font: '34px Courier New', color: '#aaf4b0', align: 'center' }).setOrigin(.5);
         // 1–3 levels fit one row; 4–6 use two rows; 7–9 use three rows.
         // Keep all labels within their buttons without overlapping the Finish action.
         const columns = Math.min(3, selectable.length);
@@ -84,7 +89,7 @@ export default class StudySessionScene extends HandScene {
             () => { void this.playLevel(choice, i, plays); });
           button.setScale(scale);
           // Phaser's button label is a separate object, so scale it independently.
-          button.text?.setFontSize(selectable.length === 1 ? 39 : rows === 1 ? 35 : rows === 2 ? 29 : 24);
+          button.text?.setFontSize(selectable.length === 1 ? 52 : rows === 1 ? 46 : rows === 2 ? 42 : 31);
           button.text?.setWordWrapWidth(button.displayWidth * .88, true);
           button.text?.setMaxLines(3);
         });
@@ -206,7 +211,7 @@ export default class StudySessionScene extends HandScene {
         syncStudyProgress(allowed.progress);
         playToken = allowed.playToken;
       }
-      setPendingAssignment(plan.week, plan.sessionId, plan.index, plan.assignments.length, assignment, choiceIndex, selectionPlay, playToken);
+      setPendingAssignment(plan.week, plan.sessionId, plan.index, plan.assignments.length, assignment, choiceIndex, selectionPlay, playToken, this.displayLevelName(assignment.levelId));
       this.scene.start('level', level);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -70,9 +70,26 @@ export class DashboardCache {
     }
   }
   progress(studyId: string, uid: string): Progress | undefined { return this.data.progress[studyId]?.[uid]; }
+  setProgress(studyId: string, uid: string, progress: Progress) {
+    if (!this.data.progress[studyId]) this.data.progress[studyId] = {};
+    this.data.progress[studyId][uid] = progress;
+  }
   async refreshProgress(studyId: string) {
     const { progress } = await studyApi.refreshStudyProgress(studyId);
     if (!this.disposed) this.data.progress[studyId] = progress;
+  }
+  /** Explicit researcher refresh; normal navigation still uses the login-time snapshot.
+   * Read participant profiles and progress together so last-completed timestamps
+   * and account changes are current without downloading large result files.
+   */
+  async refreshParticipants(studyId: string) {
+    const [{ accounts }, { progress }] = await Promise.all([
+      studyApi.listParticipants(studyId), studyApi.refreshStudyProgress(studyId)
+    ]);
+    if (this.disposed) return;
+    const existingModerators = this.accounts(studyId).filter(account => account.role !== 'participant');
+    this.data.accounts[studyId] = [...existingModerators, ...accounts.filter(account => account.role === 'participant')];
+    this.data.progress[studyId] = progress;
   }
   /** Forget all profiles on logout, including anything fetched while the logout was in flight. */
   dispose() { this.disposed = true; this.snapshot = null; this.loading = null; }

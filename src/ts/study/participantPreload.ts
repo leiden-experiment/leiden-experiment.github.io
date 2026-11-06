@@ -53,7 +53,7 @@ export function isStudyTrackKey(key: string) { return key.startsWith('temp_level
 
 export async function preloadAssignedLevels(
   settings: StudySettings,
-  notify: (done: number, total: number) => void = () => {},
+  notify: (done: number, total: number, levelName?: string) => void = () => {},
   concurrency = 3
 ): Promise<Record<string, TrackData>> {
   const ids = assignedLibraryLevelIds(settings);
@@ -71,7 +71,7 @@ export async function preloadAssignedLevels(
       } catch (error) {
         throw new Error(`Could not download study level ${id}. Check your connection and ask a researcher to confirm the level is published. ${error instanceof Error ? error.message : String(error)}`);
       }
-      notify(++completed, ids.length);
+      notify(++completed, ids.length, levels[id].displayName || 'Unnamed level');
     }
   }
   await Promise.all(Array.from({ length: Math.min(ids.length, Math.max(1, concurrency)) }, () => worker()));

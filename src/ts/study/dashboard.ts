@@ -216,8 +216,17 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       end.closest('label')!.hidden = !dateEnabled.checked;
       start.closest('label')!.querySelector('span')!.firstChild!.textContent = dateEnabled.checked ? 'Start date' : 'Week 1 reference date';
       board.setWeekly(weekly.checked);
+      board.setScheduleNote(perParticipant.checked
+        ? startMode.value === 'first-login'
+          ? `Week 1 begins on the first regular login after Pre-test; each participant has ${duration.value || 'the configured number of'} weeks. Pre-test does not start that clock.`
+          : `Week 1 follows the researcher-assigned participant start date; the per-participant duration is ${duration.value || 'the configured number of'} weeks.`
+        : dateEnabled.checked
+          ? `Week 1 is anchored to the study start date (${start.value || 'not set'}). The global end date is ${end.value || 'not set'}; the Post-test occurs after the final week.`
+          : `Week 1 follows the study's reference date (${start.value || 'not set'}), without a global date restriction.`);
     };
     weekly.addEventListener('change', sync); dateEnabled.addEventListener('change', sync); perParticipant.addEventListener('change', sync);
+    startMode.addEventListener('change', sync); start.addEventListener('change', sync); end.addEventListener('change', sync);
+    duration.addEventListener('change', sync);
     const timelineHost = section(page, 'Study timeline'); timelineHost.classList.add('study-subsection');
     const board = createFlowBoard(timelineHost, normalizeStudyWeeks(data.weeks), () => {}, weekly.checked);
     board.setAvailableLevels(cache.levels().map(l => ({ id: `library:${l.id}`, name: `Uploaded: ${l.name}`, bpm: l.bpm })));
@@ -378,6 +387,12 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       }, 'primary');
       createButton.classList.add('study-block-button');
     }
+    const refreshControl = action(actions(page), 'Refresh participant data', async () => {
+      await cache.refreshParticipants(study.id);
+      navigate(`Participants · ${study.title}`, () => showRoster(study), false);
+    }, 'secondary');
+    refreshControl.classList.add('study-block-button');
+    refreshControl.title = 'Retrieve the latest participants, completed session counts and completion times from Firebase.';
     const search = field(page, 'Find a participant', '', 'input', 'Filter the participant list by username or group.');
     search.placeholder = 'Search participants…'; search.classList.add('study-search');
     const progressDescription = (uid: string) => {
@@ -403,6 +418,8 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       node('strong', details, member.username);
       node('small', details, `Group: ${member.group || 'None'} · ${member.active ? 'Active' : 'Disabled'}${member.customConfig ? ' · Custom settings' : ''}`);
       node('small', details, progressDescription(member.uid));
+      const activeOverride = cache.progress(study.id, member.uid)?.stageOverride;
+      if (activeOverride) node('small', details, `Next session: ${activeOverride.week === 0 ? 'Pre-test' : activeOverride.week === -1 ? 'Post-test' : `Week ${activeOverride.week}`} (researcher override)`);
       const commands = actions(row); commands.classList.add('study-row-actions');
       const iconAction = (text: string, hint: string, fn: () => void | Promise<void>, style: 'primary' | 'secondary' | 'danger' = 'secondary') => {
         const button = action(commands, text, fn, style); button.title = hint; button.setAttribute('aria-label', hint); return button;
@@ -421,30 +438,50 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
           date = field(assignmentFields, requiredStartDate ? 'Participant start date' : 'Participant start date (optional)', member.startDate || '', 'input', dateHelp);
           date.type = 'date'; date.required = requiredStartDate;
         }
-        let customToggle: HTMLInputElement | undefined;
+        const customToggle = check(edit, 'Use custom gameplay settings', !!member.customConfig,
+          'Enable individual gameplay settings at any time, even if the participant was created without them.');
+        const customPanel = node('div', edit); customPanel.className = 'study-individual-config';
         let readCustom: () => Record<string, unknown> = () => ({});
-        // Only accounts provisioned with individual settings expose this editor.
-        if (member.customConfig) {
-          customToggle = check(edit, 'Use custom gameplay settings', true,
-            'Override the group configuration with participant-specific values. Uncheck to remove the override.');
-          const customPanel = node('div', edit); customPanel.className = 'study-individual-config';
-          const fillCustom = () => {
-            customPanel.replaceChildren();
-            readCustom = gameConfigEditor(customPanel, member.customConfig || {}, {
-              ...gameplayDefaults, ...(settings.defaultConfig || {}), ...(settings.groupConfigs?.[group.value] || {})
-            } as Record<string, GameplayValue>);
-          };
-          fillCustom();
-          customToggle.onchange = () => { customPanel.hidden = !customToggle!.checked; };
-          group.onchange = () => { if (customToggle!.checked) fillCustom(); };
+        const fillCustom = () => {
+          customPanel.replaceChildren();
+          readCustom = gameConfigEditor(customPanel, member.customConfig || {}, {
+            ...gameplayDefaults, ...(settings.defaultConfig || {}), ...(settings.groupConfigs?.[group.value] || {})
+          } as Record<string, GameplayValue>);
+        };
+        fillCustom(); customPanel.hidden = !customToggle.checked;
+        customToggle.onchange = () => { customPanel.hidden = !customToggle.checked; };
+        group.onchange = () => { if (customToggle.checked) fillCustom(); };
+        let stageSelect: HTMLSelectElement | undefined;
+        if (settings.weeklyEnabled !== false) {
+          const stageLabel = node('label', assignmentFields); stageLabel.className = 'study-field';
+          const caption = node('span', stageLabel, 'Next session stage');
+          tooltip(caption, 'Choose Pre-test, a configured week or Post-test for the next complete session. It then returns to automatic scheduling.');
+          stageSelect = node('select', stageLabel);
+          const auto = node('option', stageSelect, 'Automatic (study dates)'); auto.value = '';
+          const configured = normalizeStudyWeeks(settings.weeks);
+          if (configured['0']?.length) { const opt = node('option', stageSelect, 'Pre-test'); opt.value = '0'; }
+          for (const week of Object.keys(configured).map(Number).filter(n => n > 0).sort((a, b) => a - b)) {
+            if (!configured[String(week)]?.length) continue;
+            const opt = node('option', stageSelect, `Week ${week}`); opt.value = String(week);
+          }
+          if (configured['-1']?.length) { const opt = node('option', stageSelect, 'Post-test'); opt.value = '-1'; }
+          stageSelect.value = activeOverride ? String(activeOverride.week) : '';
         }
         const save = action(actions(edit), 'Save participant settings', async () => {
           if (requiredStartDate && !date?.value) throw new Error('Choose a participant start date.');
           const changed: Partial<Account> = { group: group.value,
             ...(showStartDate ? { startDate: date?.value || '' } : {}),
-            ...(customToggle ? { customConfig: customToggle.checked ? readCustom() : undefined } : {}) };
-          await studyApi.setParticipant(member.uid, { ...changed, ...(customToggle && !customToggle.checked ? { customConfig: null } : {}) });
+            customConfig: customToggle.checked ? readCustom() : undefined };
+          const previousStage = activeOverride ? String(activeOverride.week) : '';
+          const stageChanged = !!stageSelect && stageSelect.value !== previousStage;
+          if (stageChanged && !confirm('Change the participant’s next study stage? This abandons any unfinished screen in that stage but retains saved results.')) return;
+          await studyApi.setParticipant(member.uid, { ...changed, ...(!customToggle.checked ? { customConfig: null } : {}) });
           cache.updateAccount(member.uid, changed);
+          if (stageChanged && stageSelect) {
+            const selectedStage = stageSelect.value === '' ? null : Number(stageSelect.value);
+            const response = await studyApi.setParticipantStage(member.uid, selectedStage);
+            cache.setProgress(study.id, member.uid, response.progress);
+          }
           navigate(`Participants · ${study.title}`, () => showRoster(study), false);
         }, 'primary'); save.classList.add('study-block-button');
         iconAction('Edit settings', 'Edit group / condition and personal settings', () => { edit.hidden = !edit.hidden; });

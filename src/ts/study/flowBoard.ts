@@ -4,6 +4,7 @@ import { StudyStep, StudySettings, isLevelStep, isSelectionStep, normalizeStudyW
 export function createFlowBoard(parent: HTMLElement, source: StudySettings['weeks'], changed: (weeks: StudySettings['weeks']) => void, weekly = true) {
   let weeks: StudySettings['weeks'] = JSON.parse(JSON.stringify(normalizeStudyWeeks(source)));
   let isWeekly = weekly;
+  let scheduleNote = 'Pre-test is before Week 1; Post-test is after the final week.';
   let availableLevels: { id: string; name: string; bpm?: number }[] = [
     ...['Birthday Vibes', 'Cheerful Bliss', 'Slow Elegance', 'Trained', 'Untrained', 'Tryout', 'Nosound']
       .map(name => ({ id: `legacy:${name}`, name: `Bundled: ${name}` }))
@@ -30,7 +31,8 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
     : { type: kind, text: kind === 'start' ? 'Welcome! Press Continue when ready.' :
       kind === 'break' ? 'Take a break. Press Continue when ready to play again.' :
         'Thanks for playing! Please come back for your next session.' };
-  const ordered = () => Object.keys(weeks || {}).sort((a, b) => Number(a) - Number(b));
+  // Chronological order: Pre-test → Week 1..N → Post-test (database key -1).
+  const ordered = () => Object.keys(weeks || {}).sort((a, b) => (a === '-1' ? Infinity : Number(a)) - (b === '-1' ? Infinity : Number(b)));
   function move(fromWeek: string, fromIndex: number, toWeek: string, insertion: number) {
     const from = weeks[fromWeek]; const to = weeks[toWeek];
     if (!from || !to || !from[fromIndex] || insertion < 0 || insertion > to.length) return;
@@ -129,8 +131,9 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
       unlockSelect.onchange = () => { step.unlock = unlockSelect.value as typeof step.unlock; trigger(); };
       const quota = make('label', editor); quota.className = 'study-field';
       make('span', quota, 'Number of plays (0 = unlimited)');
+      quota.title = 'The total number of plays across all selectable levels combined; 0 means unlimited.';
       const plays = make('input', quota); plays.type = 'number'; plays.min = '0'; plays.max = '100'; plays.step = '1'; plays.value = String(step.playthroughs);
-      plays.title = 'Fixed number of completed level plays, or 0 to allow indefinite selection with a Finish button.';
+      plays.title = 'Number of plays of any selectable level combined. Set 0 for unlimited until Finish Session is pressed.';
       plays.onchange = () => { step.playthroughs = Number(plays.value); trigger(); };
       make('h3', editor, 'Selectable levels');
       step.choices.forEach((choice, i) => {
@@ -184,7 +187,13 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
     for (const week of (isWeekly ? ordered() : ['1'])) {
       const section = make('section', board); section.className = 'study-week-row';
       const header = make('div', section); header.className = 'study-week-heading';
-      make('strong', header, week === '0' ? 'Pretest' : week === '-1' ? 'Posttest' : isWeekly ? `Week ${week}` : 'Study session');
+      make('strong', header, week === '0' ? 'Pre-test · before Week 1' : week === '-1' ? 'Post-test · after final week' : isWeekly ? `Week ${week}` : 'Study session');
+      if (isWeekly && (week === '0' || week === '-1')) {
+        const note = make('p', section); note.className = 'study-stage-date-note';
+        note.textContent = week === '0'
+          ? `Pre-test runs before the first regular week. ${scheduleNote}`
+          : `Post-test runs after the final configured week. ${scheduleNote}`;
+      }
       if (week !== '1') {
         const removeRow = button(header, '×', () => {
           if (!confirm(`Remove ${week === '0' ? 'Pretest' : week === '-1' ? 'Posttest' : `Week ${week}`} and its slides?`)) return;
@@ -280,5 +289,6 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
     setWeeks: (value: StudySettings['weeks']) => { weeks = JSON.parse(JSON.stringify(normalizeStudyWeeks(value)));
       selected = null; trigger(); render(); },
     setWeekly: (value: boolean) => { if (isWeekly !== value) { isWeekly = value; selected = null; render(); } },
+    setScheduleNote: (message: string) => { if (scheduleNote !== message) { scheduleNote = message; render(); } },
   };
 }

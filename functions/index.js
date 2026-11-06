@@ -12,6 +12,12 @@ const options = { region: 'europe-west1', maxInstances: 20 };
 const fail = (message, code = 'invalid-argument') => { throw new HttpsError(code, message); };
 const idValid = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(value);
 const { normalizeUsername, emailForUsername } = require('./username');
+// Reserved archived address cannot be entered as a username (the plus sign is forbidden).
+const archivedEmail = uid => `archived+${uid}@pizzicato.com`;
+const timelineStageName = week => String(week) === '0' ? 'Pre-test' : String(week) === '-1' ? 'Post-test' : `Week ${week}`;
+// Archived studies keep their records and results for audit but are not active.
+const activeStudy = async id => idValid(id) && (await db.ref(`studyIndex/${id}`).get()).exists() &&
+  !(await db.ref(`studies/${id}/archivedAt`).get()).exists();
 const { firebasePassword } = require('./password');
 const usernameValid = value => { try { normalizeUsername(value); return true; } catch { return false; } };
 const isLevel = step => step && (!step.type || step.type === 'level');
@@ -89,8 +95,8 @@ function validateSettings(s) {
       !Number.isInteger(s.maxSessionsPerWeek) || s.maxSessionsPerWeek < 1 || s.maxSessionsPerWeek > 50 ||
       (s.weeks != null && (typeof s.weeks !== 'object' || Array.isArray(s.weeks)))) fail('Invalid study settings');
   for (const [week, assignments] of Object.entries(effectiveWeeks(s.weeks))) {
-    if (!/^-?\d+$/.test(week) || !Array.isArray(assignments) || assignments.length > 40) fail('Invalid weekly schedule');
-    if (assignments.length && !assignments.some(a => isLevel(a) || isSelection(a))) fail('Each populated week needs a playable level');
+    if (!/^-?\d+$/.test(week) || !Array.isArray(assignments) || assignments.length > 40) fail(`Invalid schedule for ${timelineStageName(week)}`);
+    if (assignments.length && !assignments.some(a => isLevel(a) || isSelection(a))) fail(`${timelineStageName(week)} must contain at least one playable level`);
     for (const a of assignments) {
       if (!a || typeof a !== 'object') fail('Invalid study block');
       if (a.configOverride !== undefined && !configValid(a.configOverride)) fail('Invalid level gameplay override');
@@ -144,10 +150,15 @@ function studyTiming(settings, account, weeks, progress) {
     (!!settings.durationWeeks && elapsedWeeks > settings.durationWeeks);
   const current = weekly ? weekOf(start) : 1;
   const lastWeek = Math.max(1, ...Object.keys(weeks).map(Number).filter(n => n > 0));
-  const week = weekly && weeks['0'] && !(progress.sessions['0'] || 0) ? 0 :
+  const manual = progress.stageOverride;
+  const week = manual ? manual.week : weekly && weeks['0'] && !(progress.sessions['0'] || 0) ? 0 :
     weekly && current > lastWeek && weeks['-1'] && !(progress.sessions['-1'] || 0) ? -1 : current;
-  const cap = weekly ? (week <= 0 ? 1 : settings.maxSessionsPerWeek) : Number.MAX_SAFE_INTEGER;
-  return { week, beforeStart, afterEnd: afterEnd || (weekly && current > lastWeek && (!weeks['-1'] || !!progress.sessions['-1'])), cap };
+  const cap = manual ? Number.MAX_SAFE_INTEGER : weekly ? (week <= 0 ? 1 : settings.maxSessionsPerWeek) : Number.MAX_SAFE_INTEGER;
+  return { week,
+    beforeStart: !!progress.pretestPendingLogin || (!manual && beforeStart),
+    afterEnd: !!progress.pretestPendingLogin || (!manual && afterEnd && week !== -1) ||
+      (!manual && weekly && current > lastWeek && (!weeks['-1'] || !!progress.sessions['-1'])),
+    cap, sessionId: manual ? `${week}-${manual.sessionNumber}` : null };
 }
 exports.getProfile = onCall(options, async req => ({ account: await profile(req) }));
 exports.listStudies = onCall(options, async req => {
@@ -161,7 +172,9 @@ function progressSummary(items) {
   return Object.fromEntries(Object.entries(items || {}).map(([uid, entry]) => [uid, {
     sessions: entry?.sessions || {}, completed: entry?.completed || {},
     activeSession: entry?.activeSession || {}, choices: entry?.choices || {},
-    ...(typeof entry?.lastCompletedSessionAt === 'string' ? { lastCompletedSessionAt: entry.lastCompletedSessionAt } : {})
+    ...(typeof entry?.lastCompletedSessionAt === 'string' ? { lastCompletedSessionAt: entry.lastCompletedSessionAt } : {}),
+    ...(entry?.stageOverride ? { stageOverride: entry.stageOverride } : {}),
+    ...(entry?.pretestPendingLogin ? { pretestPendingLogin: true } : {})
   }]));
 }
 /** One permission-scoped snapshot at researcher login. This contains profiles/settings,
@@ -262,6 +275,7 @@ exports.saveStudy = onCall(options, async req => {
   // server already contains a study (its local transaction cache is empty).
   // Returning undefined on that first callback used to abort *every edit*.
   const existing = (await studyRef.get()).val();
+  if (existing?.archivedAt) fail('That study ID belongs to an archived study; create a new study instead.', 'already-exists');
   const currentRevision = Number(existing?.revision || 0);
   let acceptedRevision = expectedRevision;
   if (currentRevision !== expectedRevision) {
@@ -320,7 +334,7 @@ exports.removeStudy = onCall(options, async req => {
     try {
       const member = (await db.ref(`accounts/${uid}`).get()).val();
       if (!member || member.studyId !== studyId || !['participant','moderator'].includes(member.role)) continue;
-      await auth.updateUser(uid, { disabled: true });
+      await auth.updateUser(uid, { disabled: true, email: archivedEmail(uid) });
       await db.ref(`accounts/${uid}/active`).set(false);
     } catch (error) { failures.push(uid); }
   }
@@ -343,6 +357,27 @@ exports.listParticipants = onCall(options, async req => {
     .filter(s => s.exists()).map(s => s.val());
   return { accounts };
 });
+/** Legacy archives (created before email release was introduced) may still own
+ * the username@pizzicato.com address in Firebase Auth. Release that address
+ * ONLY when both the archived marker exists and the active index is absent.
+ * Keep the old UID, account profile, progress and research results intact.
+ */
+async function releaseArchivedUsername(name) {
+  let previous;
+  try { previous = await auth.getUserByEmail(emailForUsername(name)); }
+  catch (error) {
+    if (error?.code === 'auth/user-not-found') return false;
+    throw error;
+  }
+  const account = (await db.ref(`accounts/${previous.uid}`).get()).val();
+  if (!account || !['participant', 'moderator'].includes(account.role) || !idValid(account.studyId) ||
+      !(await db.ref(`studies/${account.studyId}/archivedAt`).get()).exists() ||
+      (await db.ref(`studyIndex/${account.studyId}`).get()).exists()) return false;
+  // Never reclaim a current administrator or an account belonging to an active study.
+  await auth.updateUser(previous.uid, { disabled: true, email: archivedEmail(previous.uid) });
+  await db.ref(`accounts/${previous.uid}/active`).set(false);
+  return true;
+}
 async function usernameAlreadyUsedMessage(name) {
   const generic = `Username “${name}” is already in use.`;
   try {
@@ -370,18 +405,26 @@ exports.provisionAccount = onCall(options, async req => {
   if (startDate && (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || Number.isNaN(Date.parse(startDate)))) fail('Invalid participant start date');
   if (typeof group !== 'string' || group.length > 100) fail('Invalid group');
   const settings = (await db.ref(`studies/${studyId}/settings`).get()).val();
-  if (!settings) fail('Study not found', 'not-found');
+  if (!settings || !(await activeStudy(studyId))) fail('Study not found or archived', 'not-found');
   if (role === 'participant') {
     if (group && !Object.prototype.hasOwnProperty.call(settings.groupConfigs || {}, group)) fail('Unknown study group');
     if (settings.durationWeeks && settings.participantStartMode !== 'first-login' && !startDate) fail('Participant start date required');
   }
   if (customConfig !== undefined && (!configValid(customConfig) || role !== 'participant')) fail('Invalid custom gameplay settings');
   const name = normalizeUsername(username);
+  const newUser = () => auth.createUser({ email: emailForUsername(name), password: firebasePassword(password), displayName: name, disabled: false });
   let user;
-  try { user = await auth.createUser({ email: emailForUsername(name), password: firebasePassword(password), displayName: name, disabled: false }); }
+  try { user = await newUser(); }
   catch (error) {
-    if (error?.code === 'auth/email-already-exists') fail(await usernameAlreadyUsedMessage(name), 'already-exists');
-    throw error;
+    if (error?.code !== 'auth/email-already-exists') throw error;
+    if (!(await releaseArchivedUsername(name))) fail(await usernameAlreadyUsedMessage(name), 'already-exists');
+    // Recheck uniqueness through Firebase Auth; two simultaneous creations
+    // must still never receive the same login identifier.
+    try { user = await newUser(); }
+    catch (retryError) {
+      if (retryError?.code === 'auth/email-already-exists') fail(await usernameAlreadyUsedMessage(name), 'already-exists');
+      throw retryError;
+    }
   }
   const account = { uid: user.uid, username: name, role, studyId, participantId: role === 'participant' ? name : '', group, startDate, ...(customConfig ? { customConfig } : {}), active: true };
   try { await db.ref().update({ [`accounts/${user.uid}`]: account, [`studyMembers/${studyId}/${user.uid}`]: true }); }
@@ -393,6 +436,7 @@ exports.setAccountActive = onCall(options, async req => {
   if (!idValid(uid) || typeof active !== 'boolean') fail('Invalid account change');
   const target = (await db.ref(`accounts/${uid}`).get()).val();
   if (!target || target.role === 'admin') fail('Not a managed account');
+  if (active && !(await activeStudy(target.studyId))) fail('Cannot reactivate an account from an archived study', 'failed-precondition');
   await auth.updateUser(uid, { disabled: !active });
   await db.ref(`accounts/${uid}/active`).set(active);
   return { ok: true };
@@ -438,7 +482,16 @@ exports.updateAccountCredentials = onCall(options, async req => {
     change.password = firebasePassword(password);
   }
   if (!Object.keys(change).length) return { ok: true };
-  await auth.updateUser(uid, change); // Firebase Auth enforces global username uniqueness.
+  try { await auth.updateUser(uid, change); }
+  catch (error) {
+    if (error?.code !== 'auth/email-already-exists' || !change.displayName) throw error;
+    if (!(await releaseArchivedUsername(change.displayName))) fail(await usernameAlreadyUsedMessage(change.displayName), 'already-exists');
+    try { await auth.updateUser(uid, change); }
+    catch (retryError) {
+      if (retryError?.code === 'auth/email-already-exists') fail(await usernameAlreadyUsedMessage(change.displayName), 'already-exists');
+      throw retryError;
+    }
+  }
   if (change.displayName) await db.ref(`accounts/${uid}/username`).set(change.displayName);
   if (change.password) await auth.revokeRefreshTokens(uid);
   return { ok: true };
@@ -471,6 +524,45 @@ exports.setParticipant = onCall(options, async req => {
     }
   }
   await db.ref(`accounts/${uid}`).update(permitted); return { ok: true };
+});
+/** Force the participant's NEXT complete session to use a particular timeline row.
+ * This is a testing/administrative override, not a change to the calendar.
+ * Existing completed sessions and research results are never deleted. */
+exports.setParticipantStage = onCall(options, async req => {
+  const operator = await profile(req); requireAdmin(operator);
+  const { uid, stage } = req.data || {};
+  if (!idValid(uid) || !(stage === null || Number.isInteger(stage))) fail('Invalid participant stage');
+  const account = (await db.ref(`accounts/${uid}`).get()).val();
+  if (!account || account.role !== 'participant' || !account.studyId) fail('Participant not found', 'not-found');
+  const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
+  if (!settings) fail('Study not found', 'not-found');
+  if (stage !== null) {
+    const weeks = effectiveWeeks(account.weeksOverride || settings.weeks);
+    if (settings.weeklyEnabled === false || !Array.isArray(weeks[String(stage)]) || !weeks[String(stage)].length ||
+        (stage !== -1 && stage !== 0 && (stage < 1 || stage > 104))) fail('Stage is not configured for this study');
+  }
+  const progressRef = db.ref(`progress/${account.studyId}/${uid}`);
+  const transaction = await progressRef.transaction(value => {
+    const next = { ...(value || {}) };
+    if (stage === null) delete next.stageOverride;
+    else {
+      const key = String(stage);
+      const previousStage = next.stageOverride?.sessionNumber || 0;
+      const activeNumber = Number((next.activeSession?.[key] || '').split('-').at(-1)) || 0;
+      const last = Number(next.lastManualSessionNumber || 0);
+      const sessionNumber = Math.max(Date.now(), previousStage + 1, activeNumber + 1, last + 1, (next.sessions?.[key] || 0) + 1);
+      next.lastManualSessionNumber = sessionNumber;
+      next.stageOverride = { week: stage, sessionNumber };
+      // Abandon any in-progress position for the chosen row, but never remove
+      // past results, session counts, or prior completed-session records.
+      next.activeSession = { ...(next.activeSession || {}) };
+      delete next.activeSession[key];
+      delete next.pretestPendingLogin;
+    }
+    return next;
+  });
+  if (!transaction.committed) fail('Could not change participant stage', 'aborted');
+  return { ok: true, progress: progressSummary({ [uid]: transaction.snapshot.val() })[uid] };
 });
 exports.saveLevel = onCall(options, async req => {
   const operator = await profile(req); requireAdmin(operator);
@@ -510,8 +602,14 @@ exports.removeLevel = onCall(options, async req => {
   if (!idValid(id)) fail('Invalid level ID');
   const level = (await db.ref(`levelLibrary/${id}`).get()).val();
   if (!level) fail('Level not found', 'not-found');
-  const all = (await db.ref('studies').get()).val() || {};
-  for (const study of Object.values(all)) {
+  const [all, index] = await Promise.all([
+    db.ref('studies').get().then(snap => snap.val() || {}),
+    db.ref('studyIndex').get().then(snap => snap.val() || {})
+  ]);
+  // Archived studies are retained for audit but do not reserve shared levels.
+  const activeIds = new Set(Object.keys(index).filter(studyId => all[studyId] && !all[studyId].archivedAt));
+  for (const studyId of activeIds) {
+    const study = all[studyId];
     const weeks = study?.settings?.weeks || {};
     for (const steps of Object.values(weeks)) {
       if (!Array.isArray(steps)) continue;
@@ -524,7 +622,7 @@ exports.removeLevel = onCall(options, async req => {
   // Also safeguard participant-specific study timelines.
   const accounts = (await db.ref('accounts').get()).val() || {};
   for (const member of Object.values(accounts)) {
-    if (!member?.weeksOverride) continue;
+    if (!member?.weeksOverride || !activeIds.has(member.studyId)) continue;
     if (Object.values(member.weeksOverride).some(steps => Array.isArray(steps) && steps.some(step =>
       (isLevel(step) && step.levelId === `library:${id}`) ||
       (isSelection(step) && step.choices?.some(choice => choice.levelId === `library:${id}`)))))
@@ -538,13 +636,25 @@ exports.getParticipantBundle = onCall(options, async req => {
   if (account.role !== 'participant') fail('Participant login required', 'permission-denied');
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings || !settings.enabled) fail('Study is not enabled', 'failed-precondition');
-  if (settings.participantStartMode === 'first-login' && !account.startDate) {
+  const progressRef = db.ref(`progress/${account.studyId}/${account.uid}`);
+  let saved = (await progressRef.get()).val() || {};
+  const wasWaiting = !!saved.pretestPendingLogin;
+  if (wasWaiting) {
+    await progressRef.child('pretestPendingLogin').remove();
+    saved = { ...saved, pretestPendingLogin: false };
+  }
+  // The Pre-test takes place BEFORE a participant's first regular study week.
+  // For first-login scheduling, that first regular login (after Pre-test)
+  // establishes the date anchor rather than the earlier Pre-test login.
+  const stillNeedsPretest = !!settings.weeks?.['0'] && !(saved.sessions?.['0'] || 0);
+  if (settings.participantStartMode === 'first-login' && !account.startDate && !stillNeedsPretest) {
     const today = new Date().toISOString().slice(0, 10);
     const started = await db.ref(`accounts/${account.uid}/startDate`).transaction(value => value || today);
     account.startDate = started.snapshot.val();
   }
-  const saved = (await db.ref(`progress/${account.studyId}/${account.uid}`).get()).val() || {};
   const progress = { completed: saved.completed || {}, sessions: saved.sessions || {}, activeSession: saved.activeSession || {}, choices: saved.choices || {},
+    ...(saved.stageOverride ? { stageOverride: saved.stageOverride } : {}),
+    ...(saved.pretestPendingLogin ? { pretestPendingLogin: true } : {}),
     ...(typeof saved.lastCompletedSessionAt === 'string' ? { lastCompletedSessionAt: saved.lastCompletedSessionAt } : {}) };
   return { account, settings: { ...settings, weeks: effectiveWeeks(account.weeksOverride || settings.weeks) }, progress };
 });
@@ -561,13 +671,15 @@ exports.advanceStudyStep = onCall(options, async req => {
   const ref = db.ref(`progress/${account.studyId}/${account.uid}`);
   const completedAt = new Date().toISOString();
   const transaction = await ref.transaction(value => {
-    const progress = { completed: value?.completed || {}, sessions: value?.sessions || {}, activeSession: value?.activeSession || {}, choices: value?.choices || {}, pendingResults: value?.pendingResults || {} };
+    const progress = { completed: value?.completed || {}, sessions: value?.sessions || {}, activeSession: value?.activeSession || {}, choices: value?.choices || {}, pendingResults: value?.pendingResults || {},
+      ...(value?.stageOverride ? { stageOverride: value.stageOverride } : {}),
+      ...(value?.pretestPendingLogin ? { pretestPendingLogin: true } : {}) };
     const timing = studyTiming(settings, account, weeks, progress);
-    if (week !== timing.week || (timing.beforeStart && week !== 0) || timing.afterEnd) return;
+    if (week !== timing.week || progress.pretestPendingLogin || (timing.beforeStart && week !== 0) || timing.afterEnd) return;
     const assignments = weeks[String(week)] || [];
     const count = progress.sessions[String(week)] || 0;
     if (count >= timing.cap) return;
-    const sid = progress.activeSession[String(week)] || `${week}-${count + 1}`;
+    const sid = timing.sessionId || progress.activeSession[String(week)] || `${week}-${count + 1}`;
     const done = progress.completed[String(week)] || [];
     const ix = assignments.findIndex((_, i) => !done.includes(`${sid}:${i}`));
     const step = assignments[ix];
@@ -578,6 +690,8 @@ exports.advanceStudyStep = onCall(options, async req => {
       if (step.playthroughs !== 0 || !Object.values(counts).some(n => n > 0)) return;
     }
     const copy = { completed: { ...progress.completed }, sessions: { ...progress.sessions }, activeSession: { ...progress.activeSession }, choices: { ...progress.choices }, pendingResults: { ...progress.pendingResults },
+      ...(value?.stageOverride ? { stageOverride: value.stageOverride } : {}),
+      ...(value?.pretestPendingLogin ? { pretestPendingLogin: true } : {}),
       ...(value?.lastCompletedSessionAt ? { lastCompletedSessionAt: value.lastCompletedSessionAt } : {}) };
     const entries = [...done, `${sid}:${ix}`];
     copy.completed[String(week)] = entries;
@@ -585,6 +699,8 @@ exports.advanceStudyStep = onCall(options, async req => {
       copy.sessions[String(week)] = count + 1;
       copy.lastCompletedSessionAt = completedAt;
       delete copy.activeSession[String(week)];
+      if (copy.stageOverride?.week === week) delete copy.stageOverride;
+      if (week === 0) copy.pretestPendingLogin = true;
     } else copy.activeSession[String(week)] = sid;
     return copy;
   });
@@ -614,11 +730,13 @@ exports.preparePlay = onCall(options, async req => {
   const weeks = effectiveWeeks(account.weeksOverride || settings.weeks);
   const saved = (await db.ref(`progress/${account.studyId}/${account.uid}`).get()).val() || {};
   const progress = { completed: saved.completed || {}, sessions: saved.sessions || {},
-    activeSession: saved.activeSession || {}, choices: saved.choices || {} };
+    activeSession: saved.activeSession || {}, choices: saved.choices || {},
+    ...(saved.stageOverride ? { stageOverride: saved.stageOverride } : {}),
+    ...(saved.pretestPendingLogin ? { pretestPendingLogin: true } : {}) };
   const timing = studyTiming(settings, account, weeks, progress);
   const expectedWeek = timing.week;
   const steps = weeks[String(expectedWeek)] || [];
-  const sid = progress.activeSession[String(expectedWeek)] ||
+  const sid = timing.sessionId || progress.activeSession[String(expectedWeek)] ||
     `${expectedWeek}-${(progress.sessions[String(expectedWeek)] || 0) + 1}`;
   const done = progress.completed[String(expectedWeek)] || [];
   const expectedIndex = steps.findIndex((_, i) => !done.includes(`${sid}:${i}`));
@@ -691,7 +809,9 @@ exports.submitResult = onCall(options, async req => {
       completed: { ...(value?.completed || {}) }, sessions: { ...(value?.sessions || {}) },
       activeSession: { ...(value?.activeSession || {}) }, choices: { ...(value?.choices || {}) },
       pendingResults: { ...(value?.pendingResults || {}) },
-      ...(value?.lastCompletedSessionAt ? { lastCompletedSessionAt: value.lastCompletedSessionAt } : {})
+      ...(value?.lastCompletedSessionAt ? { lastCompletedSessionAt: value.lastCompletedSessionAt } : {}),
+      ...(value?.stageOverride ? { stageOverride: value.stageOverride } : {}),
+      ...(value?.pretestPendingLogin ? { pretestPendingLogin: true } : {})
     };
     // Another attempt may have advanced progress and failed during delivery.
     if (progress.pendingResults[key]) return progress;
@@ -709,7 +829,7 @@ exports.submitResult = onCall(options, async req => {
     const week = timing.week;
     const steps = weeks[String(week)] || [];
     const sessionsDone = progress.sessions[String(week)] || 0;
-    const sessionId = progress.activeSession[String(week)] || `${week}-${sessionsDone + 1}`;
+    const sessionId = timing.sessionId || progress.activeSession[String(week)] || `${week}-${sessionsDone + 1}`;
     const done = [...(progress.completed[String(week)] || [])];
     const index = steps.findIndex((_, i) => !done.includes(`${sessionId}:${i}`));
     if ((timing.beforeStart && week !== 0) || timing.afterEnd || sessionsDone >= timing.cap ||
@@ -738,6 +858,8 @@ exports.submitResult = onCall(options, async req => {
       progress.sessions[String(week)] = sessionsDone + 1;
       progress.lastCompletedSessionAt = record.completedAt;
       delete progress.activeSession[String(week)];
+      if (progress.stageOverride?.week === week) delete progress.stageOverride;
+      if (week === 0) progress.pretestPendingLogin = true;
     } else progress.activeSession[String(week)] = sessionId;
     // One atomic commit for both the progress update and the durable result.
     progress.pendingResults[key] = record;
@@ -771,6 +893,8 @@ exports.submitResult = onCall(options, async req => {
   return { ok: true, queued, reviewRequired: !!staged.reviewRequired, progress: {
     completed: state.completed || {}, sessions: state.sessions || {},
     activeSession: state.activeSession || {}, choices: state.choices || {},
+    ...(state.stageOverride ? { stageOverride: state.stageOverride } : {}),
+    ...(state.pretestPendingLogin ? { pretestPendingLogin: true } : {}),
     ...(state.lastCompletedSessionAt ? { lastCompletedSessionAt: state.lastCompletedSessionAt } : {})
   } };
 });

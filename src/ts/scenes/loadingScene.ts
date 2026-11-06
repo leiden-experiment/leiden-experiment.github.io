@@ -174,9 +174,10 @@ export class LoadingScene extends Scene {
     // repeated JSON download or heavy note synthesis during a study session.
     if (getStudySession()) {
       for (const [id, data] of Object.entries(publishedLevels)) {
-        this.updateText(loadingText, `PREPARING STUDY LEVEL ${id}...`);
         const key = studyTrackKey(id);
         const preparedTrack = restoredPublishedTrack(data);
+        const visibleName = preparedTrack.displayName?.trim() || 'Unnamed level';
+        this.updateText(loadingText, `PREPARING ${visibleName}...`);
         if (!this.cache.json.exists(key)) this.cache.json.add(key, preparedTrack);
         const track = new Track(this, key);
         track.preload(this as unknown as HandScene);
