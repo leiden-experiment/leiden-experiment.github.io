@@ -1,3 +1,13 @@
+const participantSettingKeys = new Set([
+  'targetSize', 'fingerSize', 'showSkipButton',
+  'skipLayersAutomatically', 'ignoreMultifingerPinches',
+  'mousePinchesEnabled', 'uiPinchesEnabled', 'sonificationEnabled', 'synchronizationEnabled',
+  'playableBackingTracksEnabled', 'unplayableBackingTracksEnabled', 'disableLayerProgression',
+  'indexFingerOnly', 'pinchVolume', 'backgroundMusicVolume', 'onTimeDuration', 'lateTimeDuration',
+  'enableCameraVisibility', 'cameraOpacity', 'postProcessingDisabled',
+  'displayVisualMetronome', 'autoSaveCSV'
+]);
+const validParticipantSetting = (key: unknown) => typeof key === 'string' && participantSettingKeys.has(key);
 /** Study records contain pseudonyms, not participant names or passwords. */
 export interface Assignment {
   type?: 'level'; // omitted in existing/Leiden study templates
@@ -9,8 +19,10 @@ export interface Assignment {
   configOverride?: Record<string, unknown>;
 }
 export interface ScreenStep {
-  type: 'start' | 'break' | 'end';
+  type: 'start' | 'break' | 'end' | 'settings';
   text: string;
+  /** Participant may edit only these fields on this slide. */
+  allowedSettings?: string[];
 }
 export interface LevelChoiceStep {
   type: 'selection';
@@ -53,7 +65,7 @@ export function normalizeStudyWeeks(input: unknown): Record<string, StudyStep[]>
 export interface StudySettings {
   title: string;
   description: string; // legacy field; not shown in the dashboard
-  introText: string;
+  introText: string; // Legacy compatibility only; never shown as a separate screen.
   startDate: string; // also acts as the week-1 anchor when date restrictions are off
   weeklyEnabled?: boolean; // absent = true for earlier saved studies
   dateRangeEnabled?: boolean; // absent = true for earlier saved studies
@@ -64,13 +76,17 @@ export interface StudySettings {
   weeks: Record<string, StudyStep[]>; // 0 = pretest, -1 = posttest, >= 1 = ordinary weeks
   defaultConfig?: Record<string, unknown>;
   groupConfigs?: Record<string, Record<string, unknown>>;
+  collectFingerPositions?: boolean; // Opt-in for ALL normalized target/finger positions and radii; absent means none are recorded.
+  /** Show participant Settings on all study screens, not as a dedicated slide. */
+  participantSettingsEnabled?: boolean;
+  /** Researcher-controlled list of options participants may change. */
+  participantSettingsAllowed?: string[];
   enabled: boolean;
 }
 export interface StudySummary {
   id: string;
   title: string;
   enabled: boolean;
-  databaseURL?: string;
   revision?: number;
 }
 export interface Account {
@@ -83,6 +99,7 @@ export interface Account {
   startDate?: string;
   weeksOverride?: Record<string, StudyStep[]>;
   customConfig?: Record<string, unknown>;
+  participantPreferences?: Record<string, unknown>;
   active: boolean;
 }
 export interface StudySession { account: Account; settings: StudySettings; mode: 'online' | 'offline' }
@@ -106,7 +123,8 @@ export interface Progress {
 export interface PublishedLevel { id: string; name: string; data?: unknown; updatedAt?: string; bpm?: number }
 export function defaultStudySettings(title = 'New study'): StudySettings {
   return {
-    title, description: '', introText: 'Welcome to the study.',
+    title, description: '', introText: '', collectFingerPositions: false,
+    participantSettingsEnabled: false, participantSettingsAllowed: [],
     startDate: new Date().toISOString().slice(0, 10), maxSessionsPerWeek: 3, enabled: true,
     weeks: { '1': [
       { type: 'start', text: 'Welcome! When you are ready, press Continue.' },
@@ -131,6 +149,11 @@ export function validateSettings(value: StudySettings): string[] {
   if (value?.endDate && (!/^\d{4}-\d{2}-\d{2}$/.test(value.endDate) || Number.isNaN(Date.parse(value.endDate)))) issues.push('Invalid end date');
   if (value?.dateRangeEnabled !== false && value?.endDate && value.endDate < value.startDate) issues.push('End date must not precede start date');
   if (!Number.isInteger(value?.maxSessionsPerWeek) || value.maxSessionsPerWeek < 1 || value.maxSessionsPerWeek > 50) issues.push('Sessions per week must be between 1 and 50');
+  if (value?.collectFingerPositions !== undefined && typeof value.collectFingerPositions !== 'boolean') issues.push('Invalid finger position collection option');
+  if (value?.participantSettingsEnabled !== undefined && typeof value.participantSettingsEnabled !== 'boolean') issues.push('Invalid participant settings option');
+  if (value?.participantSettingsAllowed !== undefined && (!Array.isArray(value.participantSettingsAllowed) ||
+      value.participantSettingsAllowed.length > 30 || value.participantSettingsAllowed.some(key => !validParticipantSetting(key)))) issues.push('Invalid participant setting permissions');
+  if (value?.participantSettingsEnabled && !value.participantSettingsAllowed?.length) issues.push('Select at least one setting participants may change');
   if (value?.weeks != null && (typeof value.weeks !== 'object' || Array.isArray(value.weeks))) issues.push('Invalid study timeline');
   else Object.entries(value.weeks || {}).forEach(([week, steps]) => {
     if (!/^(?:-1|0|[1-9]\d*)$/.test(week) || !Array.isArray(steps) || steps.length > 40) { issues.push(`Invalid ${timelineStageName(week)}`); return; }
@@ -151,8 +174,10 @@ export function validateSettings(value: StudySettings): string[] {
               !Number.isInteger(choice.loops) || choice.loops < 1 || choice.loops > 100 ||
               (choice.bpm !== undefined && (!Number.isInteger(choice.bpm) || choice.bpm < 60 || choice.bpm > 200 || choice.levelId.startsWith('legacy:')))) issues.push(`${week}/${i}/${j}: invalid selectable level`);
         });
-      } else if (['start', 'break', 'end'].includes(step.type)) {
+      } else if (['start', 'break', 'end', 'settings'].includes(step.type)) {
         if (typeof step.text !== 'string' || step.text.length > 2000) issues.push(`${week}/${i}: screen message must be at most 2,000 characters`);
+        if (step.type === 'settings' && (!Array.isArray(step.allowedSettings) || step.allowedSettings.length < 1 || step.allowedSettings.length > 30 ||
+          step.allowedSettings.some(key => !validParticipantSetting(key)))) issues.push(`${week}/${i}: choose at least one valid participant setting`);
       } else issues.push(`${week}/${i}: unknown block type`);
     });
     if (steps.length && !steps.some(step => isLevelStep(step) || isSelectionStep(step))) issues.push(`${timelineStageName(week)} must contain at least one playable level`);
@@ -211,4 +236,39 @@ export function markAssignmentComplete(progress: Progress, week: number, session
     }
   } else next.activeSession[key] = sessionId;
   return next;
+}
+
+/** Migrate older dedicated Settings slides into ordinary instruction screens.
+ * The saved text is kept. Inherit their permissions only when a study-wide
+ * setting has not already been explicitly configured. */
+export function migrateLegacySettingsSlides(value: StudySettings): StudySettings {
+  const weeks = normalizeStudyWeeks(value.weeks);
+  const legacy = Object.values(weeks).flat().filter(step => step.type === 'settings') as ScreenStep[];
+  if (!legacy.length) return value;
+  const allowed = [...new Set(legacy.flatMap(step => step.allowedSettings || []))];
+  const migrated = Object.fromEntries(Object.entries(weeks).map(([week, slides]) => [week, slides.map(step =>
+    step.type === 'settings' ? { type: 'start', text: step.text } : step)])) as Record<string, StudyStep[]>;
+  return { ...value, weeks: migrated,
+    participantSettingsEnabled: value.participantSettingsEnabled ?? true,
+    participantSettingsAllowed: value.participantSettingsAllowed ?? allowed };
+}
+
+/** Client-side counterpart of the backend's login checkpoint restoration. */
+export function restoreProgressAtLevelCheckpoint(progress: Progress, weeks: Record<string, StudyStep[]>): Progress {
+  const completed = { ...progress.completed };
+  let changed = false;
+  for (const [week, sid] of Object.entries(progress.activeSession || {})) {
+    const slides = weeks[week]; const done = completed[week];
+    if (!sid || !Array.isArray(slides) || !Array.isArray(done)) continue;
+    const prefix = `${sid}:`;
+    const doneIndices = new Set(done.filter(x => x.startsWith(prefix)).map(x => Number(x.slice(prefix.length))));
+    const lastPlay = slides.reduce((last, step, index) => doneIndices.has(index) && (isLevelStep(step) || isSelectionStep(step)) ? index : last, -1);
+    const kept = done.filter(entry => {
+      if (!entry.startsWith(prefix)) return true;
+      const index = Number(entry.slice(prefix.length));
+      return !Number.isInteger(index) || index <= lastPlay || (slides[index] && (isLevelStep(slides[index]) || isSelectionStep(slides[index])));
+    });
+    if (kept.length !== done.length) { completed[week] = kept; changed = true; }
+  }
+  return changed ? { ...progress, completed } : progress;
 }

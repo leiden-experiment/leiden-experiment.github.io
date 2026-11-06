@@ -2,7 +2,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { randomBytes } = require('node:crypto');
-const { getApps, initializeApp, applicationDefault } = require('firebase-admin/app');
+const { getApps, initializeApp } = require('firebase-admin/app');
 const { getDatabase } = require('firebase-admin/database');
 const { getAuth } = require('firebase-admin/auth');
 if (!getApps().length) initializeApp();
@@ -19,6 +19,7 @@ const timelineStageName = week => String(week) === '0' ? 'Pre-test' : String(wee
 const activeStudy = async id => idValid(id) && (await db.ref(`studyIndex/${id}`).get()).exists() &&
   !(await db.ref(`studies/${id}/archivedAt`).get()).exists();
 const { firebasePassword } = require('./password');
+const { restoreProgressAtLevelCheckpoint } = require('./progressCheckpoint');
 const usernameValid = value => { try { normalizeUsername(value); return true; } catch { return false; } };
 const isLevel = step => step && (!step.type || step.type === 'level');
 const isSelection = step => step && step.type === 'selection';
@@ -93,6 +94,11 @@ function validateSettings(s) {
       (s.participantStartMode !== undefined && !['manual','first-login'].includes(s.participantStartMode)) ||
       (s.endDate && (!/^\d{4}-\d{2}-\d{2}$/.test(s.endDate) || Number.isNaN(Date.parse(s.endDate)) || s.endDate < s.startDate)) ||
       !Number.isInteger(s.maxSessionsPerWeek) || s.maxSessionsPerWeek < 1 || s.maxSessionsPerWeek > 50 ||
+      (s.collectFingerPositions !== undefined && typeof s.collectFingerPositions !== 'boolean') ||
+      (s.participantSettingsEnabled !== undefined && typeof s.participantSettingsEnabled !== 'boolean') ||
+      (s.participantSettingsAllowed !== undefined && (!Array.isArray(s.participantSettingsAllowed) || s.participantSettingsAllowed.length > 30 ||
+        s.participantSettingsAllowed.some(key => !boolConfigFields.has(key) && !Object.prototype.hasOwnProperty.call(numericLimits, key)))) ||
+      (s.participantSettingsEnabled === true && !s.participantSettingsAllowed?.length) ||
       (s.weeks != null && (typeof s.weeks !== 'object' || Array.isArray(s.weeks)))) fail('Invalid study settings');
   for (const [week, assignments] of Object.entries(effectiveWeeks(s.weeks))) {
     if (!/^-?\d+$/.test(week) || !Array.isArray(assignments) || assignments.length > 40) fail(`Invalid schedule for ${timelineStageName(week)}`);
@@ -100,8 +106,11 @@ function validateSettings(s) {
     for (const a of assignments) {
       if (!a || typeof a !== 'object') fail('Invalid study block');
       if (a.configOverride !== undefined && !configValid(a.configOverride)) fail('Invalid level gameplay override');
-      if (['start', 'break', 'end'].includes(a.type)) {
+      if (['start', 'break', 'end', 'settings'].includes(a.type)) {
         if (typeof a.text !== 'string' || a.text.length > 2000) fail('Screen text must be under 2,000 characters');
+        if (a.type === 'settings' && (!Array.isArray(a.allowedSettings) || a.allowedSettings.length < 1 ||
+            a.allowedSettings.length > 30 || a.allowedSettings.some(key => !boolConfigFields.has(key) &&
+              !Object.prototype.hasOwnProperty.call(numericLimits, key)))) fail('Choose valid participant settings');
       } else if (isSelection(a) && typeof a.text === 'string' && a.text.length <= 2000 &&
         ['all','sequential','weekly'].includes(a.unlock) && Number.isInteger(a.playthroughs) &&
         a.playthroughs >= 0 && a.playthroughs <= 100 && Array.isArray(a.choices) &&
@@ -117,20 +126,7 @@ function validateSettings(s) {
       Object.values(s.groupConfigs).some(g => !configValid(g)))) fail('Invalid group configurations');
   if (JSON.stringify(s).length > 200000) fail('Study settings exceed maximum size');
 }
-function checkedDbUrl(url) {
-  if (!url) return null;
-  let parsed;
-  try { parsed = new URL(url); } catch { fail('Invalid Firebase database URL'); }
-  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port || parsed.pathname !== '/' || parsed.search || parsed.hash ||
-      !/^[a-z0-9-]+\.(?:firebaseio\.com|(?:[a-z0-9-]+\.)?firebasedatabase\.app)$/i.test(parsed.hostname)) fail('Only Firebase Realtime Database HTTPS roots are accepted');
-  return parsed.origin + '/';
-}
-function destination(url) {
-  if (!url) return db;
-  const key = `study-${Buffer.from(url).toString('hex').slice(0, 100)}`;
-  const app = getApps().find(a => a.name === key) || initializeApp({ credential: applicationDefault(), databaseURL: url }, key);
-  return getDatabase(app);
-}
+// All study settings, accounts, published levels and results use the default administrator RTDB.
 function weekOf(start) {
   const date = new Date(`${start}T00:00:00Z`);
   const now = new Date();
@@ -224,11 +220,10 @@ exports.refreshStudyProgress = onCall(options, async req => {
 exports.getStudySettings = onCall(options, async req => {
   const account = await profile(req); const { studyId } = req.data || {};
   if (!idValid(studyId)) fail('Invalid study ID'); requireResearcher(account, studyId);
-  const [s, i] = await Promise.all([db.ref(`studies/${studyId}`).get(), db.ref(`studyIndex/${studyId}`).get()]);
+  const s = await db.ref(`studies/${studyId}`).get();
   if (!s.val()?.settings) fail('Study not found', 'not-found');
   return { settings: { ...s.val().settings, weeks: effectiveWeeks(s.val().settings.weeks) },
-    revision: Number(s.val().revision || 0),
-    databaseURL: account.role === 'admin' ? i.val()?.databaseURL : undefined };
+    revision: Number(s.val().revision || 0) };
 });
 /** Canonicalize study settings before comparing a researcher's loaded version with
  * the current record. Firebase RTDB may represent week-number objects as arrays
@@ -258,16 +253,11 @@ function sameStudySettings(a, b) {
 }
 exports.saveStudy = onCall(options, async req => {
   const account = await profile(req); requireAdmin(account);
-  const { id, settings, databaseURL, confirmClearTimeline, expectedRevision, originalSettings, originalDatabaseURL } = req.data || {};
+  const { id, settings, confirmClearTimeline, expectedRevision, originalSettings } = req.data || {};
   if (!idValid(id)) fail('Study ID must be 1–64 letters, digits, underscores or hyphens');
   if (!Number.isInteger(expectedRevision) || expectedRevision < 0) fail('Study revision required. Refresh your dashboard.', 'failed-precondition');
   validateSettings(settings);
   const weeks = effectiveWeeks(settings.weeks);
-  const url = checkedDbUrl(databaseURL);
-  if (url) {
-    try { await destination(url).ref(`studies/${id}/_linkTest`).set({ checkedAt: Date.now() }); }
-    catch { fail('Cannot write to linked database; grant the Functions service account access', 'failed-precondition'); }
-  }
   let abortedForClearing = false;
   const studyRef = db.ref(`studies/${id}`);
   // Read the authoritative study record rather than relying on the index.
@@ -282,9 +272,7 @@ exports.saveStudy = onCall(options, async req => {
     // If a cached revision is stale but the study itself has not changed,
     // reconcile to the authoritative revision. A genuinely changed study or
     // results database still requires the researcher to reload their edits.
-    const storedLink = ((await db.ref(`studyIndex/${id}`).get()).val()?.databaseURL || '').trim();
-    if (!originalSettings || !sameStudySettings(existing?.settings, originalSettings) ||
-        storedLink !== String(originalDatabaseURL || '').trim()) {
+    if (!originalSettings || !sameStudySettings(existing?.settings, originalSettings)) {
       fail('This study has newer changes. Reload the dashboard before saving; your unsaved edits were not overwritten.', 'aborted');
     }
     acceptedRevision = currentRevision;
@@ -312,7 +300,7 @@ exports.saveStudy = onCall(options, async req => {
     fail('This study has newer changes. Reload the dashboard before saving; your unsaved edits were not overwritten.', 'aborted');
   }
   const revision = transaction.snapshot.val().revision;
-  await db.ref(`studyIndex/${id}`).set({ title: settings.title, enabled: !!settings.enabled, databaseURL: url || '', revision });
+  await db.ref(`studyIndex/${id}`).set({ title: settings.title, enabled: !!settings.enabled, revision });
   return { id, revision };
 });
 
@@ -492,9 +480,57 @@ exports.updateAccountCredentials = onCall(options, async req => {
       throw retryError;
     }
   }
-  if (change.displayName) await db.ref(`accounts/${uid}/username`).set(change.displayName);
+  if (change.displayName) {
+    // Keep the UID and result paths stable; update historical snapshots so
+    // researcher exports use the current pseudonym after a rename.
+    const paths = [
+      `results/${target.studyId}/${uid}`,
+      `failedDeliveries/${target.studyId}/${uid}`,
+      `progress/${target.studyId}/${uid}/pendingResults`
+    ];
+    const updates = {
+      [`accounts/${uid}/username`]: change.displayName,
+      ...(target.role === 'participant' ? { [`accounts/${uid}/participantId`]: change.displayName } : {})
+    };
+    for (const path of paths) {
+      const saved = (await db.ref(path).get()).val() || {};
+      for (const [key, record] of Object.entries(saved)) {
+        if (record && typeof record === 'object' && typeof record.participantId === 'string')
+          updates[`${path}/${key}/participantId`] = change.displayName;
+      }
+    }
+    const entries = Object.entries(updates);
+    for (let i = 0; i < entries.length; i += 64) await db.ref().update(Object.fromEntries(entries.slice(i, i + 64)));
+  }
   if (change.password) await auth.revokeRefreshTokens(uid);
   return { ok: true };
+});
+/** Study-wide Settings access, enforced for every participant session. */
+exports.saveParticipantPreferences = onCall(options, async req => {
+  const account = await profile(req);
+  if (account.role !== 'participant') fail('Participant permission required', 'permission-denied');
+  const preferences = req.data?.preferences;
+  if (!configValid(preferences) || 'skipButtonAppearsAfterLoop' in preferences ||
+      'skipLayersAutomaticallyAfterLoop' in preferences) fail('Invalid participant settings');
+  const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
+  if (!settings?.enabled) fail('Study is disabled', 'failed-precondition');
+  const legacySlides = Object.values(effectiveWeeks(account.weeksOverride || settings.weeks)).flat()
+    .filter(step => step?.type === 'settings');
+  const enabled = settings.participantSettingsEnabled === true ||
+    (settings.participantSettingsEnabled === undefined && legacySlides.length > 0);
+  const allowed = settings.participantSettingsAllowed ||
+    [...new Set(legacySlides.flatMap(step => step.allowedSettings || []))];
+  if (!enabled || Object.keys(preferences).some(key => !allowed.includes(key)))
+    fail('These participant settings are not enabled for this study', 'permission-denied');
+  const state = (await db.ref(`progress/${account.studyId}/${account.uid}`).get()).val() || {};
+  const weeks = effectiveWeeks(account.weeksOverride || settings.weeks);
+  const timing = studyTiming(settings, account, weeks, state);
+  if (timing.beforeStart || timing.afterEnd || !weeks[String(timing.week)]?.length)
+    fail('Your study session is not available', 'failed-precondition');
+  const combined = { ...(account.participantPreferences || {}), ...preferences };
+  if (!configValid(combined)) fail('Invalid saved settings');
+  await db.ref(`accounts/${account.uid}/participantPreferences`).set(combined);
+  return { preferences: combined };
 });
 exports.setParticipant = onCall(options, async req => {
   const operator = await profile(req); requireAdmin(operator); const { uid, changes } = req.data || {};
@@ -571,11 +607,23 @@ exports.saveLevel = onCall(options, async req => {
       !data || typeof data !== 'object' || !Array.isArray(data.layers) || !Array.isArray(data.bpm) ||
       JSON.stringify(data).length > 800000) fail('Invalid or oversized unified level');
   if ((await db.ref(`levelLibrary/${id}`).get()).exists()) fail('Published level IDs are immutable; use a new ID to publish a revision', 'already-exists');
+  const normalizedName = name.normalize('NFKC').trim().toLowerCase();
+  const existingLevels = (await db.ref('levelIndex').get()).val() || {};
+  if (Object.values(existingLevels).some(entry => typeof entry?.name === 'string' &&
+      entry.name.normalize('NFKC').trim().toLowerCase() === normalizedName))
+    fail('A level with this display name already exists (names are case-insensitive).', 'already-exists');
+  const nameKey = Buffer.from(normalizedName, 'utf8').toString('base64url');
+  const reservation = db.ref(`levelNameIndex/${nameKey}`);
+  const claim = await reservation.transaction(previous => previous == null ? id : undefined);
+  if (!claim.committed) fail('A level with this display name already exists.', 'already-exists');
   const updatedAt = new Date().toISOString();
-  await db.ref().update({
-    [`levelLibrary/${id}`]: { id, name, data, updatedAt },
-    [`levelIndex/${id}`]: { id, name, updatedAt, ...(Number.isFinite(data.bpm[0]) ? { bpm: data.bpm[0] } : {}) }
-  }); return { id };
+  try {
+    await db.ref().update({
+      [`levelLibrary/${id}`]: { id, name, data, updatedAt },
+      [`levelIndex/${id}`]: { id, name, updatedAt, ...(Number.isFinite(data.bpm[0]) ? { bpm: data.bpm[0] } : {}) }
+    });
+  } catch (error) { await reservation.remove(); throw error; }
+  return { id };
 });
 exports.listLevels = onCall(options, async req => {
   const operator = await profile(req); if (operator.role === 'participant') fail('Researcher permission required', 'permission-denied');
@@ -628,7 +676,8 @@ exports.removeLevel = onCall(options, async req => {
       (isSelection(step) && step.choices?.some(choice => choice.levelId === `library:${id}`)))))
       fail('Level is used by a participant-specific timeline.', 'failed-precondition');
   }
-  await db.ref().update({ [`levelLibrary/${id}`]: null, [`levelIndex/${id}`]: null });
+  const levelNameKey = Buffer.from(level.name.normalize('NFKC').trim().toLowerCase(), 'utf8').toString('base64url');
+  await db.ref().update({ [`levelLibrary/${id}`]: null, [`levelIndex/${id}`]: null, [`levelNameIndex/${levelNameKey}`]: null });
   return { ok: true };
 });
 exports.getParticipantBundle = onCall(options, async req => {
@@ -638,6 +687,19 @@ exports.getParticipantBundle = onCall(options, async req => {
   if (!settings || !settings.enabled) fail('Study is not enabled', 'failed-precondition');
   const progressRef = db.ref(`progress/${account.studyId}/${account.uid}`);
   let saved = (await progressRef.get()).val() || {};
+  if (req.data?.resume === true) {
+    // Save the restart position under the same RTDB progress record used by
+    // advanceStudyStep/submitResult; do not delete gameplay completions.
+    const weeks = effectiveWeeks(account.weeksOverride || settings.weeks);
+    let firstAttempt = true;
+    const initial = saved;
+    const restored = await progressRef.transaction(value => {
+      const actual = value == null && firstAttempt && initial != null ? initial : value;
+      firstAttempt = false;
+      return restoreProgressAtLevelCheckpoint(actual || {}, weeks);
+    });
+    saved = restored.snapshot.val() || {};
+  }
   const wasWaiting = !!saved.pretestPendingLogin;
   if (wasWaiting) {
     await progressRef.child('pretestPendingLogin').remove();
@@ -664,16 +726,26 @@ exports.advanceStudyStep = onCall(options, async req => {
   if (account.role !== 'participant') fail('Participant permission required', 'permission-denied');
   const { week, sessionId, index, stepType } = req.data || {};
   if (!Number.isInteger(week) || !Number.isInteger(index) || typeof sessionId !== 'string' ||
-      !['start', 'break', 'end', 'selection'].includes(stepType)) fail('Invalid study step');
+      !['start', 'break', 'end', 'selection', 'settings'].includes(stepType)) fail('Invalid study step');
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings || !settings.enabled) fail('Study disabled', 'failed-precondition');
   const weeks = effectiveWeeks(account.weeksOverride || settings.weeks);
   const ref = db.ref(`progress/${account.studyId}/${account.uid}`);
   const completedAt = new Date().toISOString();
+  // Firebase RTDB sometimes calls a transaction updater with null on its first
+  // invocation even when the remote progress record exists. That empty read
+  // previously made the Break screen look like the Start screen was next, so
+  // the transaction aborted and Continue could never advance. Prime the
+  // callback from a fresh read ONLY for the first optimistic invocation; RTDB
+  // reruns it against the real server value if another write wins the race.
+  const initialValue = (await ref.get()).val();
+  let firstAttempt = true;
   const transaction = await ref.transaction(value => {
-    const progress = { completed: value?.completed || {}, sessions: value?.sessions || {}, activeSession: value?.activeSession || {}, choices: value?.choices || {}, pendingResults: value?.pendingResults || {},
-      ...(value?.stageOverride ? { stageOverride: value.stageOverride } : {}),
-      ...(value?.pretestPendingLogin ? { pretestPendingLogin: true } : {}) };
+    const saved = value == null && firstAttempt && initialValue != null ? initialValue : value;
+    firstAttempt = false;
+    const progress = { completed: saved?.completed || {}, sessions: saved?.sessions || {}, activeSession: saved?.activeSession || {}, choices: saved?.choices || {}, pendingResults: saved?.pendingResults || {},
+      ...(saved?.stageOverride ? { stageOverride: saved.stageOverride } : {}),
+      ...(saved?.pretestPendingLogin ? { pretestPendingLogin: true } : {}) };
     const timing = studyTiming(settings, account, weeks, progress);
     if (week !== timing.week || progress.pretestPendingLogin || (timing.beforeStart && week !== 0) || timing.afterEnd) return;
     const assignments = weeks[String(week)] || [];
@@ -690,9 +762,9 @@ exports.advanceStudyStep = onCall(options, async req => {
       if (step.playthroughs !== 0 || !Object.values(counts).some(n => n > 0)) return;
     }
     const copy = { completed: { ...progress.completed }, sessions: { ...progress.sessions }, activeSession: { ...progress.activeSession }, choices: { ...progress.choices }, pendingResults: { ...progress.pendingResults },
-      ...(value?.stageOverride ? { stageOverride: value.stageOverride } : {}),
-      ...(value?.pretestPendingLogin ? { pretestPendingLogin: true } : {}),
-      ...(value?.lastCompletedSessionAt ? { lastCompletedSessionAt: value.lastCompletedSessionAt } : {}) };
+      ...(saved?.stageOverride ? { stageOverride: saved.stageOverride } : {}),
+      ...(saved?.pretestPendingLogin ? { pretestPendingLogin: true } : {}),
+      ...(saved?.lastCompletedSessionAt ? { lastCompletedSessionAt: saved.lastCompletedSessionAt } : {}) };
     const entries = [...done, `${sid}:${ix}`];
     copy.completed[String(week)] = entries;
     if (assignments.every((_, i) => entries.includes(`${sid}:${i}`))) {
@@ -766,10 +838,8 @@ exports.preparePlay = onCall(options, async req => {
   });
   return { ok: true, progress, playToken };
 });
-/** Save an accepted result in the SAME Realtime Database transaction as progress.
- * Its pendingResults record acts as a durable outbox if delivery to a linked
- * study database fails, so retries cannot lose completed research data.
- */
+/** Stage results with progress in the administrator database atomically, then
+ * copy to the central results table. Retries are idempotent. */
 exports.submitResult = onCall(options, async req => {
   const account = await profile(req);
   if (account.role !== 'participant') fail('Participant permission required', 'permission-denied');
@@ -802,7 +872,21 @@ exports.submitResult = onCall(options, async req => {
   // A researcher may edit the timeline after a level starts: retain its result
   // for manual review rather than reject a real participant's completed play.
   const key = `${data.sessionId}_${data.assignmentIndex}_${selection ? data.selectionPlay : 0}`;
-  const record = { ...data, completedAt: new Date().toISOString() };
+  // Research privacy: the single opt-in governs EVERY normalized position and
+  // radius (both target and fingers). Enforce on the server even if a modified
+  // or outdated browser sends these fields. Scores and timing are retained.
+  const result = JSON.parse(JSON.stringify(data.result));
+  if (settings.collectFingerPositions !== true) {
+    const removeNormalizedCoordinates = value => {
+      if (!value || typeof value !== 'object') return;
+      for (const [key, child] of Object.entries(value)) {
+        if (/^normalized[A-Za-z]*(?:Position|Radius)$/.test(key)) delete value[key];
+        else removeNormalizedCoordinates(child);
+      }
+    };
+    removeNormalizedCoordinates(result);
+  }
+  const record = { ...data, result, participantId: account.participantId, completedAt: new Date().toISOString() };
   const stateRef = db.ref(`progress/${account.studyId}/${account.uid}`);
   const transaction = await stateRef.transaction(value => {
     const progress = {
@@ -876,18 +960,15 @@ exports.submitResult = onCall(options, async req => {
   const latest = transaction.committed ? transaction.snapshot.val() : (await stateRef.get()).val();
   const staged = latest?.pendingResults?.[key];
   if (!staged) fail('Could not stage result safely', 'internal');
-  const url = (await db.ref(`studyIndex/${account.studyId}/databaseURL`).get()).val() || null;
   const path = `results/${account.studyId}/${account.uid}/${key}`;
+  // Result and progression were first committed together to pendingResults in
+  // the admin database. A retry is idempotent and never overwrites an earlier play.
   let queued = false;
   try {
-    // Never overwrite the original play on repeat requests.
-    await destination(url).ref(path).transaction(previous => previous || staged);
+    await db.ref(path).transaction(previous => previous || staged);
     await stateRef.child(`pendingResults/${key}`).remove();
-    await db.ref(`failedDeliveries/${account.studyId}/${account.uid}/${key}`).remove();
   } catch (error) {
-    // The record is already committed in progress.pendingResults; do not
-    // clear it or lose the participant's valid result when the remote DB fails.
-    queued = true;
+    queued = true; // Retained durably in the same administrator database.
   }
   const state = (await stateRef.get()).val() || latest;
   return { ok: true, queued, reviewRequired: !!staged.reviewRequired, progress: {
@@ -903,10 +984,7 @@ exports.exportResults = onCall(options, async req => {
   const { studyId, uid } = req.data || {};
   if (!idValid(studyId) || (uid && !idValid(uid))) fail('Invalid export');
   requireResearcher(operator, studyId);
-  const databaseURL = (await db.ref(`studyIndex/${studyId}/databaseURL`).get()).val();
-  let snap; let destinationUnavailable = false;
-  try { snap = await destination(databaseURL).ref(`results/${studyId}${uid ? `/${uid}` : ''}`).get(); }
-  catch (err) { destinationUnavailable = true; snap = { val: () => ({}) }; }
+  const snap = await db.ref(`results/${studyId}${uid ? `/${uid}` : ''}`).get();
   const output = [];
   const data = snap.val() || {};
   const users = uid ? { [uid]: data } : data;
@@ -927,5 +1005,5 @@ exports.exportResults = onCall(options, async req => {
     if (!known.has(dedupeKey)) { output.push({ ...result, deliveryStatus: 'awaiting-delivery' }); known.add(dedupeKey); }
   }));
   if (JSON.stringify(output).length > 8000000) fail('Results too large for a single export; export participants separately', 'resource-exhausted');
-  return { results: output, partial: destinationUnavailable };
+  return { results: output, partial: false };
 });

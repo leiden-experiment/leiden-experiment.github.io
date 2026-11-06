@@ -1,4 +1,4 @@
-import { StudySession, Progress, Assignment, ResultEnvelope, emptyProgress, getNextAssignment, markAssignmentComplete, ScreenStep, isLevelStep, LevelChoiceStep, isSelectionStep, selectionKey } from './types';
+import { StudySession, Progress, Assignment, ResultEnvelope, emptyProgress, getNextAssignment, markAssignmentComplete, ScreenStep, isLevelStep, LevelChoiceStep, isSelectionStep, selectionKey, restoreProgressAtLevelCheckpoint } from './types';
 import { loadLocalProgress, saveLocalResult, saveLocalProgress } from './offline';
 import { studyApi } from './firebaseClient';
 
@@ -16,10 +16,15 @@ export let publishedLevels: Record<string, unknown> = {};
 export function setStudySession(value: StudySession, remoteProgress?: Progress, levels: Record<string, unknown> = {}) {
   session = value; pending = null; pendingSave = null; justFinishedSession = false; lastSaveQueued = false; lastSaveNeedsReview = false;
   const account = value.account;
-  progress = value.mode === 'offline' ? loadLocalProgress(account.studyId!, account.participantId!) : (remoteProgress || emptyProgress());
+  progress = value.mode === 'offline'
+    ? restoreProgressAtLevelCheckpoint(loadLocalProgress(account.studyId!, account.participantId!), account.weeksOverride || value.settings.weeks)
+    : (remoteProgress || emptyProgress());
   publishedLevels = levels;
 }
 export function getStudySession() { return session; }
+export function updateParticipantPreferences(preferences: Record<string, unknown>) {
+  if (session) session.account.participantPreferences = { ...preferences };
+}
 export function getStudyProgress() { return progress; }
 export function syncStudyProgress(remote: Progress) { progress = remote; }
 export function getStudyPlan(now = new Date()) {
@@ -101,8 +106,22 @@ export async function advanceScreenStep(step: ScreenStep | LevelChoiceStep) {
   const updated = markAssignmentComplete(progress, plan.week, plan.sessionId, plan.index, plan.assignments.length);
   if (session.mode === 'offline') saveLocalProgress(session.account.studyId!, session.account.participantId!, updated);
   else {
-    const response = await studyApi.advanceStep(plan.week, plan.sessionId, plan.index, step.type);
+    let response = await studyApi.advanceStep(plan.week, plan.sessionId, plan.index, step.type);
+    // A stale Firebase transaction may return unchanged progress. Refresh, then
+    // retry once if this is still the active screen; never fail silently.
+    if (!response.progress?.completed?.[String(plan.week)]?.includes(`${plan.sessionId}:${plan.index}`)) {
+      const bundle = await studyApi.fetchParticipant();
+      const beforeRefresh = progress;
+      progress = bundle.progress;
+      if (progress.completed?.[String(plan.week)]?.includes(`${plan.sessionId}:${plan.index}`)) {
+        if ((progress.sessions[String(plan.week)] || 0) > (beforeRefresh.sessions[String(plan.week)] || 0)) justFinishedSession = true;
+        return; // Already accepted by Firebase; show the next slide.
+      }
+      if (getStudyPlan()?.index === plan.index) response = await studyApi.advanceStep(plan.week, plan.sessionId, plan.index, step.type);
+    }
     if (response.progress) {
+      if (!response.progress.completed?.[String(plan.week)]?.includes(`${plan.sessionId}:${plan.index}`))
+        throw new Error('The screen did not advance. Please try Continue again.');
       if ((response.progress.sessions[String(plan.week)] || 0) > (progress.sessions[String(plan.week)] || 0)) justFinishedSession = true;
       progress = response.progress;
       return;

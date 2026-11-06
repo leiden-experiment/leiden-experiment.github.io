@@ -73,7 +73,7 @@ const types = moduleFrom('src/ts/study/types.ts');
 
   const scene = text('src/ts/scenes/studySessionScene.ts');
   assert(scene.includes('plays remaining') || scene.includes('play${remaining === 1'), 'selection should show remaining play quota');
-  assert(scene.includes('selectable.length === 1 ? 52'), 'level selection text must be larger');
+  assert(scene.includes('selectable.length === 1 ? 64'), 'level selection text must be larger');
   assert(scene.includes('this.displayLevelName(assignment.levelId)'), 'record actual display name alongside levelId');
   const loading = text('src/ts/scenes/loadingScene.ts');
   assert(loading.includes('PREPARING ${visibleName}') && !loading.includes('PREPARING STUDY LEVEL ${id}'),

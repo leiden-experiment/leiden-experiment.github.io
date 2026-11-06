@@ -1,7 +1,7 @@
 import { studyApi } from './firebaseClient';
 import { DashboardCache } from './dashboardCache';
 import { normalizeUsername } from './username';
-import { Account, StudySettings, StudySummary, defaultStudySettings, validateSettings, isLevelStep, normalizeStudyWeeks } from './types';
+import { Account, StudySettings, StudySummary, defaultStudySettings, validateSettings, isLevelStep, normalizeStudyWeeks, migrateLegacySettingsSlides } from './types';
 import { createFlowBoard } from './flowBoard';
 import { LevelConverter } from '../util/levelConverter';
 import { downloadFile } from './offline';
@@ -75,7 +75,10 @@ function gameConfigEditor(parent: HTMLElement, current: Record<string, unknown>,
     if (typeof option.defaultValue === 'boolean') {
       input.type = 'checkbox'; input.checked = Boolean(value);
     } else {
-      input.type = 'number'; input.value = String(value); input.step = String(option.step ?? 'any');
+      // Browser number inputs localize decimals as commas in some locales.
+      // Decimal settings use a dot-only text box with decimal keyboard hints.
+      input.type = option.step !== undefined && option.step !== 1 ? 'text' : 'number';
+      input.lang = 'en-US'; input.inputMode = 'decimal'; input.value = String(value); input.step = String(option.step ?? 'any');
       if (option.min !== undefined) input.min = String(option.min);
       if (option.max !== undefined) input.max = String(option.max);
     }
@@ -83,7 +86,9 @@ function gameConfigEditor(parent: HTMLElement, current: Record<string, unknown>,
     inputs.push({ key: option.key, element: input, isBoolean: typeof option.defaultValue === 'boolean' });
   }
   return () => {
-    const value: Record<string, unknown> = { ...current }; // Preserve pre-existing extra fields.
+    const value: Record<string, unknown> = { ...current }; // Preserve unrelated legacy settings.
+    delete value.skipButtonAppearsAfterLoop;
+    delete value.skipLayersAutomaticallyAfterLoop;
     for (const entry of inputs) {
       if (!entry.isBoolean && entry.element.value.trim() === '') throw new Error(`Enter a value for ${entry.key}`);
       value[entry.key] = entry.isBoolean ? entry.element.checked : Number(entry.element.value);
@@ -174,18 +179,19 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const buttons = actions(page); buttons.classList.add('study-study-tabs');
     if (user.role === 'admin') {
       action(buttons, 'Edit Study', () => navigate('Edit ' + study.title, () => {
-        editStudy(study.id, cache.settings(study.id), cache.study(study.id)?.databaseURL || '');
+        editStudy(study.id, cache.settings(study.id));
       }), 'primary');
       action(buttons, 'Moderators', () => navigate(`Moderators · ${study.title}`, () => showModerators(study)));
     }
     action(buttons, 'Participants', () => navigate(`Participants · ${study.title}`, () => showRoster(study)));
   }
-  function editStudy(id: string, data: StudySettings, databaseURL = '') {
+  function editStudy(id: string, originalData: StudySettings) {
+    // Preserve the original object for optimistic revision checks while
+    // converting old Settings slides into regular Start/instruction slides.
+    const data = migrateLegacySettingsSlides(originalData);
     const page = section(output, id ? `Edit study: ${data.title}` : 'Create study');
     const basic = node('div', page); basic.className = 'study-form-grid';
     const title = field(basic, 'Study title', data.title, 'input', 'The name shown to researchers and participants.');
-    const db = field(basic, 'Study results database URL (optional)', databaseURL, 'input', 'A separate Firebase Realtime Database for results; leave empty to use the central database.');
-    const welcome = field(page, 'Welcome message', data.introText, 'textarea', 'Text shown before the next assigned level.');
     const options = section(page, 'Schedule options'); options.classList.add('study-subsection');
     const weekly = check(options, 'Weekly study (different timeline for each week)', data.weeklyEnabled !== false,
       'Enable weekly schedules and a maximum number of completed sessions each week. When off, week 1 repeats without a weekly cap.');
@@ -231,6 +237,30 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const board = createFlowBoard(timelineHost, normalizeStudyWeeks(data.weeks), () => {}, weekly.checked);
     board.setAvailableLevels(cache.levels().map(l => ({ id: `library:${l.id}`, name: `Uploaded: ${l.name}`, bpm: l.bpm })));
     sync();
+    const collection = section(page, 'Research data'); collection.classList.add('study-subsection');
+    const collectFingers = check(collection, 'Collect normalized positions and radii', data.collectFingerPositions === true,
+      'Off by default. When disabled, normalized finger and target coordinates and radii are omitted; scores and timing are still recorded.');
+    const participantControls = section(page, 'Participant screen controls');
+    participantControls.classList.add('study-subsection');
+    const enableParticipantSettings = check(participantControls, 'Allow participants to edit settings', data.participantSettingsEnabled === true,
+      'Show a Settings button alongside Setup Camera on every study screen. Saved changes are remembered next time the participant logs in.');
+    const allowedHost = node('div', participantControls); allowedHost.className = 'study-config-grid';
+    const permittedSettings: { key: string; box: HTMLInputElement }[] = [];
+    for (const option of gameplayOptions) {
+      const label = node('label', allowedHost); label.className = 'study-check'; label.title = option.help;
+      const box = node('input', label); box.type = 'checkbox';
+      box.checked = (data.participantSettingsAllowed || []).includes(option.key);
+      node('span', label, option.label);
+      permittedSettings.push({ key: option.key, box });
+    }
+    const syncParticipantControls = () => { allowedHost.hidden = !enableParticipantSettings.checked; };
+    enableParticipantSettings.onchange = () => {
+      if (enableParticipantSettings.checked && !permittedSettings.some(item => item.box.checked)) {
+        for (const item of permittedSettings) item.box.checked = ['targetSize', 'fingerSize', 'backgroundMusicVolume', 'enableCameraVisibility'].includes(item.key);
+      }
+      syncParticipantControls();
+    };
+    syncParticipantControls();
     const configs = section(page, 'Gameplay settings'); configs.classList.add('study-subsection');
     const defaultEnabled = check(configs, 'Override default gameplay settings', !!data.defaultConfig && Object.keys(data.defaultConfig).length > 0,
       'Change gameplay behavior for every participant unless a group overrides it.');
@@ -276,7 +306,9 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         groupConfigs[name] = group.read();
       }
       const settings: StudySettings = {
-        title: title.value.trim(), description: data.description || '', introText: welcome.value,
+        title: title.value.trim(), description: data.description || '', introText: '', collectFingerPositions: collectFingers.checked,
+        participantSettingsEnabled: enableParticipantSettings.checked,
+        participantSettingsAllowed: enableParticipantSettings.checked ? permittedSettings.filter(item => item.box.checked).map(item => item.key) : [],
         startDate: dateEnabled.checked || weekly.checked ? start.value : data.startDate || new Date().toISOString().slice(0, 10),
         endDate: dateEnabled.checked ? end.value : '',
         weeklyEnabled: weekly.checked, dateRangeEnabled: dateEnabled.checked,
@@ -293,8 +325,8 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       const confirmClearTimeline = !!id && originallyPopulated && nowEmpty;
       if (confirmClearTimeline && !confirm('This will delete ALL slides in this study timeline. Are you sure?')) return;
       const studyId = id || newId('study');
-      const saved = await studyApi.saveStudy(studyId, settings, db.value.trim() || undefined, confirmClearTimeline, cache.study(studyId)?.revision ?? 0, id ? data : undefined, databaseURL);
-      cache.saveStudy(studyId, settings, db.value.trim(), saved.revision);
+      const saved = await studyApi.saveStudy(studyId, settings, confirmClearTimeline, cache.study(studyId)?.revision ?? 0, id ? originalData : undefined);
+      cache.saveStudy(studyId, settings, saved.revision);
       history.length = 0; navigate('Studies', showStudies, false);
     }, 'primary');
     saveStudyButton.classList.add('study-block-button');
@@ -535,6 +567,8 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       if (!file.files?.[0]) throw new Error('Select a level JSON file first');
       const converted = LevelConverter.convert(JSON.parse(await file.files[0].text()));
       const name = levelName.value.trim() || file.files[0].name.replace(/\.json$/i, '');
+      if (cache.levels().some(level => level.name.trim().toLowerCase() === name.toLowerCase()))
+        throw new Error(`A level named ${name} already exists. Use a different display name.`);
       const id = newId('level');
       await studyApi.saveLevel(id, name, converted);
       cache.addLevel({ id, name, updatedAt: new Date().toISOString(), bpm: converted.bpm[0] });

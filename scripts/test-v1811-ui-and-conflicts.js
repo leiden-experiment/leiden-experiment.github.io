@@ -53,7 +53,11 @@ class Element {
 const mockDocument = {createElement:tag=>new Element(tag)};
 const boardExports = {};
 vm.runInNewContext(transpile('src/ts/study/flowBoard.ts'), {
-  exports:boardExports, require:name=>{assert.equal(name,'./types'); return typesExports;},
+  exports:boardExports, require:name=>{
+    if(name==='./types') return typesExports;
+    if(name==='./gameplayFields') return { gameplayOptions:[] };
+    throw new Error('Unknown import '+name);
+  },
   document:mockDocument, JSON, Object, Number, Array, Math, String
 });
 const {createFlowBoard}=boardExports;
@@ -88,14 +92,12 @@ assert.equal(selection.board.getWeeks()['1'][0].choices[1].loops,1);
 const client=read('src/ts/study/dashboard.ts');
 const api=read('src/ts/study/firebaseClient.ts');
 const server=read('functions/index.js');
-assert(client.includes('id ? data : undefined, databaseURL'),
-  'the dashboard must include the original settings and results DB link on save');
-assert(api.includes('originalSettings, originalDatabaseURL'),
-  'the client must send the saved baseline to the server');
+assert(client.includes('id ? originalData : undefined'),
+  'the dashboard must send the original settings when saving');
+assert(api.includes('originalSettings'), 'the client must send the saved baseline');
 assert(server.includes('sameStudySettings(existing?.settings, originalSettings)'),
-  'reconcile stale revisions only when baseline matches current study content');
-assert(server.includes("storedLink !== String(originalDatabaseURL || '').trim()"),
-  'a changed linked results database must remain a true conflict');
+  'the backend must reject a genuine concurrent study modification');
+assert(!client.includes('Study results database URL'), 'no per-study results database link');
 assert(server.includes('if (revision !== acceptedRevision) return;'),
   'Firebase transaction must recheck the accepted revision to avoid overwrites');
 console.log('PASS: DOM-tested three-position bundled BPM sliders (90/115/130), new one-loop slides and choices, safe revision reconciliation');

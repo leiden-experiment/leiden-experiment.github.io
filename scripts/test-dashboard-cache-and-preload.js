@@ -67,7 +67,7 @@ assert.deepEqual(Array.from(preloader.assignedLibraryLevelIds(study)), ['alpha',
   assert.equal(snapshotCalls, 1, 'subsequent page visits do not hit Firebase');
   const draft = cache.settings('s1'); draft.title = 'Unsaved';
   assert.equal(cache.settings('s1').title, 'Demo', 'unsaved edits may not mutate the cached source');
-  cache.saveStudy('s1', {...draft, title: 'Saved'}, '', 1);
+  cache.saveStudy('s1', {...draft, title: 'Saved'}, 1);
   assert.equal(cache.studies()[0].title, 'Saved');
   cache.addAccount('s1', {uid:'u2',username:'user2',role:'participant',active:true});
   cache.updateAccount('u2', {group:'control'});

@@ -462,3 +462,58 @@
 
 /* Timeline scheduling notes keep the pre/post-test positions and date anchors visible. */
 .study-admin-dashboard .study-stage-date-note { margin: 0; padding: 2px 0 6px; color: #bfc4ca; font-size: 13px; line-height: 1.5; }
+
+/* Participant-owned settings slide (kept distinct from the researcher dashboard). */
+.pizzicato-personal-settings-overlay {
+  position: fixed; inset: 0; z-index: 99999;
+  background: rgba(0,0,0,.86); display: flex; align-items: center;
+  justify-content: center; padding: 24px; box-sizing: border-box;
+  font-family: Arial, sans-serif; color: #f5f5f5;
+}
+.pizzicato-personal-settings-panel {
+  box-sizing: border-box; width: min(820px, 100%); max-height: 90vh;
+  overflow-y: auto; background: #181818; border: 1px solid #666;
+  padding: 24px; border-radius: 0;
+}
+.pizzicato-personal-settings-panel h2 { font-size: 28px; margin: 0 0 10px; }
+.pizzicato-personal-settings-panel p { margin: 6px 0 16px; }
+.pizzicato-personal-settings-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 14px; }
+.pizzicato-personal-settings-field { display: flex; flex-direction: column; gap: 7px; font-size: 16px; }
+.pizzicato-personal-settings-field input { box-sizing: border-box; width: 100%; height: 39px; padding: 6px 9px;
+  border: 1px solid #888; border-radius: 0; background: #242424; color: #fff; font: inherit; }
+.pizzicato-personal-settings-field input[type='checkbox'] { height: 27px; width: 27px; }
+.pizzicato-personal-settings-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.pizzicato-personal-settings-actions button { min-height: 44px; flex: 1 1 160px; padding: 8px; border: 1px solid #858585;
+  border-radius: 0; color: #fff; background: #404040; cursor: pointer; font-size: 15px; }
+.pizzicato-personal-settings-actions button:hover { background: #575757; }
+.pizzicato-personal-settings-actions .pizzicato-settings-save { background: #167042; border-color: #25995a; }
+.pizzicato-personal-settings-actions .pizzicato-settings-save:hover { background: #218a55; }
+.pizzicato-personal-settings-actions button:disabled { opacity: .6; cursor: progress; }
+.pizzicato-personal-settings-error { color: #ffd19b; min-height: 1em; }
+
+/* The participant settings menu never inherits the global green focus glow. */
+.pizzicato-personal-settings-overlay input,
+.pizzicato-personal-settings-overlay input:focus,
+.pizzicato-personal-settings-overlay button,
+.pizzicato-personal-settings-overlay button:focus,
+.pizzicato-personal-settings-overlay button:hover {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  filter: none !important;
+}
+.pizzicato-personal-settings-overlay input:focus-visible,
+.pizzicato-personal-settings-overlay button:focus-visible { outline: 2px solid #999; outline-offset: 1px; }
+
+/* v1.8.19: calm focus treatment for researcher gameplay and group numeric inputs. */
+.study-admin-dashboard .study-config-grid input:not([type=checkbox]),
+.study-admin-dashboard .study-group-panel input:not([type=checkbox]),
+.study-admin-dashboard .study-individual-config input:not([type=checkbox]) {
+  box-shadow: none !important; filter: none !important; text-shadow: none !important;
+}
+.study-admin-dashboard .study-config-grid input:not([type=checkbox]):focus,
+.study-admin-dashboard .study-group-panel input:not([type=checkbox]):focus,
+.study-admin-dashboard .study-individual-config input:not([type=checkbox]):focus {
+  box-shadow: none !important; filter: none !important; text-shadow: none !important;
+  outline: 1px solid #858585 !important; outline-offset: 0;
+  border-color: #858585 !important;
+}

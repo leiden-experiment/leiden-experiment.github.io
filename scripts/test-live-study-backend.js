@@ -12,6 +12,7 @@ function database() {
   const store = {};
   let failDelivery = false;
   let coldTransactionOnce = false;
+  let coldProgressTransactionOnce = false;
   function at(path) { const keys = path.split('/').filter(Boolean); return keys.reduce((item, key) => item?.[key], store); }
   function put(path, value) {
     const keys = path.split('/').filter(Boolean);
@@ -37,13 +38,20 @@ function database() {
         const optimistic = updater(null);
         if (optimistic === undefined) return { committed:false, snapshot:{ val: () => clone(at(path)) } };
       }
+      if (coldProgressTransactionOnce && path.startsWith('progress/') && at(path)) {
+        coldProgressTransactionOnce = false;
+        const optimistic = updater(null);
+        if (optimistic === undefined) return { committed:false, snapshot:{ val: () => clone(at(path)) } };
+        // Simulate Firebase retrying against the authoritative remote value.
+      }
       const next = updater(clone(at(path)));
       if (next === undefined) return { committed:false, snapshot:{ val: () => clone(at(path)) } };
       put(path,next);
       return { committed:true, snapshot:{ val: () => clone(at(path)) } };
     }
   }; }
-  return { ref:reference, store, setFailDelivery:value=> { failDelivery=value; }, setColdTransactionOnce:value=> { coldTransactionOnce=value; } };
+  return { ref:reference, store, setFailDelivery:value=> { failDelivery=value; }, setColdTransactionOnce:value=> { coldTransactionOnce=value; },
+    setColdProgressTransactionOnce:value=> { coldProgressTransactionOnce=value; } };
 }
 const central=database();
 const studyDatabase=database();
@@ -96,7 +104,11 @@ assert.throws(() => normalizeStudyWeeks({ 1: { broken: true } }), /Cannot read s
 const settings={title:'Test',enabled:true,weeklyEnabled:false,dateRangeEnabled:false,startDate:'2026-10-28',
   maxSessionsPerWeek:3,weeks:{1:[{type:'start',text:'Welcome'}, {type:'level',levelId:'legacy:Trained',bpmIndex:0,loops:2},{type:'end',text:'Thank you'}]}};
 const result={schemaVersion:1,studyId:'research1',participantId:'participant01',group:'',sessionId:'1-1',week:1,assignmentIndex:1,
-  levelId:'legacy:Trained',result:{layersStats:[{total:30, correct:20}]},completedAt:'2026-11-02T12:00:00Z'};
+  levelId:'legacy:Trained',result:{layersStats:[{total:30, correct:20, hits:[{
+    classification:'correct', playerTime:1000, correctTime:1000,
+    normalizedTargetPosition:[.25,.5], normalizedTargetRadius:.1, normalizedFingerRadius:.05,
+    normalizedIndexFingerPosition:[.2,.3], normalizedThumbFingerPosition:[.6,.7]
+  }]}]},completedAt:'2026-11-02T12:00:00Z'};
 (async()=>{
   await central.ref('studies/research1/settings').set(settings);
   await central.ref('studyIndex/research1').set({title:'Test',enabled:true,databaseURL:''});
@@ -156,15 +168,7 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
     originalDatabaseURL: '',
     settings: {...unchangedBaseline, title: 'Would overwrite another researcher'}
   })), /newer changes/, 'stale edits must never overwrite genuinely changed settings');
-  // Also reject stale edits if the linked results database was changed.
-  await central.ref('studyIndex/emptytest/databaseURL').set('https://other-study.firebaseio.com');
-  await assert.rejects(originalSaveStudy(request('admin-one', {
-    id: 'emptytest', expectedRevision: outdatedRevision,
-    originalSettings: clone(central.store.studies.emptytest.settings), originalDatabaseURL: '',
-    settings: clone(central.store.studies.emptytest.settings)
-  })), /newer changes/, 'a changed results database is a genuine edit conflict');
-  await central.ref('studyIndex/emptytest/databaseURL').set('');
-
+  // Study records now always save to the administrator database; linked results databases are not configurable.
   // Reproduce the exact reported action: edit a choice in an existing level
   // selection slide and save from a dashboard with an old index revision.
   const selectionSettings = {...settings, title:'Selection study', weeks:{1:[
@@ -229,35 +233,70 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   assert(first.ok && !first.queued);
   assert(first.progress.completed['1'].includes('1-1:1'));
   assert.equal((await central.ref('results/research1/user-one/1-1_1_0').get()).val().result.layersStats[0].correct,20);
+  const privateHit = (await central.ref('results/research1/user-one/1-1_1_0').get()).val().result.layersStats[0].hits[0];
+  assert.deepEqual(Object.keys(privateHit).sort(), ['classification','correctTime','playerTime'],
+    'opt-out must remove normalized target positions, target radius, finger radius and all finger positions');
   const repeat=await api.submitResult(request('user-one',{data:result,playToken:permitted.playToken}));
   assert(repeat.ok);
   assert.equal(repeat.progress.completed['1'].length,2,'a duplicate cannot advance the study');
-  // Linked results database is unavailable: central durable outbox retains submission.
-  await central.ref('studyIndex/research1/databaseURL').set('https://study-test-default-rtdb.europe-west1.firebasedatabase.app/');
-  const firstEnd = await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-1',index:2,stepType:'end'}));
-  assert.match(firstEnd.progress.lastCompletedSessionAt, /^\d{4}-\d{2}-\d{2}T/, 'full-session completion must record timestamp');
-  const repeatEnd = await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-1',index:2,stepType:'end'}));
-  assert(repeatEnd.resynced, 'repeating an already-completed screen must return current progress instead of 400');
-  assert.equal(repeatEnd.progress.lastCompletedSessionAt, firstEnd.progress.lastCompletedSessionAt);
+  // Break regression from the default timeline: a participant has completed
+  // Start + Level. A different Cloud Functions instance may start with no
+  // local RTDB transaction cache, yielding `null` for the first callback.
+  // Continue must still advance from Break (2) to the next Level (3).
+  authUsers.set('break-user',{disabled:false,tokensValidAfterTime:'1970-01-01T00:00:00.000Z'});
+  await central.ref('accounts/break-user').set({uid:'break-user',username:'breakparticipant',participantId:'breakparticipant',studyId:'breakstudy',role:'participant',active:true});
+  await central.ref('studies/breakstudy/settings').set({...settings, title:'Break Regression', weeks:{'1':[
+    {type:'start',text:'Welcome'}, {type:'level',levelId:'legacy:Trained',bpmIndex:0,loops:1},
+    {type:'break',text:'Take a short break. Press Continue when ready.'},
+    {type:'level',levelId:'legacy:Nosound',bpmIndex:0,loops:1}, {type:'end',text:'Thanks'}
+  ]}});
+  await central.ref('progress/breakstudy/break-user').set({
+    completed:{'1':['1-1:0','1-1:1']},sessions:{},activeSession:{'1':'1-1'}, choices:{}
+  });
+  central.setColdProgressTransactionOnce(true);
+  const breakAdvance=await api.advanceStudyStep(request('break-user',{
+    week:1,sessionId:'1-1',index:2,stepType:'break'
+  }));
+  assert(breakAdvance.ok && !breakAdvance.resynced, 'Break should commit even if RTDB first passes null');
+  assert(breakAdvance.progress.completed['1'].includes('1-1:2'), 'Continue must mark Break completed');
+  const breakNext=await api.preparePlay(request('break-user', {
+    week:1,sessionId:'1-1',index:3,levelId:'legacy:Nosound'
+  }));
+  assert(breakNext.ok, 'participant must be able to start the level after the Break');
+  const breakAgain=await api.advanceStudyStep(request('break-user',{
+    week:1,sessionId:'1-1',index:2,stepType:'break'
+  }));
+  assert(breakAgain.resynced && breakAgain.alreadyCompleted, 'repeated Continue must be idempotent');
+  console.log('PASS: cold Firebase progress transaction advances a Break after the first level');
 
-  const nextSessionStart=await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-2',index:0,stepType:'start'}));
+  // All studies (including previously linked ones) write new results to the admin DB.
+  await central.ref('studyIndex/research1/databaseURL').set('https://old-external-db.firebaseio.com/');
+  const firstEnd = await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-1',index:2,stepType:'end'}));
+  assert.match(firstEnd.progress.lastCompletedSessionAt, /^\d{4}-\d{2}-\d{2}T/);
+  const repeatEnd = await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-1',index:2,stepType:'end'}));
+  assert(repeatEnd.resynced, 'repeated step must return progress, not a 400');
+  const nextSessionStart = await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-2',index:0,stepType:'start'}));
   assert(nextSessionStart.ok);
-  studyDatabase.setFailDelivery(true);
-  const nextPermit=await api.preparePlay(request('user-one', {week:1,sessionId:'1-2',index:1,levelId:'legacy:Trained'}));
-  const nextResult={...result,sessionId:'1-2'};
-  const queued=await api.submitResult(request('user-one',{data:nextResult,playToken:nextPermit.playToken}));
-  assert(queued.ok && queued.queued && queued.progress.completed['1'].includes('1-2:1'));
-  assert((await central.ref('progress/research1/user-one/pendingResults/1-2_1_0').get()).val(), 'result is durable while study database is offline');
-  // Navigating past the level must not erase pending results.
+  studyDatabase.setFailDelivery(true); // The unused old database is offline.
+  // Turning on the same checkbox retains ALL normalized target and finger fields.
+  await central.ref('studies/research1/settings/collectFingerPositions').set(true);
+  const nextPermit = await api.preparePlay(request('user-one', {week:1,sessionId:'1-2',index:1,levelId:'legacy:Trained'}));
+  const nextResult = {...result,sessionId:'1-2'};
+  const saved = await api.submitResult(request('user-one',{data:nextResult,playToken:nextPermit.playToken}));
+  assert(saved.ok && !saved.queued && saved.progress.completed['1'].includes('1-2:1'));
+  const consentedHit=(await central.ref('results/research1/user-one/1-2_1_0').get()).val().result.layersStats[0].hits[0];
+  assert.equal(consentedHit.normalizedTargetRadius,.1);
+  assert.equal(consentedHit.normalizedFingerRadius,.05);
+  assert.deepEqual(Array.from(consentedHit.normalizedTargetPosition),[.25,.5]);
+  await central.ref('studies/research1/settings/collectFingerPositions').set(false);
+  assert((await central.ref('results/research1/user-one/1-2_1_0').get()).exists(),
+    'central results must not depend on an old linked study database');
+  const exported = await api.exportResults(request('admin-one',{studyId:'research1'}));
+  assert(exported.results.some(v=>v.sessionId==='1-2'));
+  assert.equal(exported.partial,false);
+  const repeatSaved = await api.submitResult(request('user-one',{data:nextResult,playToken:nextPermit.playToken}));
+  assert(repeatSaved.ok, 'same result can be submitted twice safely');
   await api.advanceStudyStep(request('user-one',{week:1,sessionId:'1-2',index:2,stepType:'end'}));
-  assert((await central.ref('progress/research1/user-one/pendingResults/1-2_1_0').get()).val(), 'advancing a screen must retain the undelivered result');
-  const exported=await api.exportResults(request('admin-one',{studyId:'research1'}));
-  assert(exported.results.some(v=>v.sessionId==='1-2' && v.deliveryStatus==='awaiting-delivery'), 'pending result must be exportable');
-  studyDatabase.setFailDelivery(false);
-  const retry=await api.submitResult(request('user-one',{data:nextResult,playToken:nextPermit.playToken}));
-  assert(retry.ok && !retry.queued);
-  assert(!(await central.ref('progress/research1/user-one/pendingResults/1-2_1_0').get()).val());
-  assert((await studyDatabase.ref('results/research1/user-one/1-2_1_0').get()).val());
   // A play authorized before a researcher edits the schedule must never be lost:
   // it is saved for review without inventing a matching progression update.
   await central.ref('studyIndex/research1/databaseURL').set('');
@@ -281,10 +320,79 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   await central.ref('studies/research1/settings/weeks/1').set([{type:'level',levelId:'legacy:Trained'}]);
   assert((await api.removeLevel(request('admin-one',{id:'testlevel'}))).ok);
   assert(!(await central.ref('levelIndex/testlevel').get()).exists());
+  // v1.8.18: participant settings apply to every study screen, including migrated old studies.
+  authUsers.set('preferences-one', {disabled:false,tokensValidAfterTime:'1970-01-01T00:00:00.000Z'});
+  const settingsStudy={...settings, collectFingerPositions:false,
+    participantSettingsEnabled:true, participantSettingsAllowed:['targetSize','enableCameraVisibility'], weeks:{'1':[
+    {type:'start',text:'Set your preferences'},
+    {type:'level',levelId:'legacy:Trained',bpmIndex:0,loops:1}
+  ]}};
+  await central.ref('studies/preferences-study/settings').set(settingsStudy);
+  await central.ref('studyIndex/preferences-study').set({title:'Preferences',enabled:true});
+  await central.ref('accounts/preferences-one').set({uid:'preferences-one',username:'settingsplayer',participantId:'settingsplayer',role:'participant',studyId:'preferences-study',active:true});
+  const preferences=await api.saveParticipantPreferences(request('preferences-one',{preferences:{targetSize:0.5,enableCameraVisibility:true}}));
+  assert.equal(preferences.preferences.targetSize,0.5);
+  assert.equal((await central.ref('accounts/preferences-one/participantPreferences').get()).val().enableCameraVisibility,true);
+  await assert.rejects(api.saveParticipantPreferences(request('preferences-one',{preferences:{fingerSize:0.5}})), /not enabled/);
+  const settingsContinue=await api.advanceStudyStep(request('preferences-one',{week:1,sessionId:'1-1',index:0,stepType:'start'}));
+  assert(settingsContinue.progress.completed['1'].includes('1-1:0'), 'Start screen must advance like Break');
+  const laterPreference = await api.saveParticipantPreferences(request('preferences-one',{preferences:{targetSize:2}}));
+  assert.equal(laterPreference.preferences.targetSize, 2, 'settings remain available from the next level screen');
+  const bundle=await api.getParticipantBundle(request('preferences-one'));
+  assert.equal(bundle.account.participantPreferences.targetSize,2, 'saved settings reappear after login');
+
+
+  // Login checkpoint: text screens do not advance the stored resume point.
+  authUsers.set('checkpoint-one', {disabled:false,tokensValidAfterTime:'1970-01-01T00:00:00.000Z'});
+  const checkpointSteps=[{type:'start',text:'Welcome'}, {type:'break',text:'Prepare'},
+    {type:'level',levelId:'legacy:Trained',bpmIndex:0,loops:1}, {type:'break',text:'Take a break'},
+    {type:'level',levelId:'legacy:Trained',bpmIndex:0,loops:1}, {type:'end',text:'Finished'}];
+  await central.ref('studies/checkpoint-study/settings').set({...settings,weeks:{'1':checkpointSteps}});
+  await central.ref('studyIndex/checkpoint-study').set({title:'Checkpoint',enabled:true});
+  await central.ref('accounts/checkpoint-one').set({uid:'checkpoint-one',username:'checkpoint',participantId:'checkpoint',role:'participant',studyId:'checkpoint-study',active:true});
+  await central.ref('progress/checkpoint-study/checkpoint-one').set({
+    completed:{'1':['1-1:0','1-1:1']}, activeSession:{'1':'1-1'}, sessions:{}
+  });
+  const firstLogin=await api.getParticipantBundle(request('checkpoint-one',{resume:true}));
+  assert.deepEqual(Array.from(firstLogin.progress.completed['1']), [], 'No completed level: replay Start and Break on restart');
+  await central.ref('progress/checkpoint-study/checkpoint-one').set({
+    completed:{'1':['1-1:0','1-1:1','1-1:2','1-1:3']}, activeSession:{'1':'1-1'}, sessions:{},
+    pendingResults:{saved:{status:'accepted'}}
+  });
+  const afterLevel=await api.getParticipantBundle(request('checkpoint-one',{resume:true}));
+  assert.deepEqual(Array.from(afterLevel.progress.completed['1']), ['1-1:0','1-1:1','1-1:2'],
+    'After a level, a restarted participant must see the next Break again');
+  assert.equal((await central.ref('progress/checkpoint-study/checkpoint-one/pendingResults/saved/status').get()).val(), 'accepted',
+    'Rollback must not delete accepted result records');
+  const livePosition=await api.getParticipantBundle(request('checkpoint-one'));
+  assert.equal(livePosition.progress.completed['1'].length,3,'Ordinary progress refresh must not rewind screens');
+  await central.ref('progress/checkpoint-study/checkpoint-one').set({
+    completed:{'1':['1-1:0','1-1:1','1-1:2','1-1:3','1-1:4','1-1:5']},
+    activeSession:{},sessions:{'1':1},lastCompletedSessionAt:'2026-11-06T16:00:00Z'
+  });
+  const afterFull=await api.getParticipantBundle(request('checkpoint-one',{resume:true}));
+  assert.equal(afterFull.progress.completed['1'].length,6,'Full sessions must never be replayed');
+  console.log('PASS: backend login checkpoint replays instructions, preserves completed levels and full sessions');
+
+  // Upload names are unique without regard to capitalization; deleting a level frees its name.
+  const dummyLevel={bpm:[120],layers:[]};
+  await api.saveLevel(request('admin-one',{id:'strum-1',name:'Strum3',data:dummyLevel}));
+  await assert.rejects(api.saveLevel(request('admin-one',{id:'strum-2',name:'strum3',data:dummyLevel})), /display name already exists|with this display name already exists/);
+  await api.removeLevel(request('admin-one',{id:'strum-1'}));
+  await api.saveLevel(request('admin-one',{id:'strum-3',name:'strum3',data:dummyLevel}));
+
+  // Renaming a participant changes prior exported participant IDs, not the stable UID path.
+  const previous=(await central.ref('results/research1/user-one/1-1_1_0').get()).val();
+  assert.equal(previous.participantId,'participant01');
+  await api.updateAccountCredentials(request('admin-one',{uid:'user-one',username:'newplayer01'}));
+  assert.equal((await central.ref('accounts/user-one/participantId').get()).val(),'newplayer01');
+  assert.equal((await central.ref('results/research1/user-one/1-1_1_0').get()).val().participantId,'newplayer01');
+  const postRename=await api.exportResults(request('admin-one',{studyId:'research1',uid:'user-one'}));
+  assert(postRename.results.every(record=>record.participantId==='newplayer01'), 'exports must use current pseudonym');
   await api.removeStudy(request('admin-one',{studyId:'research1'}));
   assert(!(await central.ref('studyIndex/research1').get()).exists());
   assert((await central.ref('studies/research1/settings').get()).val().enabled===false);
-  assert((await studyDatabase.ref('results/research1/user-one/1-2_1_0').get()).val(),'removal must retain research data');
+  assert((await central.ref('results/research1/user-one/1-2_1_0').get()).val(),'archiving must retain research data in the admin database');
   assert(authUsers.get('user-one').disabled === true);
-  console.log('PASS: real Cloud Functions handlers: first play, repeat, temporary database failure, export recovery, retry, and safe study removal');
+  console.log('PASS: real Cloud Functions handlers: first play, repeat, single admin database, duplicate saves, export, and safe study removal');
 })().catch(err=>{console.error(err);process.exitCode=1;});

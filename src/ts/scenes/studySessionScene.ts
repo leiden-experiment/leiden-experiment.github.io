@@ -7,23 +7,27 @@ import { restoredPublishedTrack, studyTrackKey, studyTrackKeyForBpm } from '../s
 import { retimeProgrammaticLevel } from '../util/retimeProgrammaticLevel';
 import { UploadedLevelManager } from '../managers/uploadedLevelManager';
 import { defaultConfig, updateConfig } from '../managers/storageManager';
-import { getStudyPlan, getStudyProgress, getStudySession, setPendingAssignment, syncStudyProgress, publishedLevels, advanceScreenStep, hasJustFinishedSession, wasLastStudyResultQueued } from '../study/runtime';
+import { getStudyPlan, getStudyProgress, getStudySession, setPendingAssignment, syncStudyProgress, updateParticipantPreferences, publishedLevels, advanceScreenStep, hasJustFinishedSession, wasLastStudyResultQueued } from '../study/runtime';
 import { studyApi } from '../study/firebaseClient';
 import { downloadResults } from '../study/offline';
 import { TrackData } from '../level/trackTypes';
-import { isLevelStep, isSelectionStep, isChoiceUnlocked, selectionKey, Assignment } from '../study/types';
+import { isLevelStep, isSelectionStep, isChoiceUnlocked, selectionKey, Assignment, ScreenStep } from '../study/types';
+import { gameplayOptions } from '../study/gameplayFields';
 
 export default class StudySessionScene extends HandScene {
   private status: Phaser.GameObjects.Text;
+  private advancing = false;
   constructor() { super('studySession'); }
   preload() { levels.forEach(level => level.preload(this)); }
   create() {
     super.create();
+    this.advancing = false; // Phaser reuses this Scene instance across slides.
     const session = getStudySession();
     if (!session) { this.scene.start('mainMenu'); return; }
     const plan = getStudyPlan();
-    this.add.text(this.center.x, 180, session.settings.title, { font: '65px Courier New', color: '#ffffff', align: 'center' }).setOrigin(.5);
     const step = plan && plan.index >= 0 ? plan.assignments[plan.index] : null;
+    const isSelectionScreen = !!step && isSelectionStep(step);
+    this.add.text(this.center.x, isSelectionScreen ? 125 : 180, session.settings.title, { font: '65px Courier New', color: '#ffffff', align: 'center' }).setOrigin(.5);
     const startDate = session.account.startDate || session.settings.startDate;
     const nextMonday = session.settings.weeklyEnabled !== false && plan && plan.week > 0 ? new Date(Date.parse(`${startDate}T00:00:00Z`) + plan.week * 7 * 86400000) : null;
     const daysUntil = nextMonday ? Math.max(0, Math.ceil((nextMonday.getTime() - Date.now()) / 86400000)) : 0;
@@ -31,14 +35,14 @@ export default class StudySessionScene extends HandScene {
       ? `You have finished this week's sessions. Come back in ${daysUntil} day${daysUntil === 1 ? '' : 's'}.`
       : 'You have completed the maximum sessions for this week.';
     const message = plan?.afterEnd ? 'This study has ended. Thank you for participating.' :
-      hasJustFinishedSession() ? (wasLastStudyResultQueued() ? 'Thank you for playing. Your result is safely stored in the administrator database and is awaiting transfer to the study database.' : 'Thank you for playing today! Your progress has been recorded. Please come back for your next session.') :
+      hasJustFinishedSession() ? (wasLastStudyResultQueued() ? 'Thank you for playing. Your result is stored safely for researcher review.' : 'Thank you for playing today! Your progress has been recorded. Please come back for your next session.') :
       plan?.beforeStart && plan.week !== 0 ? 'Your training programme has not started yet.' :
       plan?.capped ? cappedText :
       !plan?.assignments.length ? 'There are no activities scheduled for this week.' :
-      step ? (!isLevelStep(step) ? step.text : `${session.settings.introText}\nReady to play: ${this.displayLevelName(step.levelId)}`) :
+      step ? (!isLevelStep(step) ? step.text : `Ready to play: ${this.displayLevelName(step.levelId)}`) :
       'Session complete! Thank you for playing.';
-    this.add.text(this.center.x, 430, message, { font: '31px Courier New', color: '#ffffff', align: 'center', wordWrap: { width: 1500 } }).setOrigin(.5);
-    this.status = this.add.text(this.center.x, 620, '', { font: '25px Courier New', color: '#ffd676', align: 'center', wordWrap: { width: 1500 } }).setOrigin(.5);
+    this.add.text(this.center.x, isSelectionScreen ? 285 : 430, message, { font: '31px Courier New', color: '#ffffff', align: 'center', wordWrap: { width: 1500 } }).setOrigin(.5);
+    this.status = this.add.text(this.center.x, isSelectionScreen ? 365 : 620, '', { font: '25px Courier New', color: '#ffd676', align: 'center', wordWrap: { width: 1500 } }).setOrigin(.5);
     if (step?.type === 'end' && plan && !plan.capped && !hasJustFinishedSession()) {
       // The End slide is terminal. Record a fully completed session as soon
       // as it is shown; don't require another, confusing Continue click.
@@ -56,19 +60,21 @@ export default class StudySessionScene extends HandScene {
           retry.setScale(.65);
         }
       };
+      // End is a display-only slide; it can still offer camera and permitted settings.
+      this.addStudyUtilityButtons(this.center.x - 320, this.center.x + 320, 845, .57);
       void finish();
       return;
     }
     if (plan && !plan.capped && !hasJustFinishedSession() && step) {
       if (isLevelStep(step)) {
-        new Button(this, 'PLAY\nLEVEL', this.center.x + 300, 810, () => { void this.playLevel(); });
-        new Button(this, 'SETUP\nCAMERA', this.center.x - 300, 810, () => this.scene.start('calibration'));
+        new Button(this, 'PLAY\nLEVEL', this.center.x, 810, () => { void this.playLevel(); });
+        this.addStudyUtilityButtons(this.center.x - 520, this.center.x + 520, 810, .63);
       } else if (isSelectionStep(step)) {
         const counts = (getStudyProgress().choices || {})[selectionKey(plan.week, plan.sessionId, plan.index)] || {};
         const plays = Object.values(counts).reduce((total, n) => total + n, 0);
         const selectable = step.choices.map((choice, i) => ({ choice, i })).filter(({ i }) => isChoiceUnlocked(step, i, plan.week, counts));
         const remaining = step.playthroughs === 0 ? null : Math.max(0, step.playthroughs - plays);
-        this.add.text(this.center.x, 550,
+        this.add.text(this.center.x, 425,
           remaining === null ? 'Unlimited plays · Choose Finish Session when done' :
             `${remaining} play${remaining === 1 ? '' : 's'} remaining`,
           { font: '34px Courier New', color: '#aaf4b0', align: 'center' }).setOrigin(.5);
@@ -76,50 +82,106 @@ export default class StudySessionScene extends HandScene {
         // Keep all labels within their buttons without overlapping the Finish action.
         const columns = Math.min(3, selectable.length);
         const rows = Math.ceil(selectable.length / columns);
-        const scale = selectable.length === 1 ? 1.08 : rows === 1 ? .83 : rows === 2 ? .64 : .52;
-        const rowSpacing = rows === 1 ? 0 : rows === 2 ? 155 : 115;
-        const firstY = rows === 1 ? 795 : rows === 2 ? 735 : 695;
+        const scale = selectable.length === 1 ? 1.08 : rows === 1 ? .96 : rows === 2 ? .79 : .73;
+        const rowSpacing = rows === 1 ? 0 : rows === 2 ? 200 : 170;
+        // With nine choices, keep a full button height for two name lines and
+        // a play-count line. The top area is reserved for status messages.
+        const firstY = rows === 1 ? 685 : rows === 2 ? 605 : 535;
         selectable.forEach(({ choice, i }, pos) => {
           const col = pos % columns;
           const row = Math.floor(pos / columns);
           const name = this.displayLevelName(choice.levelId);
-          const label = this.choiceButtonLabel(name, counts[String(i)] || 0);
+          const fontSize = selectable.length === 1 ? 64 : rows === 1 ? 59 : rows === 2 ? 51 : 46;
+          // Courier is wide; cap each name line based on the actual button width
+          // so the play-count line never gets pushed outside a nine-choice button.
+          const charsPerLine = Math.max(5, Math.floor(400 * scale * .9 / (fontSize * .62)));
+          const label = this.choiceButtonLabel(name, counts[String(i)] || 0, charsPerLine);
           const x = this.center.x + (col - (columns - 1) / 2) * (columns === 2 ? 510 : 470);
           const button = new Button(this, label, x, firstY + row * rowSpacing,
             () => { void this.playLevel(choice, i, plays); });
-          button.setScale(scale);
+          // Give the three-line label enough actual height, especially when
+          // nine choices fill the screen. The sprite and its text scale separately.
+          button.setScale(scale, rows === 3 ? .83 : rows === 2 ? .89 : selectable.length === 1 ? 1.16 : 1.09);
           // Phaser's button label is a separate object, so scale it independently.
-          button.text?.setFontSize(selectable.length === 1 ? 52 : rows === 1 ? 46 : rows === 2 ? 42 : 31);
-          button.text?.setWordWrapWidth(button.displayWidth * .88, true);
+          button.text?.setFontSize(fontSize);
+          button.text?.setPosition(button.x, button.y).setOrigin(.5, .5).setAlign('center');
+          button.text?.setWordWrapWidth(button.displayWidth * .94, true);
           button.text?.setMaxLines(3);
         });
         if (step.playthroughs === 0 && plays > 0) {
           let busy = false;
-          const finish = new Button(this, 'FINISH\nSESSION', this.center.x, 1024, () => {
+          const finish = new Button(this, 'FINISH\nSESSION', this.center.x, 1018, () => {
             if (busy) return; busy = true;
             void advanceScreenStep(step).then(() => this.scene.restart()).catch(error => {
               busy = false; this.status.setText(error instanceof Error ? error.message : String(error));
             });
           });
           finish.setScale(.43);
-          finish.text?.setFontSize(25);
+          this.centerStudyButtonLabel(finish, 35);
         }
+        const canFinish = step.playthroughs === 0 && plays > 0;
+        this.addStudyUtilityButtons(this.center.x - (canFinish ? 540 : 325),
+          this.center.x + (canFinish ? 540 : 325), 1018, .43);
       } else {
-        const buttonText = step.type === 'break' ? 'RESUME\nPLAYING' : 'CONTINUE';
-        let busy = false;
-        new Button(this, buttonText, step.type === 'start' ? this.center.x + 300 : this.center.x, 810, () => {
-          if (busy) return; busy = true;
-          void advanceScreenStep(step).then(() => this.scene.restart()).catch(reason => {
-            busy = false; this.status.setText(reason instanceof Error ? reason.message : String(reason));
-          });
-        });
-        if (step.type === 'start') {
-          new Button(this, 'SETUP\nCAMERA', this.center.x - 300, 810, () => this.scene.start('calibration'));
-        }
+        // Every non-gameplay slide has an explicit server-confirmed transition.
+        // Restart only after the returned progress includes this exact step.
+        const goNext = async () => {
+          if (this.advancing) return;
+          this.advancing = true;
+          this.status.setText('');
+          try {
+            await advanceScreenStep(step);
+            this.scene.start('studySession');
+          } catch (error) {
+            this.status.setText(error instanceof Error ? error.message : String(error));
+            this.advancing = false;
+          }
+        };
+        new Button(this, 'CONTINUE', this.center.x, 810, () => { void goNext(); });
+        this.addStudyUtilityButtons(this.center.x - 520, this.center.x + 520, 810, .63);
       }
     }
     if (session.mode === 'offline') new Button(this, 'EXPORT\nRESULTS', 200, 940, () => { void downloadResults(session.account.studyId!, session.account.participantId!); });
   }
+  /** Permissions are defined once per study, including older Settings slides. */
+  private participantSettingsPermissions(): string[] {
+    const session = getStudySession(); if (!session) return [];
+    const legacy = Object.values(session.settings.weeks || {}).flat()
+      .filter(step => step.type === 'settings') as ScreenStep[];
+    const enabled = session.settings.participantSettingsEnabled === true ||
+      (session.settings.participantSettingsEnabled === undefined && legacy.length > 0);
+    const permitted = session.settings.participantSettingsAllowed ||
+      [...new Set(legacy.flatMap(step => step.allowedSettings || []))];
+    return enabled ? permitted.filter(key => gameplayOptions.some(option => option.key === key)) : [];
+  }
+
+  /** Screen buttons are intentionally mouse-only in a study. */
+  private addStudyUtilityButtons(cameraX: number, settingsX: number, y: number, scale: number) {
+    const camera = new Button(this, 'SETUP\nCAMERA', cameraX, y, () => this.scene.start('calibration'));
+    camera.setScale(scale);
+    this.centerStudyButtonLabel(camera, scale <= .45 ? 34 : 46);
+    if (this.participantSettingsPermissions().length) {
+      const settings = new Button(this, 'SETTINGS', settingsX, y, () => this.openPersonalSettings());
+      settings.setScale(scale);
+      this.centerStudyButtonLabel(settings, scale <= .45 ? 34 : 46);
+    }
+  }
+
+  /** The original Phaser Options scene now provides the study settings editor.
+   * Leaving this scene also blocks all background mouse and hand interaction. */
+  private openPersonalSettings() {
+    if (!this.participantSettingsPermissions().length) return;
+    this.scene.start('options');
+  }
+
+  /** Button labels are separate Phaser text objects (sprite scaling does not scale
+   * them). Explicitly position and size them at the center of the visible button. */
+  private centerStudyButtonLabel(button: Button, fontSize: number) {
+    button.text?.setPosition(button.x, button.y).setOrigin(.5, .5)
+      .setAlign('center').setFontSize(fontSize)
+      .setWordWrapWidth(button.displayWidth * .96, true);
+  }
+
   private displayLevelName(levelId: string): string {
     const [kind, ...parts] = levelId.split(':');
     const id = parts.join(':');
@@ -143,19 +205,19 @@ export default class StudySessionScene extends HandScene {
   }
 
   /** A maximum of two lines for the name, plus one play-count line. */
-  private choiceButtonLabel(name: string, played: number): string {
+  private choiceButtonLabel(name: string, played: number, maxChars = 18): string {
     const words = name.trim().split(/\s+/);
     const lines: string[] = [];
     for (const word of words) {
       if (lines.length >= 2) break;
       const last = lines.length - 1;
-      if (last >= 0 && (lines[last] + ' ' + word).length <= 19) lines[last] += ' ' + word;
-      else if (word.length > 19) lines.push(word.slice(0, 18) + '…');
+      if (last >= 0 && (lines[last] + ' ' + word).length <= maxChars) lines[last] += ' ' + word;
+      else if (word.length > maxChars) lines.push(word.slice(0, maxChars - 1) + '…');
       else lines.push(word);
     }
     const visible = lines.join(' ').replace(/…/g, '');
     if (name.trim().length > visible.length && lines.length) {
-      lines[lines.length - 1] = lines[lines.length - 1].replace(/…$/, '').slice(0, 18) + '…';
+      lines[lines.length - 1] = lines[lines.length - 1].replace(/…$/, '').slice(0, maxChars - 1) + '…';
     }
     return `${lines.join('\n') || 'Unnamed level'}\n${played} played`;
   }
@@ -199,7 +261,7 @@ export default class StudySessionScene extends HandScene {
       }
       const bpmIndex = assignment.bpm === undefined ? assignment.bpmIndex : 0;
       if (!level.track.data?.bpm?.[bpmIndex]) throw new Error('Assigned BPM index does not exist in this level');
-      updateConfig({ ...defaultConfig, ...session.settings.defaultConfig, ...(session.settings.groupConfigs?.[session.account.group || ''] || {}), ...(session.account.customConfig || {}), ...assignment.configOverride,
+      updateConfig({ ...defaultConfig, mousePinchesEnabled: false, ...session.settings.defaultConfig, ...(session.settings.groupConfigs?.[session.account.group || ''] || {}), ...(session.account.customConfig || {}), ...(session.account.participantPreferences || {}), ...assignment.configOverride,
         skipLayersAutomatically: true, skipLayersAutomaticallyAfterLoop: assignment.loops,
         autoSaveCSV: false }); // Research results are sent once, between levels; never during gameplay.
       level.setBPM(bpmIndex);

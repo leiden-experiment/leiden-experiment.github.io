@@ -70,7 +70,7 @@ function promptLogin() {
           await showDashboard(root, account, async () => { await logoutOnline(); promptLogin(); });
         } else {
           loading.textContent = 'Loading study…';
-          const bundle = await studyApi.fetchParticipant();
+          const bundle = await studyApi.fetchParticipant(true);
           const levels = await preloadAssignedLevels(bundle.settings, (ready, total, levelName) => {
             loading.textContent = total ? `Downloading levels: ${ready} / ${total}${levelName ? ` · ${levelName}` : ''}` : 'Preparing bundled levels…';
           });

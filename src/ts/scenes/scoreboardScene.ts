@@ -59,7 +59,7 @@ export default class Scoreboard extends HandScene {
         await recordLevelCompletion(JSON.parse(JSON.stringify(this.levelStats)));
         this.studySaved = true;
         status.setText(wasLastStudyResultMarkedForReview() ? 'Play saved for researcher review. Study progress was not advanced.' :
-          wasLastStudyResultQueued() ? 'Result secured in the admin database; transfer pending.' : 'Progress saved.');
+          wasLastStudyResultQueued() ? 'Result secured in the administrator database; retry to finalize the record.' : 'Progress saved.');
         // A valid play can be archived for review without advancing the study
         // timeline. Do not immediately prompt the participant to replay it.
         if (wasLastStudyResultMarkedForReview()) {

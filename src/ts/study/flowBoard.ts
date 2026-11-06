@@ -1,4 +1,5 @@
 import { StudyStep, StudySettings, isLevelStep, isSelectionStep, normalizeStudyWeeks } from './types';
+import { gameplayOptions } from './gameplayFields';
 
 /** Dependency-free study slide timeline with live, explicit drag insertion previews. */
 export function createFlowBoard(parent: HTMLElement, source: StudySettings['weeks'], changed: (weeks: StudySettings['weeks']) => void, weekly = true) {
@@ -270,7 +271,7 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
       const hints = {
         selection: 'Let the participant choose from multiple levels, with unlock rules and play limits.',
         start: 'Introductory screen shown before play.', level: 'Play an assigned level at the chosen difficulty and loops.',
-        break: 'Pause screen with a Continue button.', end: 'Thank-you screen ending the participant session.'
+        break: 'Pause screen with a Continue button and camera setup.', end: 'Thank-you screen ending the participant session.'
       };
       for (const type of ['start', 'level', 'selection', 'break', 'end'] as const) {
         const addButton = button(addBar, `+ ${type === 'selection' ? 'Level selection' : type === 'level' ? 'Play level' : type === 'break' ? 'Break' : type === 'start' ? 'Start' : 'End'}`, () => add(week, type), 'add');

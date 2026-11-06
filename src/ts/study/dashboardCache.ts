@@ -39,9 +39,9 @@ export class DashboardCache {
     return JSON.parse(JSON.stringify(settings)) as StudySettings;
   }
   study(studyId: string) { return this.data.studies.find(item => item.id === studyId); }
-  saveStudy(studyId: string, settings: StudySettings, databaseURL: string, revision: number) {
+  saveStudy(studyId: string, settings: StudySettings, revision: number) {
     this.data.settings[studyId] = JSON.parse(JSON.stringify(settings));
-    const summary: StudySummary = { id: studyId, title: settings.title, enabled: settings.enabled, databaseURL, revision };
+    const summary: StudySummary = { id: studyId, title: settings.title, enabled: settings.enabled, revision };
     const index = this.data.studies.findIndex(item => item.id === studyId);
     if (index >= 0) this.data.studies[index] = summary;
     else this.data.studies.push(summary);
