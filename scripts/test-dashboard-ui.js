@@ -14,7 +14,7 @@ assert(dashboard.includes("newId('study')") && dashboard.includes("newId('level'
 assert(!dashboard.includes('Study ID (letters'), 'No manual study ID field');
 assert(!dashboard.includes("'Description'"), 'No study description editor');
 assert(dashboard.includes('showModerators(study)'), 'Moderators must be managed in a study');
-assert(dashboard.includes('dateRangeEnabled: dateEnabled.checked') && dashboard.includes('weeklyEnabled: weekly.checked'));
+assert(dashboard.includes('scheduleMode: mode.value') && dashboard.includes("weeklyEnabled: mode.value !== 'single'")); 
 assert(dashboard.includes('Override default gameplay settings') && dashboard.includes('Use group-specific gameplay settings'));
 assert(board.includes('study-drop-indicator') && board.includes('slides.insertBefore(indicator, target)'));
 assert(board.includes('Delete this slide') && !board.includes('Delete selected slide'));
@@ -37,7 +37,7 @@ assert(!dashboard.includes('resultsCSV('), 'Researcher export should be JSON onl
 assert(dashboard.includes('Download all participant data') && dashboard.includes("'Download participant results (JSON)'"));
 assert(dashboard.includes('groupSelect(') && dashboard.includes('Save participant settings'));
 assert(dashboard.includes('Change username') && dashboard.includes('Change password'));
-assert(dashboard.includes('...(perParticipant.checked ? { durationWeeks:') && dashboard.includes('participantStartMode: startMode.value'));
+assert(dashboard.includes("mode.value === 'individual'") && dashboard.includes("participantStartMode: 'first-login'"));
 assert(!dashboard.includes('Enable participant access'), 'New studies must be enabled automatically');
 assert(dashboard.includes('user.username'));
 assert(app.includes('study-login-card') && app.includes('Show password'), 'Leiden login must be adopted');
@@ -45,7 +45,7 @@ assert(app.includes("root.style.display = 'block'"), 'Dashboard must not retain 
 assert(css.includes('.study-login-card') && css.includes('.study-signout'));
 assert(frontend.includes('updateAccountCredentials'), 'Credential updates must use a protected API');
 assert(functions.includes('exports.updateAccountCredentials') && functions.includes('auth.updateUser(uid, change)'));
-assert(functions.includes("settings.participantStartMode === 'first-login'"));
+assert(functions.includes('!account.startDate && !stillNeedsPretest') && functions.includes('scheduleOverride/startDate') === false, 'First regular login must be stored without an editable participant date');
 assert(functions.includes('pendingResults[key]'), 'Duplicate result submissions must recover from a staged record');
 assert(functions.includes('progress.pendingResults[key] = record'), 'Progress and result must be committed atomically');
 assert(functions.includes('previous => previous || staged'), 'Duplicate retries must not overwrite delivered results');

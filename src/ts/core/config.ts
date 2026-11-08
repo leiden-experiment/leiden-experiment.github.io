@@ -79,7 +79,8 @@ export const pinkyFingerId: string = 'pinky';
 
 export const buttonTextStyle = {
   align: 'center',
-  font: '50px Courier New',
+  fontFamily: 'Courier New',
+  fontSize: '180px',
   color: '#01C303',
 };
 export const buttonPinchFinger: string = indexFingerId;

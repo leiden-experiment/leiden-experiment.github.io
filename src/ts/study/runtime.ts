@@ -29,7 +29,7 @@ export function getStudyProgress() { return progress; }
 export function syncStudyProgress(remote: Progress) { progress = remote; }
 export function getStudyPlan(now = new Date()) {
   if (!session) return null;
-  return getNextAssignment(session.settings, progress, session.account.startDate || session.settings.startDate, now);
+  return getNextAssignment(session.settings, progress, session.account.startDate || '', now);
 }
 export function setPendingAssignment(week: number, sessionId: string, index: number, total: number, assignment: Assignment, choiceIndex?: number, selectionPlay?: number, playToken?: string, levelName?: string) {
   pending = { week, sessionId, index, total, assignment, choiceIndex, selectionPlay, playToken, levelName };

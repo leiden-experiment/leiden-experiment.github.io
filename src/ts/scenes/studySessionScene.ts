@@ -13,6 +13,7 @@ import { downloadResults } from '../study/offline';
 import { TrackData } from '../level/trackTypes';
 import { isLevelStep, isSelectionStep, isChoiceUnlocked, selectionKey, Assignment, ScreenStep } from '../study/types';
 import { gameplayOptions } from '../study/gameplayFields';
+import { displayDate } from '../study/dateFormat';
 
 export default class StudySessionScene extends HandScene {
   private status: Phaser.GameObjects.Text;
@@ -28,46 +29,38 @@ export default class StudySessionScene extends HandScene {
     const step = plan && plan.index >= 0 ? plan.assignments[plan.index] : null;
     const isSelectionScreen = !!step && isSelectionStep(step);
     this.add.text(this.center.x, isSelectionScreen ? 125 : 180, session.settings.title, { font: '65px Courier New', color: '#ffffff', align: 'center' }).setOrigin(.5);
-    const startDate = session.account.startDate || session.settings.startDate;
-    const nextMonday = session.settings.weeklyEnabled !== false && plan && plan.week > 0 ? new Date(Date.parse(`${startDate}T00:00:00Z`) + plan.week * 7 * 86400000) : null;
-    const daysUntil = nextMonday ? Math.max(0, Math.ceil((nextMonday.getTime() - Date.now()) / 86400000)) : 0;
-    const cappedText = plan?.week && plan.week > 0 && daysUntil > 0
-      ? `You have finished this week's sessions. Come back in ${daysUntil} day${daysUntil === 1 ? '' : 's'}.`
+    const daysUntil = plan?.daysUntilNextWeek || 0;
+    const cappedText = daysUntil > 0
+      ? `You have finished this week's sessions. Week ${plan!.week + 1} unlocks in ${daysUntil} day${daysUntil === 1 ? '' : 's'}.`
+      : plan?.week === plan?.totalWeeks ? 'You have completed the final week of training. Ask your researcher about the Post-test.'
       : 'You have completed the maximum sessions for this week.';
-    const message = plan?.afterEnd ? 'This study has ended. Thank you for participating.' :
-      hasJustFinishedSession() ? (wasLastStudyResultQueued() ? 'Thank you for playing. Your result is stored safely for researcher review.' : 'Thank you for playing today! Your progress has been recorded. Please come back for your next session.') :
-      plan?.beforeStart && plan.week !== 0 ? 'Your training programme has not started yet.' :
+    const message = plan?.state === 'completed' ? 'You have completed the entire study. Thank you for participating.' :
+      plan?.state === 'awaiting-posttest' ? 'Your weekly training is complete. The Post-test will be unlocked by your researcher.' :
+      plan?.state === 'awaiting-login' ? (getStudyProgress().scheduleOverride && !getStudyProgress().scheduleOverride?.startDate ? 'Your researcher has assigned a new weekly schedule. Sign out and sign in again to begin your assigned week.' : 'Pre-test complete. Sign out and sign in again when you are ready to start your weekly programme.') :
+      plan?.beforeStart && plan.week !== 0 ?
+        `Your training programme has not started yet. Please return on ${displayDate(session.settings.scheduleMode === 'fixed' ? session.settings.startDate : session.account.startDate) || 'your assigned start date'}.` :
       plan?.capped ? cappedText :
+      hasJustFinishedSession() ? (wasLastStudyResultQueued() ? 'Thank you for playing. Your result is stored safely for researcher review.' : 'Thank you for playing today! Your progress has been recorded.') :
       !plan?.assignments.length ? 'There are no activities scheduled for this week.' :
       step ? (!isLevelStep(step) ? step.text : `Ready to play: ${this.displayLevelName(step.levelId)}`) :
       'Session complete! Thank you for playing.';
     this.add.text(this.center.x, isSelectionScreen ? 285 : 430, message, { font: '31px Courier New', color: '#ffffff', align: 'center', wordWrap: { width: 1500 } }).setOrigin(.5);
     this.status = this.add.text(this.center.x, isSelectionScreen ? 365 : 620, '', { font: '25px Courier New', color: '#ffd676', align: 'center', wordWrap: { width: 1500 } }).setOrigin(.5);
     if (step?.type === 'end' && plan && !plan.capped && !hasJustFinishedSession()) {
-      // The End slide is terminal. Record a fully completed session as soon
-      // as it is shown; don't require another, confusing Continue click.
+      // The End slide must have NO interactive controls, including camera/settings.
+      // Its completion is recorded automatically without a Continue button.
       this.status.setText('Saving session completion…');
-      const finish = async () => {
-        try {
-          await advanceScreenStep(step);
-          this.status.setText('Session completed. You may close this page.');
-        } catch (error) {
-          this.status.setText('Could not confirm session completion. Please retry.');
-          const retry = new Button(this, 'RETRY SAVE', this.center.x, 810, () => {
-            retry.setVisible(false); retry.text?.setVisible(false);
-            void finish();
-          });
-          retry.setScale(.65);
-        }
-      };
-      // End is a display-only slide; it can still offer camera and permitted settings.
-      this.addStudyUtilityButtons(this.center.x - 320, this.center.x + 320, 845, .57);
-      void finish();
+      void advanceScreenStep(step).then(() => {
+        this.status.setText('Session completed. You may close this page.');
+      }).catch(() => {
+        this.status.setText('Unable to confirm completion. Please refresh this page to retry saving.');
+      });
       return;
     }
     if (plan && !plan.capped && !hasJustFinishedSession() && step) {
       if (isLevelStep(step)) {
-        new Button(this, 'PLAY\nLEVEL', this.center.x, 810, () => { void this.playLevel(); });
+        const play = new Button(this, 'PLAY\nLEVEL', this.center.x, 810, () => { void this.playLevel(); });
+        this.centerStudyButtonLabel(play, 92);
         this.addStudyUtilityButtons(this.center.x - 520, this.center.x + 520, 810, .63);
       } else if (isSelectionStep(step)) {
         const counts = (getStudyProgress().choices || {})[selectionKey(plan.week, plan.sessionId, plan.index)] || {};
@@ -102,11 +95,9 @@ export default class StudySessionScene extends HandScene {
           // Give the three-line label enough actual height, especially when
           // nine choices fill the screen. The sprite and its text scale separately.
           button.setScale(scale, rows === 3 ? .83 : rows === 2 ? .89 : selectable.length === 1 ? 1.16 : 1.09);
-          // Phaser's button label is a separate object, so scale it independently.
-          button.text?.setFontSize(fontSize);
-          button.text?.setPosition(button.x, button.y).setOrigin(.5, .5).setAlign('center');
-          button.text?.setWordWrapWidth(button.displayWidth * .94, true);
-          button.text?.setMaxLines(3);
+          // Fit each custom label to the actual button bounds; even a 3×3 grid
+          // uses as much text space as is available without clipping.
+          this.centerStudyButtonLabel(button, Math.max(fontSize, 100), 3);
         });
         if (step.playthroughs === 0 && plays > 0) {
           let busy = false;
@@ -137,11 +128,15 @@ export default class StudySessionScene extends HandScene {
             this.advancing = false;
           }
         };
-        new Button(this, 'CONTINUE', this.center.x, 810, () => { void goNext(); });
+        const continueButton = new Button(this, 'CONTINUE', this.center.x, 810, () => { void goNext(); });
+        this.centerStudyButtonLabel(continueButton, 90);
         this.addStudyUtilityButtons(this.center.x - 520, this.center.x + 520, 810, .63);
       }
     }
-    if (session.mode === 'offline') new Button(this, 'EXPORT\nRESULTS', 200, 940, () => { void downloadResults(session.account.studyId!, session.account.participantId!); });
+    if (session.mode === 'offline' && step?.type !== 'end') {
+      const exportButton = new Button(this, 'EXPORT\nRESULTS', 200, 940, () => { void downloadResults(session.account.studyId!, session.account.participantId!); });
+      this.centerStudyButtonLabel(exportButton, 76);
+    }
   }
   /** Permissions are defined once per study, including older Settings slides. */
   private participantSettingsPermissions(): string[] {
@@ -176,10 +171,10 @@ export default class StudySessionScene extends HandScene {
 
   /** Button labels are separate Phaser text objects (sprite scaling does not scale
    * them). Explicitly position and size them at the center of the visible button. */
-  private centerStudyButtonLabel(button: Button, fontSize: number) {
-    button.text?.setPosition(button.x, button.y).setOrigin(.5, .5)
-      .setAlign('center').setFontSize(fontSize)
-      .setWordWrapWidth(button.displayWidth * .96, true);
+  private centerStudyButtonLabel(button: Button, _maximumFontSize: number, maxLines = 2) {
+    // Text sizing is centralized in Button: sprite scaling and label scaling
+    // must stay in sync, including the smaller utility buttons.
+    button.fitTextToButton(maxLines);
   }
 
   private displayLevelName(levelId: string): string {

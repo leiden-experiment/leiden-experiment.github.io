@@ -502,7 +502,6 @@ export default class LevelUploadScene extends HandScene {
       );
       playButton.setScale(0.3);
       if (playButton.text) {
-        playButton.text.setFont('25px Courier New');
         playButton.text.setColor('#00ff00'); // Green text for PLAY
       }
       this.levelsContainer!.add(playButton);
@@ -515,7 +514,6 @@ export default class LevelUploadScene extends HandScene {
       editButton.setScale(0.3);
       editButton.setTintFill(0xffff44);
       if (editButton.text) {
-        editButton.text.setFont('25px Courier New');
         editButton.text.setColor('#ffff00'); // Yellow text for EDIT
       }
       this.levelsContainer!.add(editButton);
@@ -534,7 +532,6 @@ export default class LevelUploadScene extends HandScene {
       deleteButton.setScale(0.3);
       deleteButton.setTintFill(0xff4444);
       if (deleteButton.text) {
-        deleteButton.text.setFont('25px Courier New');
         deleteButton.text.setColor('#ff0000'); // Red text for DELETE
       }
       this.levelsContainer!.add(deleteButton);

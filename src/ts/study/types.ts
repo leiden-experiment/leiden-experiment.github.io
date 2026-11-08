@@ -62,15 +62,29 @@ export function normalizeStudyWeeks(input: unknown): Record<string, StudyStep[]>
   return restored;
 }
 
+/** An undefined regular week repeats the latest earlier defined week's slides.
+ * It still has its own week number, session allowance, result records, and
+ * weekly-unlock level choices. Pre-test and Post-test never inherit slides.
+ * An explicitly present (even empty) week is deliberate and not inherited. */
+export function slidesForStudyWeek(weeks: Record<string, StudyStep[]>, week: number): StudyStep[] {
+  if (Object.prototype.hasOwnProperty.call(weeks, String(week))) return weeks[String(week)] || [];
+  if (!Number.isInteger(week) || week < 1) return [];
+  for (let previous = week - 1; previous >= 1; previous--) {
+    if (Object.prototype.hasOwnProperty.call(weeks, String(previous))) return weeks[String(previous)] || [];
+  }
+  return [];
+}
+
 export interface StudySettings {
   title: string;
   description: string; // legacy field; not shown in the dashboard
   introText: string; // Legacy compatibility only; never shown as a separate screen.
-  startDate: string; // also acts as the week-1 anchor when date restrictions are off
+  startDate: string; // Fixed schedule: first permitted day of Week 1; retained for legacy records.
+  scheduleMode?: 'single' | 'fixed' | 'individual'; // Required for newly saved weekly studies.
   weeklyEnabled?: boolean; // absent = true for earlier saved studies
   dateRangeEnabled?: boolean; // absent = true for earlier saved studies
   endDate?: string;
-  durationWeeks?: number; // Optional number of weeks allowed after each participant starts.
+  durationWeeks?: number; // Fixed: study weeks from shared start; Individual: participant weeks after first regular login.
   participantStartMode?: 'manual' | 'first-login';
   maxSessionsPerWeek: number;
   weeks: Record<string, StudyStep[]>; // 0 = pretest, -1 = posttest, >= 1 = ordinary weeks
@@ -112,11 +126,17 @@ export interface Progress {
   completed: Record<string, string[]>;
   sessions: Record<string, number>;
   activeSession: Record<string, string>;
+  /** Session IDs receive a new epoch after manual weekly-count corrections. */
+  sessionEpoch?: Record<string, string>;
+  /** Historical total is not decreased when an administrator resets a weekly allowance. */
+  totalCompletedSessions?: number;
   choices?: Record<string, Record<string, number>>;
   /** ISO timestamp when the most recent FULL study session was completed. */
   lastCompletedSessionAt?: string;
-  /** One-session researcher stage override; automatically cleared on completion. */
+  /** Special one-session Pre-test/Post-test stage assignment; cleared on completion. */
   stageOverride?: { week: number; sessionNumber: number };
+  /** Persistent researcher calendar: chosen week opens on the next login, then advances every 7 days. */
+  scheduleOverride?: { week: number; startDate?: string; assignedAt?: number };
   /** A completed pre-test is followed by a fresh login before regular weeks begin. */
   pretestPendingLogin?: boolean;
 }
@@ -126,6 +146,7 @@ export function defaultStudySettings(title = 'New study'): StudySettings {
     title, description: '', introText: '', collectFingerPositions: false,
     participantSettingsEnabled: false, participantSettingsAllowed: [],
     startDate: new Date().toISOString().slice(0, 10), maxSessionsPerWeek: 3, enabled: true,
+    dateRangeEnabled: false, scheduleMode: 'individual', durationWeeks: 3, participantStartMode: 'first-login',
     weeks: { '1': [
       { type: 'start', text: 'Welcome! When you are ready, press Continue.' },
       { type: 'level', levelId: 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 1 },
@@ -143,11 +164,21 @@ export function validateSettings(value: StudySettings): string[] {
   if (!value || typeof value.title !== 'string' || !value.title.trim() || value.title.length > 120) issues.push('Study title is required (maximum 120 characters)');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value?.startDate || '') || Number.isNaN(Date.parse(value.startDate))) issues.push('Invalid week anchor/start date');
   if (value?.weeklyEnabled !== undefined && typeof value.weeklyEnabled !== 'boolean') issues.push('Invalid weekly study option');
+  if (value?.scheduleMode !== undefined && !['single', 'fixed', 'individual'].includes(value.scheduleMode)) issues.push('Choose a valid weekly schedule mode');
+  if (value?.weeklyEnabled !== false && value?.scheduleMode === 'fixed' && !value.durationWeeks && !value.endDate) issues.push('Fixed weekly studies require a week count');
+  if (value?.weeklyEnabled !== false && value?.scheduleMode === 'individual' && !value.durationWeeks) issues.push('Set the number of weeks per participant');
   if (value?.dateRangeEnabled !== undefined && typeof value.dateRangeEnabled !== 'boolean') issues.push('Invalid date limit option');
   if (value?.durationWeeks !== undefined && (!Number.isInteger(value.durationWeeks) || value.durationWeeks < 1 || value.durationWeeks > 104)) issues.push('Participant duration must be 1–104 weeks');
   if (value?.participantStartMode && !['manual', 'first-login'].includes(value.participantStartMode)) issues.push('Invalid participant start mode');
   if (value?.endDate && (!/^\d{4}-\d{2}-\d{2}$/.test(value.endDate) || Number.isNaN(Date.parse(value.endDate)))) issues.push('Invalid end date');
-  if (value?.dateRangeEnabled !== false && value?.endDate && value.endDate < value.startDate) issues.push('End date must not precede start date');
+  if (value?.scheduleMode === 'fixed' && value.endDate && value.endDate < value.startDate) issues.push('End date must not precede start date');
+  if (value?.scheduleMode === 'fixed' && value.endDate && (Date.parse(value.endDate) - Date.parse(value.startDate)) / 86400000 >= 104 * 7) issues.push('Fixed schedule must not exceed 104 weeks');
+  if (value?.weeklyEnabled !== false && value.scheduleMode === 'fixed' && (value.durationWeeks || value.endDate)) {
+    const days = value.endDate ? Math.floor((Date.parse(value.endDate) - Date.parse(value.startDate)) / 86400000) + 1 : 0;
+    const limit = value.durationWeeks || Math.ceil(days / 7);
+    if (Object.keys(value.weeks || {}).some(week => Number(week) > limit))
+      issues.push(`Fixed schedule spans only ${limit} week(s); remove later timeline weeks`);
+  }
   if (!Number.isInteger(value?.maxSessionsPerWeek) || value.maxSessionsPerWeek < 1 || value.maxSessionsPerWeek > 50) issues.push('Sessions per week must be between 1 and 50');
   if (value?.collectFingerPositions !== undefined && typeof value.collectFingerPositions !== 'boolean') issues.push('Invalid finger position collection option');
   if (value?.participantSettingsEnabled !== undefined && typeof value.participantSettingsEnabled !== 'boolean') issues.push('Invalid participant settings option');
@@ -193,31 +224,56 @@ export function calculateStudyWeek(startDate: string, now = new Date()): number 
   const day = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   return Math.max(1, Math.floor((day - start.getTime()) / 604800000) + 1);
 }
+export function studySessionId(week: number, sessionNumber: number, epochs?: Record<string, string>): string {
+  const epoch = epochs?.[String(week)];
+  return `${week}-${sessionNumber}${epoch ? `-r${epoch}` : ''}`;
+}
 export function emptyProgress(): Progress { return { completed: {}, sessions: {}, activeSession: {} }; }
-export function getNextAssignment(settings: StudySettings, progress: Progress, startDate: string, now = new Date()) {
-  const weekly = settings.weeklyEnabled !== false;
-  const dated = settings.dateRangeEnabled !== false;
-  const current = weekly ? calculateStudyWeek(startDate, now) : 1;
+/** Resolve the stage at the same UTC calendar-day boundaries as Firebase Functions.
+ * The Pre-test is available before Week 1. The Post-test is never released
+ * automatically: a researcher must select it in the participant's stage editor.
+ */
+export function getNextAssignment(settings: StudySettings, progress: Progress, participantDate: string, now = new Date()) {
+  const weekly = settings.weeklyEnabled !== false && settings.scheduleMode !== 'single';
+  const mode = settings.scheduleMode || (settings.durationWeeks ? 'individual' : 'fixed');
+  const manual = progress.stageOverride; // Pre-test and Post-test only.
+  const personal = progress.scheduleOverride;
+  const anchor = personal ? personal.startDate : mode === 'fixed' ? settings.startDate : participantDate;
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const beforeStart = (dated && today < Date.parse(`${settings.startDate}T00:00:00Z`)) ||
-    (!!settings.durationWeeks && today < Date.parse(`${startDate}T00:00:00Z`));
-  const afterEnd = (dated && !!settings.endDate && today > Date.parse(`${settings.endDate}T00:00:00Z`)) ||
-    (!!settings.durationWeeks && calculateStudyWeek(startDate, now) > settings.durationWeeks);
-  const lastWeek = Math.max(1, ...Object.keys(settings.weeks || {}).map(Number).filter(n => n > 0));
-  const finished = weekly && current > lastWeek && (!settings.weeks?.['-1'] || !!progress.sessions['-1']);
-  const manual = progress.stageOverride;
-  const week = manual ? manual.week : weekly && settings.weeks?.['0'] && !(progress.sessions['0'] || 0) ? 0 :
-    weekly && current > lastWeek && settings.weeks?.['-1'] && !(progress.sessions['-1'] || 0) ? -1 : current;
-  const assignments = settings.weeks?.[String(week)] || [];
+  const firstDay = anchor ? Date.parse(`${anchor}T00:00:00Z`) : NaN;
+  const validAnchor = Number.isFinite(firstDay);
+  const weekElapsed = validAnchor ? Math.floor((today - firstDay) / 604800000) + 1 : 0;
+  const configuredWeeks = Math.max(1, ...Object.keys(settings.weeks || {}).map(Number).filter(n => n > 0));
+  const totalWeeks = settings.durationWeeks ||
+    (mode === 'fixed' && settings.endDate && settings.startDate ?
+      Math.ceil((Date.parse(`${settings.endDate}T00:00:00Z`) - Date.parse(`${settings.startDate}T00:00:00Z`) + 86400000) / 604800000) : configuredWeeks);
+  const pretestNeeded = weekly && !manual && !!settings.weeks?.['0']?.length && !(progress.sessions['0'] || 0);
+  const posttestDone = !!(progress.sessions['-1'] || 0);
+  const posttestConfigured = !!settings.weeks?.['-1']?.length;
+  const beforeStart = weekly && !manual && !pretestNeeded && (!validAnchor || weekElapsed < 1);
+  const activeWeek = personal ? personal.week + weekElapsed - 1 : weekElapsed;
+  const afterWeeks = weekly && !manual && !pretestNeeded && (activeWeek > totalWeeks ||
+    (!personal && !settings.durationWeeks && mode === 'fixed' && !!settings.endDate && today > Date.parse(`${settings.endDate}T00:00:00Z`)));
+  const nextStart = validAnchor ? firstDay + Math.max(1, weekElapsed) * 604800000 : NaN;
+  const daysUntilNextWeek = validAnchor && Number.isFinite(nextStart) && weekElapsed >= 1 && activeWeek < totalWeeks
+    ? Math.max(0, Math.ceil((nextStart - today) / 86400000)) : 0;
+  const pretestPendingLogin = !!progress.pretestPendingLogin;
+  const completed = weekly && (posttestDone || (!posttestConfigured && afterWeeks));
+  const week = manual ? manual.week : pretestNeeded ? 0 : weekly ? Math.max(1, personal?.week || 1, activeWeek) : 1;
+  const assignments = slidesForStudyWeek(settings.weeks || {}, week);
   const sessionNo = manual ? manual.sessionNumber : (progress.sessions[String(week)] || 0) + 1;
-  const sessionId = manual ? `${week}-${sessionNo}` : progress.activeSession[String(week)] || `${week}-${sessionNo}`;
+  const sessionId = manual ? `${week}-${sessionNo}` : progress.activeSession[String(week)] || studySessionId(week, sessionNo, progress.sessionEpoch); 
   const done = progress.completed[String(week)] || [];
   const index = assignments.findIndex((_, i) => !done.includes(`${sessionId}:${i}`));
+  const limitReached = weekly && !manual && !pretestNeeded && (progress.sessions[String(week)] || 0) >= settings.maxSessionsPerWeek;
+  const capped = completed || pretestPendingLogin || (!manual && !!personal && !personal.startDate && !pretestNeeded) || (!manual && (beforeStart || afterWeeks || limitReached));
+  const state = pretestPendingLogin ? 'awaiting-login' : completed ? 'completed' :
+    !manual && personal && !personal.startDate && !pretestNeeded ? 'awaiting-login' :
+    !manual && afterWeeks && posttestConfigured ? 'awaiting-posttest' :
+    beforeStart ? 'waiting-start' : limitReached ? 'weekly-complete' : 'active';
   return { week, assignments, sessionId, index, complete: assignments.length > 0 && index === -1,
-    capped: !!progress.pretestPendingLogin || (!manual && ((beforeStart && week !== 0) ||
-      (afterEnd && week !== -1) || finished || (weekly && (progress.sessions[String(week)] || 0) >= (week <= 0 ? 1 : settings.maxSessionsPerWeek)))),
-    beforeStart: !!progress.pretestPendingLogin || (!manual && beforeStart),
-    afterEnd: !!progress.pretestPendingLogin || (!manual && (afterEnd && week !== -1 || finished)) };
+    capped, beforeStart: pretestPendingLogin || beforeStart, afterEnd: completed || (!manual && afterWeeks),
+    state, daysUntilNextWeek, totalWeeks };
 }
 export function markAssignmentComplete(progress: Progress, week: number, sessionId: string, index: number, total: number): Progress {
   const next: Progress = JSON.parse(JSON.stringify(progress));
@@ -228,6 +284,7 @@ export function markAssignmentComplete(progress: Progress, week: number, session
   next.completed[key] = list;
   if (Array.from({ length: total }, (_, i) => `${sessionId}:${i}`).every(x => list.includes(x))) {
     if (next.activeSession[key] === sessionId || !next.activeSession[key]) {
+      next.totalCompletedSessions = (next.totalCompletedSessions ?? Object.values(next.sessions).reduce((n, v) => n + Number(v || 0), 0)) + 1;
       next.sessions[key] = (next.sessions[key] || 0) + 1;
       next.lastCompletedSessionAt = new Date().toISOString();
       delete next.activeSession[key];
@@ -258,7 +315,7 @@ export function restoreProgressAtLevelCheckpoint(progress: Progress, weeks: Reco
   const completed = { ...progress.completed };
   let changed = false;
   for (const [week, sid] of Object.entries(progress.activeSession || {})) {
-    const slides = weeks[week]; const done = completed[week];
+    const slides = slidesForStudyWeek(weeks, Number(week)); const done = completed[week];
     if (!sid || !Array.isArray(slides) || !Array.isArray(done)) continue;
     const prefix = `${sid}:`;
     const doneIndices = new Set(done.filter(x => x.startsWith(prefix)).map(x => Number(x.slice(prefix.length))));

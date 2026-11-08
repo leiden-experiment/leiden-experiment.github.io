@@ -75,7 +75,7 @@ const api=moduleObject.exports;
 const originalSaveStudy = api.saveStudy;
 // Simulate the current browser sending the revision it received at login.
 api.saveStudy = req => originalSaveStudy({ ...req, data: { ...req.data, expectedRevision: Number(central.store.studies?.[req.data.id]?.revision || 0) } });
-const request=(uid,data={})=>({auth:{uid,token:{auth_time:1}},data});
+const request=(uid,data={},authTime=1)=>({auth:{uid,token:{auth_time:authTime}},data});
 // Test the actual TypeScript normalization used by the visual timeline editor.
 const typescript = (() => { try { return require('typescript'); }
   catch { return require('/opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript'); } })();
@@ -120,14 +120,19 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   const originalDate=beforePretest.account.startDate;
   // A researcher can force a future week even when its calendar date has not arrived.
   const reassigned=await api.setParticipantStage(request('admin-one',{uid:'user-one',stage:2}));
-  assert.equal(reassigned.progress.stageOverride.week,2);
-  const overrideSession=`2-${reassigned.progress.stageOverride.sessionNumber}`;
-  const during=await api.getParticipantBundle(request('user-one'));
-  assert.equal(during.progress.stageOverride.week,2,'the selected stage persists until its full session ends');
-  const typedPlan=studyTypesExports.getNextAssignment(settings,during.progress,settings.startDate,new Date('2026-11-06T12:00Z'));
+  assert.equal(reassigned.progress.scheduleOverride.week,2);
+  const stillPretest=await api.getParticipantBundle(request('user-one',{},Math.floor(Date.now()/1000)+1));
+  assert.equal(stillPretest.progress.scheduleOverride.startDate,undefined,'Personal weeks cannot bypass a required Pre-test');
+  assert.equal(studyTypesExports.getNextAssignment(settings,stillPretest.progress,'',new Date()).week,0);
+  // Represent a completed lab Pre-test before the subsequent regular login.
+  await central.ref('progress/research1/user-one/sessions/0').set(1);
+  const during=await api.getParticipantBundle(request('user-one',{},Math.floor(Date.now()/1000)+1));
+  assert.equal(during.progress.scheduleOverride.week,2,'a rolling calendar begins on the next authenticated login');
+  assert.equal(during.progress.scheduleOverride.startDate,new Date().toISOString().slice(0,10));
+  const typedPlan=studyTypesExports.getNextAssignment(settings,during.progress,during.account.startDate,new Date());
   assert.equal(typedPlan.week,2);
   assert.equal(typedPlan.capped,false);
-  assert.equal(typedPlan.sessionId,overrideSession);
+  const overrideSession=typedPlan.sessionId;
   await api.advanceStudyStep(request('user-one',{week:2,sessionId:overrideSession,index:0,stepType:'start'}));
   const permit=await api.preparePlay(request('user-one',{week:2,sessionId:overrideSession,index:1,levelId:'legacy:Trained'}));
   const play={schemaVersion:1,studyId:'research1',participantId:'participant01',group:'',week:2,sessionId:overrideSession,
@@ -138,10 +143,10 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   await api.advanceStudyStep(request('user-one',{week:2,sessionId:overrideSession,index:2,stepType:'end'}));
   let stored=(await central.ref('progress/research1/user-one').get()).val();
   assert.equal(stored.sessions['2'],1);
-  assert.equal(stored.stageOverride,undefined,'manual week override is consumed after a completed session');
+  assert.equal(stored.scheduleOverride.week,2,'the manually assigned weekly calendar persists after a completed session');
   assert.equal(stored.lastCompletedSessionAt !== undefined,true);
   assert.equal((await central.ref('results/research1/user-one').get()).exists(),true,'forced play is saved permanently');
-  assert.equal((await central.ref('accounts/user-one/startDate').get()).val(),undefined,'forced week must not set first-login start date early');
+  assert.equal((await central.ref('accounts/user-one/startDate').get()).val(),new Date().toISOString().slice(0,10),'first regular login is recorded even when the week is assigned manually');
   // Existing participants may gain and later remove personal gameplay settings.
   await api.setParticipant(request('admin-one',{uid:'user-one',changes:{customConfig:{targetSize:1.2}}}));
   assert.equal((await central.ref('accounts/user-one/customConfig').get()).val().targetSize,1.2);
@@ -159,9 +164,9 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   assert.equal(stored.stageOverride,undefined,'pre-test manual assignment should be consumed');
   assert.equal(studyTypesExports.getNextAssignment(settings,stored,settings.startDate,new Date('2026-11-06')).capped,true,
     'participant cannot continue to Week 1 without logging in again');
-  const nextLogin=await api.getParticipantBundle(request('user-one'));
+  const nextLogin=await api.getParticipantBundle(request('user-one',{},2));
   assert.equal(nextLogin.progress.pretestPendingLogin,undefined,'new login releases post-pretest hold');
-  assert.equal(nextLogin.account.startDate,new Date().toISOString().slice(0,10),'Week 1 date anchors on first login after pre-test');
+  assert.equal(nextLogin.account.startDate,new Date().toISOString().slice(0,10),'the original first regular login date remains unchanged after Pre-test is reassigned');
   // The researcher may force a post-test independently of the calendar while preserving earlier results.
   const post=await api.setParticipantStage(request('admin-one',{uid:'user-one',stage:-1}));
   assert.equal(post.progress.stageOverride.week,-1);

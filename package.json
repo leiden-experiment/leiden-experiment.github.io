@@ -11,7 +11,7 @@
       "email": "j.a.rijsdijk@student.tudelft.nl"
     }
   ],
-  "version": "1.8.20",
+  "version": "1.8.27",
   "description": "A serious game about sonification of hand and finger movements",
   "main": "src/electron/main.js",
   "scripts": {
@@ -30,7 +30,7 @@
     "fix:all": "npm run fix:format && npm run fix:lint",
     "test:levels": "node scripts/test-level-formats.js",
     "test:study": "node scripts/test-study.js",
-    "test": "npm run test:levels && npm run test:study && npm run test:web && npm run test:research && npm run test:usernames && npm run test:build-regressions && npm run test:dashboard && node scripts/test-choice-and-ui.js && node scripts/test-live-study-backend.js && node scripts/test-dashboard-cache-and-preload.js && node scripts/test-v187-ui.js && node scripts/test-v188-fixes.js && node scripts/test-v189-regressions.js && node scripts/test-v1810-login-errors.js && node scripts/test-v1811-ui-and-conflicts.js && node scripts/test-v1812-ui.js && node scripts/test-v1813-progress-and-data.js && node scripts/test-v1814-stage-management.js && node scripts/test-v1815-archives.js && node scripts/test-v1816-features.js && node scripts/test-v1817-break-and-privacy.js && node scripts/test-v1818-screen-controls.js && node scripts/test-v1819-options-and-layout.js && node scripts/test-v1819-options-types.js && node scripts/test-v1820-study-session-order.js",
+    "test": "npm run test:levels && npm run test:study && npm run test:web && npm run test:research && npm run test:usernames && npm run test:build-regressions && npm run test:dashboard && node scripts/test-choice-and-ui.js && node scripts/test-live-study-backend.js && node scripts/test-dashboard-cache-and-preload.js && node scripts/test-v187-ui.js && node scripts/test-v188-fixes.js && node scripts/test-v189-regressions.js && node scripts/test-v1810-login-errors.js && node scripts/test-v1811-ui-and-conflicts.js && node scripts/test-v1812-ui.js && node scripts/test-v1813-progress-and-data.js && node scripts/test-v1814-stage-management.js && node scripts/test-v1815-archives.js && node scripts/test-v1816-features.js && node scripts/test-v1817-break-and-privacy.js && node scripts/test-v1818-screen-controls.js && node scripts/test-v1819-options-and-layout.js && node scripts/test-v1819-options-types.js && node scripts/test-v1820-study-session-order.js && node scripts/test-v1821-scheduling.js && node scripts/test-v1822-scheduling-ui.js && node scripts/test-v1822-button-types.js && node scripts/test-v1825-repeated-weeks.js && node scripts/test-v1826-drag-and-fixed-continue.js && node scripts/test-v1827-rolling-calendars.js",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac dmg zip",
     "build:linux": "npm run build && electron-builder --linux AppImage",

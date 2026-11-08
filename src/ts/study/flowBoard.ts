@@ -5,6 +5,7 @@ import { gameplayOptions } from './gameplayFields';
 export function createFlowBoard(parent: HTMLElement, source: StudySettings['weeks'], changed: (weeks: StudySettings['weeks']) => void, weekly = true) {
   let weeks: StudySettings['weeks'] = JSON.parse(JSON.stringify(normalizeStudyWeeks(source)));
   let isWeekly = weekly;
+  let maxWeeks: number | null = null;
   let scheduleNote = 'Pre-test is before Week 1; Post-test is after the final week.';
   let availableLevels: { id: string; name: string; bpm?: number }[] = [
     ...['Birthday Vibes', 'Cheerful Bliss', 'Slow Elegance', 'Trained', 'Untrained', 'Tryout', 'Nosound']
@@ -13,6 +14,14 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
   let selected: { week: string; index: number } | null = null;
   let dragging: { week: string; index: number } | null = null;
   let destination: { week: string; index: number } | null = null;
+  // One shared indicator, not one indicator per week. A drag may visit several
+  // week rows before it is dropped or cancelled; moving this node prevents
+  // stale 'Drop here' markers being stranded in previously hovered weeks.
+  const indicator = document.createElement('div');
+  indicator.className = 'study-drop-indicator';
+  indicator.textContent = 'Drop here';
+  indicator.setAttribute('aria-hidden', 'true');
+  const clearPreview = () => { indicator.remove(); destination = null; };
   const board = document.createElement('div'); board.className = 'study-flow-board'; parent.appendChild(board);
   // Render the editor within the selected week, never below the entire timeline.
   const editor = document.createElement('div'); editor.className = 'study-slide-editor';
@@ -169,22 +178,32 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
     } else item('Participant message', step.text, value => { step.text = value; }, 'Shown on this start, break, or end screen.', true);
   }
   function render() {
+    clearPreview();
     board.replaceChildren();
     const toolbar = make('div', board); toolbar.className = 'study-flow-toolbar';
     make('h3', toolbar, 'Visual study timeline');
     if (isWeekly) {
       const toolbarActions = make('div', toolbar); toolbarActions.className = 'study-flow-toolbar-actions';
-      button(toolbarActions, '+ Add week', () => {
+      const addWeek = button(toolbarActions, '+ Add week', () => {
         const next = Math.max(0, ...ordered().map(Number).filter(n => n > 0)) + 1;
-        weeks[String(next)] = []; selected = null; trigger(); render();
+        if (maxWeeks !== null && next > maxWeeks) return;
+        // Copy the previous week's slides as independent objects, so editing
+        // Week 2 never silently modifies Week 1 or shares nested choices.
+        const previous = weeks[String(next - 1)] || [];
+        weeks[String(next)] = JSON.parse(JSON.stringify(previous)) as StudyStep[];
+        selected = null; trigger(); render();
       }, 'add');
+      addWeek.disabled = maxWeeks !== null && Math.max(1, ...Object.keys(weeks).map(Number).filter(n => n > 0)) >= maxWeeks;
+      addWeek.title = addWeek.disabled ? 'The schedule cannot have more weeks than the configured duration.' : 'Duplicate the previous week';
       button(toolbarActions, '+ Pre-test', () => { if (!weeks['0']) weeks['0'] = []; trigger(); render(); }, 'add');
       button(toolbarActions, '+ Post-test', () => { if (!weeks['-1']) weeks['-1'] = []; trigger(); render(); }, 'add');
     }
     make('p', board, isWeekly
-      ? 'Each row represents a different week. Drag slide thumbnails to any insertion marker, including across weeks.'
-      : 'Single-session study: the Week 1 timeline repeats. Enable Weekly study to use different weeks.');
+      ? 'Each row defines a week. Later weeks without their own row repeat the most recently defined week automatically. Add Week to make an editable copy. Drag slides across weeks using insertion markers.'
+      : 'Single session: this timeline repeats on each login. Choose a weekly scheduling mode to use different weeks.');
     if (!weeks['1']) weeks['1'] = [];
+    // Missing later weeks automatically repeat the most recent defined week at runtime.
+    // Only explicit weeks are displayed and edited here.
     for (const week of (isWeekly ? ordered() : ['1'])) {
       const section = make('section', board); section.className = 'study-week-row';
       const header = make('div', section); header.className = 'study-week-heading';
@@ -205,9 +224,6 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
         removeRow.setAttribute('aria-label', removeRow.title);
       }
       const slides = make('div', section); slides.className = 'study-slides';
-      const indicator = document.createElement('div'); indicator.className = 'study-drop-indicator';
-      indicator.textContent = 'Drop here'; indicator.setAttribute('aria-hidden', 'true');
-      const clearPreview = () => { indicator.remove(); destination = null; };
       const preview = (index: number) => {
         if (!dragging) return;
         // Inserting before or after the dragged tile leaves it unchanged:
@@ -261,6 +277,7 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
           if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); move(week, index, week, Math.min(weeks[week].length, index + 2)); }
         });
         tile.ondragstart = event => {
+          clearPreview();
           dragging = { week, index }; tile.classList.add('study-slide-dragging');
           event.dataTransfer?.setData('text/plain', JSON.stringify(dragging));
           if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
@@ -289,6 +306,17 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
     setAvailableLevels: (levels: { id: string; name: string; bpm?: number }[]) => { availableLevels = [...availableLevels.filter(x => x.id.startsWith('legacy:')), ...levels]; edit(); },
     setWeeks: (value: StudySettings['weeks']) => { weeks = JSON.parse(JSON.stringify(normalizeStudyWeeks(value)));
       selected = null; trigger(); render(); },
+    setWeekLimit: (limit: number | null) => {
+      const nextLimit = limit !== null && Number.isInteger(limit) && limit >= 1 && limit <= 104 ? limit : null;
+      let changedWeeks = false;
+      if (nextLimit !== null) {
+        for (const week of Object.keys(weeks)) {
+          if (Number(week) > nextLimit) { delete weeks[week]; changedWeeks = true; }
+        }
+      }
+      if (selected && !weeks[selected.week]) selected = null;
+      if (maxWeeks !== nextLimit || changedWeeks) { maxWeeks = nextLimit; if (changedWeeks) trigger(); render(); }
+    },
     setWeekly: (value: boolean) => { if (isWeekly !== value) { isWeekly = value; selected = null; render(); } },
     setScheduleNote: (message: string) => { if (scheduleNote !== message) { scheduleNote = message; render(); } },
   };

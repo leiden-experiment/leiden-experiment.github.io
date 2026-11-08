@@ -340,6 +340,17 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   assert.equal(laterPreference.preferences.targetSize, 2, 'settings remain available from the next level screen');
   const bundle=await api.getParticipantBundle(request('preferences-one'));
   assert.equal(bundle.account.participantPreferences.targetSize,2, 'saved settings reappear after login');
+  // v1.8.21: study access is a reversible pause, not an archive.
+  const disabled = await api.setStudyEnabled(request('admin-one',{studyId:'preferences-study',enabled:false}));
+  assert(disabled.ok && disabled.revision > 0);
+  assert.equal((await central.ref('studyIndex/preferences-study/enabled').get()).val(),false);
+  await assert.rejects(api.getProfile(request('preferences-one')), /study is currently disabled/i);
+  assert((await central.ref('accounts/preferences-one').get()).exists(), 'Pausing a study must not delete participant accounts');
+  const restored = await api.setStudyEnabled(request('admin-one',{studyId:'preferences-study',enabled:true}));
+  assert(restored.revision > disabled.revision);
+  assert.equal((await api.getProfile(request('preferences-one'))).account.username,'settingsplayer');
+  await assert.rejects(api.setStudyEnabled(request('preferences-one',{studyId:'preferences-study',enabled:false})),
+    /Administrator permission required/, 'Participants may not toggle study access');
 
 
   // Login checkpoint: text screens do not advance the stored resume point.
@@ -373,6 +384,113 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   const afterFull=await api.getParticipantBundle(request('checkpoint-one',{resume:true}));
   assert.equal(afterFull.progress.completed['1'].length,6,'Full sessions must never be replayed');
   console.log('PASS: backend login checkpoint replays instructions, preserves completed levels and full sessions');
+
+  // v1.8.23: A manually assigned future week overrides the calendar while its
+  // session is in progress, including after Continue returns refreshed progress.
+  authUsers.set('stage-forward', {disabled:false,tokensValidAfterTime:'1970-01-01T00:00:00.000Z'});
+  const lateStart='2099-12-01';
+  const forcedSettings={...settings,enabled:true,weeklyEnabled:true,scheduleMode:'fixed',
+    startDate:lateStart,endDate:'2099-12-21',maxSessionsPerWeek:2,
+    weeks:{'1':[{type:'level',levelId:'legacy:Trained',bpmIndex:0,loops:1}],
+      '2':[{type:'start',text:'Week 2 start'},{type:'level',levelId:'legacy:Trained',bpmIndex:0,loops:1}],
+      '3':[{type:'level',levelId:'legacy:Trained',bpmIndex:0,loops:1}]}};
+  await central.ref('studies/manual-study/settings').set(forcedSettings);
+  await central.ref('accounts/stage-forward').set({uid:'stage-forward',username:'stageforward',participantId:'stageforward',
+    role:'participant',studyId:'manual-study',active:true});
+  const correction = await api.setParticipantWeekSessions(request('admin-one',{uid:'stage-forward',week:1,count:1}));
+  assert.equal(correction.progress.sessions['1'],1);
+  assert.equal(correction.progress.totalCompletedSessions,0, 'manual allowances cannot fabricate historical completions');
+  assert(correction.progress.sessionEpoch['1'], 'reset must assign a fresh session epoch');
+  const forced = await api.setParticipantStage(request('admin-one',{uid:'stage-forward',stage:2}));
+  assert.equal(forced.progress.scheduleOverride.week,2);
+  const futureBundle = await api.getParticipantBundle(request('stage-forward',{}));
+  assert.equal(futureBundle.progress.scheduleOverride.week,2,'login must preserve the selected future stage');
+  // The mock ID token was issued long before the researcher assigned this week.
+  // A new authentication is required before the personal calendar starts.
+  const renewed = await api.getParticipantBundle({...request('stage-forward'),auth:{uid:'stage-forward',token:{auth_time:Math.floor(Date.now()/1000)+1}}});
+  assert(renewed.progress.scheduleOverride.startDate,'fresh sign-in starts the personal calendar');
+  const sid=`2-${Number(renewed.progress.sessions['2'] || 0)+1}-r${renewed.progress.sessionEpoch['2']}`;
+  const continued = await api.advanceStudyStep(request('stage-forward',
+    {week:2,sessionId:sid,index:0,stepType:'start'}));
+  assert(continued.progress.completed['2'].includes(`${sid}:0`), 'future week screen must advance');
+  assert.equal(continued.progress.scheduleOverride.week,2,'rolling calendar must survive the Continue response');
+  const resumed = await api.getParticipantBundle(request('stage-forward'));
+  assert.equal(resumed.progress.scheduleOverride.week,2,'the next level must remain in the assigned week');
+  // Correcting a weekly count while a Start/Break slide is active should work.
+  // It abandons the in-progress step, preserves historical results and assigns
+  // a fresh session ID even when the participant has a manual stage override.
+  const correctionWithActive = await api.setParticipantWeekSessions(request('admin-one',
+    {uid:'stage-forward',week:2,count:1}));
+  assert.equal(correctionWithActive.progress.sessions['2'],1);
+  assert.equal(correctionWithActive.progress.totalCompletedSessions,0,
+    'an administrative count correction is not a historical session completion');
+  assert(!correctionWithActive.progress.activeSession['2'], 'old in-progress session should be retired');
+  assert(correctionWithActive.progress.completed['2'].includes(`${sid}:0`),
+    'old step markers are retained for audit');
+  assert.notEqual(correctionWithActive.progress.sessionEpoch['2'],
+    forced.progress.sessionEpoch['2'], 'correcting the allowance must assign a fresh session ID');
+  const newManualSid=`2-2-r${correctionWithActive.progress.sessionEpoch['2']}`;
+  const stable = await api.getParticipantBundle(request('stage-forward'));
+  assert.equal(stable.progress.totalCompletedSessions,0);
+  assert.equal(stable.progress.sessions['1'],1);
+  assert.equal(stable.progress.sessions['2'],1);
+  assert.equal(stable.progress.scheduleOverride.week,2,'the personal schedule survives an allowance correction');
+  const staleContinue = await api.advanceStudyStep(request('stage-forward',
+    {week:2,sessionId:sid,index:0,stepType:'start'}));
+  assert(staleContinue.resynced, 'an old tab must not advance the retired session');
+  const freshContinue = await api.advanceStudyStep(request('stage-forward',
+    {week:2,sessionId:newManualSid,index:0,stepType:'start'}));
+  assert(freshContinue.progress.completed['2'].includes(`${newManualSid}:0`),
+    'after reloading the participant can advance the fresh session');
+
+  // Normal (non-overridden) schedules behave the same, and an old retry must
+  // not be able to revive the retired session after the count correction.
+  const today=new Date().toISOString().slice(0,10);
+  authUsers.set('count-edit', {disabled:false,tokensValidAfterTime:'1970-01-01T00:00:00.000Z'});
+  await central.ref('studies/count-edit-study/settings').set({...forcedSettings,
+    scheduleMode:'individual',durationWeeks:3,maxSessionsPerWeek:3});
+  await central.ref('accounts/count-edit').set({uid:'count-edit',username:'countedit',participantId:'countedit',
+    role:'participant',studyId:'count-edit-study',active:true,startDate:today});
+  await central.ref('progress/count-edit-study/count-edit').set({
+    sessions:{'1':0},completed:{'1':['1-1:0']},activeSession:{'1':'1-1'},
+    choices:{'1_1-1_0':{'0':1}},totalCompletedSessions:0
+  });
+  const normalEdit=await api.setParticipantWeekSessions(request('admin-one',{uid:'count-edit',week:1,count:1}));
+  assert.equal(normalEdit.progress.sessions['1'],1);
+  assert.equal(normalEdit.progress.totalCompletedSessions,0);
+  assert(!normalEdit.progress.activeSession['1']);
+  assert(normalEdit.progress.completed['1'].includes('1-1:0'));
+  const newNormalSid=`1-2-r${normalEdit.progress.sessionEpoch['1']}`;
+  assert.notEqual(newNormalSid,'1-1');
+  const normalBundle=await api.getParticipantBundle(request('count-edit',{resume:true}));
+  assert.equal(normalBundle.progress.sessions['1'],1);
+  const normalPlay=await api.preparePlay(request('count-edit',
+    {week:1,sessionId:newNormalSid,index:0,levelId:'legacy:Trained'}));
+  assert(normalPlay.playToken, 'participant can start a fresh level after the correction');
+  // Queued results are the only situation where counts remain blocked: those
+  // results might include an in-flight session completion.
+  await central.ref('progress/count-edit-study/count-edit/pendingResults').set({queued:{week:1}});
+  await assert.rejects(api.setParticipantWeekSessions(request('admin-one',
+    {uid:'count-edit',week:1,count:2})), /Pending study results/);
+  await central.ref('progress/count-edit-study/count-edit/pendingResults').remove();
+  // An adjusted week count must not accidentally recycle a previous play ID.
+  await central.ref('studies/manual-study/settings').set({...forcedSettings,
+    startDate:'2026-11-08',endDate:'2026-11-21'});
+  await api.setParticipantStage(request('admin-one',{uid:'stage-forward',stage:null}));
+  const epoch = correction.progress.sessionEpoch['1'];
+  const correctedSid=`1-2-r${epoch}`;
+  const authorized=await api.preparePlay(request('stage-forward',
+    {week:1,sessionId:correctedSid,index:0,levelId:'legacy:Trained'}));
+  assert(authorized.playToken, 'new epoch session must receive play authorization');
+  const epochResult=await api.submitResult(request('stage-forward',{
+    playToken: authorized.playToken,
+    data:{schemaVersion:1,studyId:'manual-study',participantId:'stageforward',group:'',
+      week:1,sessionId:correctedSid,assignmentIndex:0,levelId:'legacy:Trained',
+      completedAt:'2026-11-08T16:00:00Z',result:{total:5}}}));
+  assert(epochResult.ok && !epochResult.reviewRequired,'corrected session must be accepted as normal gameplay');
+  assert.equal(epochResult.progress.totalCompletedSessions,1,'real completion increases historical total only once');
+  assert.equal(epochResult.progress.sessions['1'],2,'weekly allowance advances from the corrected count');
+  console.log('PASS: manual future week, saved Continue override, separate historical total, safe weekly allowance correction');
 
   // Upload names are unique without regard to capitalization; deleting a level frees its name.
   const dummyLevel={bpm:[120],layers:[]};

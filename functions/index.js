@@ -39,6 +39,26 @@ function effectiveWeeks(weeks) {
   if (!restored['1']) restored['1'] = [];
   return restored;
 }
+/** Resolve a missing regular week to the last defined earlier week. Preserve
+ * the real week number in progress, session IDs, and research results. */
+function slidesForStudyWeek(weeks, week) {
+  if (Object.prototype.hasOwnProperty.call(weeks, String(week))) return weeks[String(week)] || [];
+  if (!Number.isInteger(week) || week < 1) return [];
+  for (let previous = week - 1; previous >= 1; previous--) {
+    if (Object.prototype.hasOwnProperty.call(weeks, String(previous))) return weeks[String(previous)] || [];
+  }
+  return [];
+}
+function configuredWeekLimit(settings, weeks) {
+  const defined = Math.max(1, ...Object.keys(weeks).map(Number).filter(n => n > 0));
+  const mode = settings.scheduleMode || (settings.durationWeeks ? 'individual' : 'fixed');
+  if (settings.durationWeeks) return settings.durationWeeks;
+  if (mode === 'fixed' && settings.endDate && settings.startDate) {
+    const days = (Date.parse(settings.endDate) - Date.parse(settings.startDate)) / 86400000 + 1;
+    return Number.isFinite(days) ? Math.max(1, Math.ceil(days / 7)) : defined;
+  }
+  return defined;
+}
 const choiceKey = (week, sid, index) => `${week}_${sid}_${index}`;
 const unlockedChoice = (step, index, week, counts) => index >= 0 && index < step.choices.length &&
   (step.unlock === 'all' || (step.unlock === 'weekly' && index + 1 <= Math.max(1, week)) ||
@@ -78,6 +98,10 @@ async function profile(req) {
   const account = snap.val();
   if (req.auth.token.superadmin === true) return { ...account, uid: req.auth.uid, username: account?.username || authUser.displayName || (authUser.email || '').split('@')[0] || 'administrator', role: 'admin', active: true };
   if (!account || !account.active) fail('Account disabled or not enrolled', 'permission-denied');
+  if (account.role === 'participant' && account.studyId) {
+    const study = (await db.ref(`studies/${account.studyId}/settings/enabled`).get()).val();
+    if (study !== true) fail('This study is currently disabled. Please contact a researcher.', 'failed-precondition');
+  }
   return { ...account, uid: req.auth.uid };
 }
 function requireAdmin(account) { if (account.role !== 'admin') fail('Administrator permission required', 'permission-denied'); }
@@ -89,10 +113,14 @@ function validateSettings(s) {
   if (!s || typeof s !== 'object' || typeof s.title !== 'string' || !s.title.trim() || s.title.length > 120 ||
       typeof s.startDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s.startDate) || Number.isNaN(Date.parse(s.startDate)) ||
       (s.weeklyEnabled !== undefined && typeof s.weeklyEnabled !== 'boolean') ||
+      (s.scheduleMode !== undefined && !['single','fixed','individual'].includes(s.scheduleMode)) ||
+      (s.weeklyEnabled !== false && s.scheduleMode === 'fixed' && !s.durationWeeks && !s.endDate) ||
+      (s.weeklyEnabled !== false && s.scheduleMode === 'individual' && !s.durationWeeks) ||
       (s.dateRangeEnabled !== undefined && typeof s.dateRangeEnabled !== 'boolean') ||
       (s.durationWeeks !== undefined && (!Number.isInteger(s.durationWeeks) || s.durationWeeks < 1 || s.durationWeeks > 104)) ||
       (s.participantStartMode !== undefined && !['manual','first-login'].includes(s.participantStartMode)) ||
       (s.endDate && (!/^\d{4}-\d{2}-\d{2}$/.test(s.endDate) || Number.isNaN(Date.parse(s.endDate)) || s.endDate < s.startDate)) ||
+      (s.scheduleMode === 'fixed' && s.endDate && (Date.parse(s.endDate) - Date.parse(s.startDate)) / 86400000 >= 104 * 7) ||
       !Number.isInteger(s.maxSessionsPerWeek) || s.maxSessionsPerWeek < 1 || s.maxSessionsPerWeek > 50 ||
       (s.collectFingerPositions !== undefined && typeof s.collectFingerPositions !== 'boolean') ||
       (s.participantSettingsEnabled !== undefined && typeof s.participantSettingsEnabled !== 'boolean') ||
@@ -100,6 +128,12 @@ function validateSettings(s) {
         s.participantSettingsAllowed.some(key => !boolConfigFields.has(key) && !Object.prototype.hasOwnProperty.call(numericLimits, key)))) ||
       (s.participantSettingsEnabled === true && !s.participantSettingsAllowed?.length) ||
       (s.weeks != null && (typeof s.weeks !== 'object' || Array.isArray(s.weeks)))) fail('Invalid study settings');
+  if (s.weeklyEnabled !== false && s.scheduleMode === 'fixed' && (s.durationWeeks || s.endDate)) {
+    const days = s.endDate ? Math.floor((Date.parse(s.endDate) - Date.parse(s.startDate)) / 86400000) + 1 : 0;
+    const limit = s.durationWeeks || Math.ceil(days / 7);
+    if (Object.keys(effectiveWeeks(s.weeks)).some(week => Number(week) > limit))
+      fail(`Fixed schedule spans only ${limit} week(s); remove later timeline weeks`);
+  }
   for (const [week, assignments] of Object.entries(effectiveWeeks(s.weeks))) {
     if (!/^-?\d+$/.test(week) || !Array.isArray(assignments) || assignments.length > 40) fail(`Invalid schedule for ${timelineStageName(week)}`);
     if (assignments.length && !assignments.some(a => isLevel(a) || isSelection(a))) fail(`${timelineStageName(week)} must contain at least one playable level`);
@@ -133,30 +167,74 @@ function weekOf(start) {
   return Math.max(1, Math.floor((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - date.getTime()) / 604800000) + 1);
 }
 /** The source of truth for calendar restrictions and weekly schedules (also used by both progress endpoints). */
+function sessionIdFor(week, number, progress) {
+  const epoch = progress?.sessionEpoch?.[String(week)];
+  return `${week}-${number}${epoch ? `-r${epoch}` : ''}`;
+}
 function studyTiming(settings, account, weeks, progress) {
-  const weekly = settings.weeklyEnabled !== false; // Legacy saved studies remain weekly.
-  const dates = settings.dateRangeEnabled !== false; // Legacy saved studies retain date restrictions.
-  const start = account.startDate || settings.startDate;
+  const sessions = progress?.sessions || {};
+  const weekly = settings.weeklyEnabled !== false && settings.scheduleMode !== 'single';
+  const mode = settings.scheduleMode || (settings.durationWeeks ? 'individual' : 'fixed');
+  const manual = progress.stageOverride; // Pre-test / Post-test only.
+  const personal = progress.scheduleOverride;
+  const anchor = personal ? personal.startDate : mode === 'fixed' ? settings.startDate : account.startDate;
   const now = new Date();
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const beforeStart = (dates && today < Date.parse(`${settings.startDate}T00:00:00Z`)) ||
-    (!!settings.durationWeeks && today < Date.parse(`${start}T00:00:00Z`));
-  const elapsedWeeks = weekOf(start);
-  const afterEnd = (dates && !!settings.endDate && today > Date.parse(`${settings.endDate}T00:00:00Z`)) ||
-    (!!settings.durationWeeks && elapsedWeeks > settings.durationWeeks);
-  const current = weekly ? weekOf(start) : 1;
-  const lastWeek = Math.max(1, ...Object.keys(weeks).map(Number).filter(n => n > 0));
-  const manual = progress.stageOverride;
-  const week = manual ? manual.week : weekly && weeks['0'] && !(progress.sessions['0'] || 0) ? 0 :
-    weekly && current > lastWeek && weeks['-1'] && !(progress.sessions['-1'] || 0) ? -1 : current;
-  const cap = manual ? Number.MAX_SAFE_INTEGER : weekly ? (week <= 0 ? 1 : settings.maxSessionsPerWeek) : Number.MAX_SAFE_INTEGER;
-  return { week,
-    beforeStart: !!progress.pretestPendingLogin || (!manual && beforeStart),
-    afterEnd: !!progress.pretestPendingLogin || (!manual && afterEnd && week !== -1) ||
-      (!manual && weekly && current > lastWeek && (!weeks['-1'] || !!progress.sessions['-1'])),
-    cap, sessionId: manual ? `${week}-${manual.sessionNumber}` : null };
+  const firstDay = anchor ? Date.parse(`${anchor}T00:00:00Z`) : NaN;
+  const validAnchor = Number.isFinite(firstDay);
+  const elapsedWeek = validAnchor ? Math.floor((today - firstDay) / 604800000) + 1 : 0;
+  const configuredWeeks = Math.max(1, ...Object.keys(weeks).map(Number).filter(n => n > 0));
+  const totalWeeks = settings.durationWeeks ||
+    (mode === 'fixed' && settings.endDate && settings.startDate ?
+      Math.ceil((Date.parse(`${settings.endDate}T00:00:00Z`) - Date.parse(`${settings.startDate}T00:00:00Z`) + 86400000) / 604800000) : configuredWeeks);
+  const pretestNeeded = weekly && !manual && !!weeks['0']?.length && !(sessions['0'] || 0);
+  const posttestDone = !!(sessions['-1'] || 0);
+  const posttestConfigured = !!weeks['-1']?.length;
+  const beforeStart = weekly && !manual && !pretestNeeded && (!validAnchor || elapsedWeek < 1);
+  const activeWeek = personal ? personal.week + elapsedWeek - 1 : elapsedWeek;
+  const afterWeeks = weekly && !manual && !pretestNeeded && (activeWeek > totalWeeks ||
+    (!personal && !settings.durationWeeks && mode === 'fixed' && !!settings.endDate && today > Date.parse(`${settings.endDate}T00:00:00Z`)));
+  const week = manual ? manual.week : pretestNeeded ? 0 : weekly ? Math.max(1, personal?.week || 1, activeWeek) : 1;
+  const sessionNo = manual ? manual.sessionNumber : (sessions[String(week)] || 0) + 1;
+  const nextBoundary = validAnchor ? firstDay + Math.max(1, elapsedWeek) * 604800000 : NaN;
+  const daysUntilNextWeek = validAnchor && elapsedWeek >= 1 && activeWeek < totalWeeks ?
+    Math.max(0, Math.ceil((nextBoundary - today) / 86400000)) : 0;
+  const completed = weekly && (posttestDone || (!posttestConfigured && afterWeeks));
+  const weeklyLimit = weekly && !manual && !pretestNeeded && (sessions[String(week)] || 0) >= settings.maxSessionsPerWeek;
+  const waitingLogin = !!progress.pretestPendingLogin;
+  const state = waitingLogin ? 'awaiting-login' : completed ? 'completed' :
+    !manual && personal && !personal.startDate && !pretestNeeded ? 'awaiting-login' :
+    !manual && afterWeeks && posttestConfigured ? 'awaiting-posttest' :
+    beforeStart ? 'waiting-start' : weeklyLimit ? 'weekly-complete' : 'active';
+  return { week, cap: manual ? Number.MAX_SAFE_INTEGER : weekly ? (week <= 0 ? 1 : settings.maxSessionsPerWeek) : Number.MAX_SAFE_INTEGER,
+    beforeStart: waitingLogin || beforeStart,
+    afterEnd: completed || (!manual && afterWeeks),
+    capped: completed || waitingLogin || (!manual && !!personal && !personal.startDate && !pretestNeeded) || (!manual && (beforeStart || afterWeeks || weeklyLimit)),
+    state, daysUntilNextWeek, totalWeeks,
+    sessionId: manual ? `${week}-${sessionNo}` : null };
 }
 exports.getProfile = onCall(options, async req => ({ account: await profile(req) }));
+/** Pause/resume participant access without archiving the study or deleting any results. */
+exports.setStudyEnabled = onCall(options, async req => {
+  const operator = await profile(req); requireAdmin(operator);
+  const { studyId, enabled } = req.data || {};
+  if (!idValid(studyId) || typeof enabled !== 'boolean') fail('Invalid study status');
+  const studyRef = db.ref(`studies/${studyId}`);
+  const original = (await studyRef.get()).val();
+  if (!original?.settings || !(await db.ref(`studyIndex/${studyId}`).get()).exists()) fail('Study not found', 'not-found');
+  const expected = Number(original.revision || 0);
+  let first = true;
+  const transaction = await studyRef.transaction(current => {
+    const source = current == null && first ? original : current;
+    first = false;
+    if (!source?.settings || Number(source.revision || 0) !== expected) return;
+    return { ...source, settings: { ...source.settings, enabled }, revision: expected + 1 };
+  }, undefined, false);
+  if (!transaction.committed) fail('Study changed while updating access. Reload the dashboard.', 'aborted');
+  const revision = transaction.snapshot.val().revision;
+  await db.ref(`studyIndex/${studyId}`).update({ enabled, revision });
+  return { ok: true, revision };
+});
 exports.listStudies = onCall(options, async req => {
   const account = await profile(req); if (account.role === 'participant') fail('Researcher permission required', 'permission-denied');
   const all = (await db.ref('studyIndex').get()).val() || {};
@@ -167,9 +245,13 @@ exports.listStudies = onCall(options, async req => {
 function progressSummary(items) {
   return Object.fromEntries(Object.entries(items || {}).map(([uid, entry]) => [uid, {
     sessions: entry?.sessions || {}, completed: entry?.completed || {},
+    totalCompletedSessions: Number.isInteger(entry?.totalCompletedSessions) ? entry.totalCompletedSessions :
+      Object.values(entry?.sessions || {}).reduce((n, v) => n + Number(v || 0), 0),
+    ...(entry?.sessionEpoch ? { sessionEpoch: entry.sessionEpoch } : {}),
     activeSession: entry?.activeSession || {}, choices: entry?.choices || {},
     ...(typeof entry?.lastCompletedSessionAt === 'string' ? { lastCompletedSessionAt: entry.lastCompletedSessionAt } : {}),
     ...(entry?.stageOverride ? { stageOverride: entry.stageOverride } : {}),
+    ...(entry?.scheduleOverride ? { scheduleOverride: entry.scheduleOverride } : {}),
     ...(entry?.pretestPendingLogin ? { pretestPendingLogin: true } : {})
   }]));
 }
@@ -396,7 +478,6 @@ exports.provisionAccount = onCall(options, async req => {
   if (!settings || !(await activeStudy(studyId))) fail('Study not found or archived', 'not-found');
   if (role === 'participant') {
     if (group && !Object.prototype.hasOwnProperty.call(settings.groupConfigs || {}, group)) fail('Unknown study group');
-    if (settings.durationWeeks && settings.participantStartMode !== 'first-login' && !startDate) fail('Participant start date required');
   }
   if (customConfig !== undefined && (!configValid(customConfig) || role !== 'participant')) fail('Invalid custom gameplay settings');
   const name = normalizeUsername(username);
@@ -525,7 +606,7 @@ exports.saveParticipantPreferences = onCall(options, async req => {
   const state = (await db.ref(`progress/${account.studyId}/${account.uid}`).get()).val() || {};
   const weeks = effectiveWeeks(account.weeksOverride || settings.weeks);
   const timing = studyTiming(settings, account, weeks, state);
-  if (timing.beforeStart || timing.afterEnd || !weeks[String(timing.week)]?.length)
+  if (timing.beforeStart || timing.afterEnd || !slidesForStudyWeek(weeks, timing.week).length)
     fail('Your study session is not available', 'failed-precondition');
   const combined = { ...(account.participantPreferences || {}), ...preferences };
   if (!configValid(combined)) fail('Invalid saved settings');
@@ -543,10 +624,7 @@ exports.setParticipant = onCall(options, async req => {
     if (changes.group && !Object.prototype.hasOwnProperty.call(settings?.groupConfigs || {}, changes.group)) fail('Unknown study group');
     permitted.group = changes.group;
   }
-  if (Object.prototype.hasOwnProperty.call(changes, 'startDate')) {
-    if (changes.startDate && (!/^\d{4}-\d{2}-\d{2}$/.test(changes.startDate) || Number.isNaN(Date.parse(changes.startDate)))) fail('Invalid start date');
-    permitted.startDate = changes.startDate || '';
-  }
+  if (Object.prototype.hasOwnProperty.call(changes, 'startDate')) fail('Participant start date is recorded automatically and cannot be edited');
   if (Object.prototype.hasOwnProperty.call(changes, 'customConfig')) {
     if (changes.customConfig !== null && !configValid(changes.customConfig)) fail('Invalid custom gameplay settings');
     permitted.customConfig = changes.customConfig;
@@ -561,9 +639,10 @@ exports.setParticipant = onCall(options, async req => {
   }
   await db.ref(`accounts/${uid}`).update(permitted); return { ok: true };
 });
-/** Force the participant's NEXT complete session to use a particular timeline row.
- * This is a testing/administrative override, not a change to the calendar.
- * Existing completed sessions and research results are never deleted. */
+/** Set the participant's persistent personal weekly calendar or a special test stage.
+ * Week N begins on the NEXT participant login and advances every seven days,
+ * independently of fixed study dates and without changing account.startDate.
+ * Automatic clears both overrides. Historical results remain immutable. */
 exports.setParticipantStage = onCall(options, async req => {
   const operator = await profile(req); requireAdmin(operator);
   const { uid, stage } = req.data || {};
@@ -574,14 +653,34 @@ exports.setParticipantStage = onCall(options, async req => {
   if (!settings) fail('Study not found', 'not-found');
   if (stage !== null) {
     const weeks = effectiveWeeks(account.weeksOverride || settings.weeks);
-    if (settings.weeklyEnabled === false || !Array.isArray(weeks[String(stage)]) || !weeks[String(stage)].length ||
-        (stage !== -1 && stage !== 0 && (stage < 1 || stage > 104))) fail('Stage is not configured for this study');
+    if ((settings.weeklyEnabled === false || settings.scheduleMode === 'single') || !slidesForStudyWeek(weeks, stage).length ||
+        (stage !== -1 && stage !== 0 && (stage < 1 || stage > configuredWeekLimit(settings, weeks)))) fail('Stage is not configured for this study');
   }
   const progressRef = db.ref(`progress/${account.studyId}/${uid}`);
+  const initial = (await progressRef.get()).val();
+  let firstAttempt = true;
   const transaction = await progressRef.transaction(value => {
-    const next = { ...(value || {}) };
-    if (stage === null) delete next.stageOverride;
-    else {
+    // RTDB may call the updater with null before loading the existing record.
+    // Never erase historical sessions by writing an override to that null value.
+    const source = value == null && firstAttempt && initial != null ? initial : value;
+    firstAttempt = false;
+    const next = { ...(source || {}) };
+    if (stage !== null && (next.sessions?.['-1'] || 0) > 0) return; // Fully completed Post-test is final.
+    if (stage === null) {
+      delete next.stageOverride;
+      delete next.scheduleOverride;
+    } else if (stage >= 1) {
+      // The next getParticipantBundle login anchors day one of this week.
+      // Never move the saved first-regular-login account date.
+      delete next.stageOverride;
+      next.scheduleOverride = { week: stage, assignedAt: Math.floor(Date.now() / 1000) };
+      const key = String(stage);
+      next.activeSession = { ...(next.activeSession || {}) };
+      delete next.activeSession[key];
+      // Rotate this week's session ID; old completed steps/results must not
+      // be mistaken for a newly assigned session.
+      next.sessionEpoch = { ...(next.sessionEpoch || {}), [key]: String(Date.now()) };
+    } else {
       const key = String(stage);
       const previousStage = next.stageOverride?.sessionNumber || 0;
       const activeNumber = Number((next.activeSession?.[key] || '').split('-').at(-1)) || 0;
@@ -589,16 +688,71 @@ exports.setParticipantStage = onCall(options, async req => {
       const sessionNumber = Math.max(Date.now(), previousStage + 1, activeNumber + 1, last + 1, (next.sessions?.[key] || 0) + 1);
       next.lastManualSessionNumber = sessionNumber;
       next.stageOverride = { week: stage, sessionNumber };
-      // Abandon any in-progress position for the chosen row, but never remove
-      // past results, session counts, or prior completed-session records.
       next.activeSession = { ...(next.activeSession || {}) };
       delete next.activeSession[key];
       delete next.pretestPendingLogin;
     }
     return next;
   });
-  if (!transaction.committed) fail('Could not change participant stage', 'aborted');
+  if (!transaction.committed) fail('Could not change participant stage. A completed Post-test cannot be reopened.', 'failed-precondition');
   return { ok: true, progress: progressSummary({ [uid]: transaction.snapshot.val() })[uid] };
+});
+/** Researcher correction of the current week's allowance. Historic results are immutable.
+ * A new session epoch prevents recycled session numbers from matching old completed slides.
+ * If the participant has an unfinished session in this week, abandon its active
+ * position rather than rejecting the correction. Older completed steps/results
+ * remain available under their original session IDs, and a new login starts at
+ * the beginning of the newly numbered session. */
+exports.setParticipantWeekSessions = onCall(options, async req => {
+  const operator = await profile(req); requireAdmin(operator);
+  const { uid, week, count } = req.data || {};
+  if (!idValid(uid) || !Number.isInteger(week) || week < 1 || week > 104 ||
+      !Number.isInteger(count) || count < 0 || count > 50) fail('Invalid weekly session count');
+  const account = (await db.ref(`accounts/${uid}`).get()).val();
+  if (!account || account.role !== 'participant' || !account.studyId) fail('Participant not found', 'not-found');
+  const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
+  const weeks = effectiveWeeks(account.weeksOverride || settings?.weeks);
+  if (!settings || settings.weeklyEnabled === false || settings.scheduleMode === 'single' || week > configuredWeekLimit(settings, weeks) || !slidesForStudyWeek(weeks, week).length)
+    fail('This study week does not exist', 'failed-precondition');
+  if (count > settings.maxSessionsPerWeek) fail('Count exceeds the weekly session limit');
+  const ref = db.ref(`progress/${account.studyId}/${uid}`);
+  const original = (await ref.get()).val() || {};
+  let first = true;
+  const changed = await ref.transaction(value => {
+    const saved = value == null && first ? original : value;
+    first = false;
+    // Queued results may contain a completion not yet delivered to research
+    // storage. Do not let a correction race that incomplete save.
+    if (saved?.pendingResults && Object.keys(saved.pendingResults).length) return;
+    const key = String(week);
+    const sessions = { ...(saved?.sessions || {}) };
+    const historic = Number.isInteger(saved?.totalCompletedSessions) ? saved.totalCompletedSessions :
+      Object.values(sessions).reduce((sum, n) => sum + Number(n || 0), 0);
+    // An active session can already exist after a Start/Break screen. It must
+    // not prevent a researcher from correcting the allowance. Retire the old
+    // session position atomically and choose a fresh epoch so neither the old
+    // completed-step markers nor a stale browser can resume the old session.
+    const activeSession = { ...(saved?.activeSession || {}) };
+    delete activeSession[key];
+    const priorEpoch = Number(saved?.sessionEpoch?.[key] || 0);
+    const epoch = Math.max(Date.now(), Number.isSafeInteger(priorEpoch) ? priorEpoch + 1 : 0);
+    const next = { ...saved, sessions: { ...sessions, [key]: count },
+      totalCompletedSessions: historic, activeSession,
+      sessionEpoch: { ...(saved?.sessionEpoch || {}), [key]: String(epoch) } };
+    // The manual stage also supplies a stable session ID. Rotate that ID as
+    // well if this is the selected week; otherwise the previous step markers
+    // could take precedence over the corrected count on the next login.
+    if (saved?.stageOverride?.week === week) {
+      const previous = Number(saved.stageOverride.sessionNumber || 0);
+      const serial = Math.max(epoch, Number.isSafeInteger(previous) ? previous + 1 : 0,
+        Number(saved?.lastManualSessionNumber || 0) + 1);
+      next.stageOverride = { ...saved.stageOverride, sessionNumber: serial };
+      next.lastManualSessionNumber = serial;
+    }
+    return next;
+  });
+  if (!changed.committed) fail('Pending study results must finish saving before you can change this count. Retry after they are uploaded.', 'failed-precondition');
+  return { ok: true, progress: progressSummary({ [uid]: changed.snapshot.val() })[uid] };
 });
 exports.saveLevel = onCall(options, async req => {
   const operator = await profile(req); requireAdmin(operator);
@@ -701,22 +855,43 @@ exports.getParticipantBundle = onCall(options, async req => {
     saved = restored.snapshot.val() || {};
   }
   const wasWaiting = !!saved.pretestPendingLogin;
-  if (wasWaiting) {
-    await progressRef.child('pretestPendingLogin').remove();
-    saved = { ...saved, pretestPendingLogin: false };
+  const newLoginAfterPretest = wasWaiting && (req.auth?.token?.auth_time || 0) > Number(saved.pretestAuthTime || 0);
+  if (newLoginAfterPretest) {
+    await progressRef.update({ pretestPendingLogin: null, pretestAuthTime: null });
+    saved = { ...saved, pretestPendingLogin: false, pretestAuthTime: undefined };
   }
-  // The Pre-test takes place BEFORE a participant's first regular study week.
-  // For first-login scheduling, that first regular login (after Pre-test)
-  // establishes the date anchor rather than the earlier Pre-test login.
-  const stillNeedsPretest = !!settings.weeks?.['0'] && !(saved.sessions?.['0'] || 0);
-  if (settings.participantStartMode === 'first-login' && !account.startDate && !stillNeedsPretest) {
+  // The first REGULAR login after any Pre-test is informational for both
+  // fixed and individual studies. Never change it when a researcher sets a week.
+  const stillNeedsPretest = !!settings.weeks?.['0']?.length && !(saved.sessions?.['0'] || 0);
+  if (settings.weeklyEnabled !== false && settings.scheduleMode !== 'single' &&
+      !account.startDate && !stillNeedsPretest && !saved.pretestPendingLogin && !saved.stageOverride) {
     const today = new Date().toISOString().slice(0, 10);
     const started = await db.ref(`accounts/${account.uid}/startDate`).transaction(value => value || today);
     account.startDate = started.snapshot.val();
   }
+  // A manual week assignment starts on the participant's NEXT login, not
+  // when the researcher clicks Save. Anchor it atomically and only once;
+  // repeated bundle requests/refreshes do not restart the seven-day clock.
+  if (saved.scheduleOverride && !saved.scheduleOverride.startDate && !saved.pretestPendingLogin && !stillNeedsPretest &&
+      (req.auth?.token?.auth_time || 0) >= Number(saved.scheduleOverride.assignedAt || 0)) {
+    const today = new Date().toISOString().slice(0, 10);
+    const initiallySaved = saved;
+    let initialAttempt = true;
+    const begun = await progressRef.transaction(value => {
+      const source = value == null && initialAttempt ? initiallySaved : value;
+      initialAttempt = false;
+      if (!source?.scheduleOverride || source.scheduleOverride.startDate || source.pretestPendingLogin ||
+          (req.auth?.token?.auth_time || 0) < Number(source.scheduleOverride.assignedAt || 0)) return;
+      return { ...source, scheduleOverride: { ...source.scheduleOverride, startDate: today } };
+    });
+    saved = begun.snapshot.val() || saved;
+  }
   const progress = { completed: saved.completed || {}, sessions: saved.sessions || {}, activeSession: saved.activeSession || {}, choices: saved.choices || {},
+    ...(saved.sessionEpoch ? { sessionEpoch: saved.sessionEpoch } : {}),
+    ...(Number.isInteger(saved.totalCompletedSessions) ? { totalCompletedSessions: saved.totalCompletedSessions } : {}),
     ...(saved.stageOverride ? { stageOverride: saved.stageOverride } : {}),
-    ...(saved.pretestPendingLogin ? { pretestPendingLogin: true } : {}),
+      ...(saved.scheduleOverride ? { scheduleOverride: saved.scheduleOverride } : {}),
+    ...(saved.pretestPendingLogin ? { pretestPendingLogin: true, pretestAuthTime: saved.pretestAuthTime || 0 } : {}),
     ...(typeof saved.lastCompletedSessionAt === 'string' ? { lastCompletedSessionAt: saved.lastCompletedSessionAt } : {}) };
   return { account, settings: { ...settings, weeks: effectiveWeeks(account.weeksOverride || settings.weeks) }, progress };
 });
@@ -744,14 +919,17 @@ exports.advanceStudyStep = onCall(options, async req => {
     const saved = value == null && firstAttempt && initialValue != null ? initialValue : value;
     firstAttempt = false;
     const progress = { completed: saved?.completed || {}, sessions: saved?.sessions || {}, activeSession: saved?.activeSession || {}, choices: saved?.choices || {}, pendingResults: saved?.pendingResults || {},
+      ...(saved?.sessionEpoch ? { sessionEpoch: saved.sessionEpoch } : {}),
+      ...(Number.isInteger(saved?.totalCompletedSessions) ? { totalCompletedSessions: saved.totalCompletedSessions } : {}),
       ...(saved?.stageOverride ? { stageOverride: saved.stageOverride } : {}),
-      ...(saved?.pretestPendingLogin ? { pretestPendingLogin: true } : {}) };
+      ...(saved?.scheduleOverride ? { scheduleOverride: saved.scheduleOverride } : {}),
+      ...(saved?.pretestPendingLogin ? { pretestPendingLogin: true, pretestAuthTime: saved.pretestAuthTime || 0 } : {}) };
     const timing = studyTiming(settings, account, weeks, progress);
     if (week !== timing.week || progress.pretestPendingLogin || (timing.beforeStart && week !== 0) || timing.afterEnd) return;
-    const assignments = weeks[String(week)] || [];
+    const assignments = slidesForStudyWeek(weeks, week);
     const count = progress.sessions[String(week)] || 0;
     if (count >= timing.cap) return;
-    const sid = timing.sessionId || progress.activeSession[String(week)] || `${week}-${count + 1}`;
+    const sid = timing.sessionId || progress.activeSession[String(week)] || sessionIdFor(week, count + 1, progress);
     const done = progress.completed[String(week)] || [];
     const ix = assignments.findIndex((_, i) => !done.includes(`${sid}:${i}`));
     const step = assignments[ix];
@@ -761,18 +939,27 @@ exports.advanceStudyStep = onCall(options, async req => {
       const counts = progress.choices[choiceKey(week, sid, ix)] || {};
       if (step.playthroughs !== 0 || !Object.values(counts).some(n => n > 0)) return;
     }
-    const copy = { completed: { ...progress.completed }, sessions: { ...progress.sessions }, activeSession: { ...progress.activeSession }, choices: { ...progress.choices }, pendingResults: { ...progress.pendingResults },
+    const copy = { completed: { ...progress.completed }, sessions: { ...progress.sessions }, activeSession: { ...progress.activeSession }, choices: { ...progress.choices },
+      sessionEpoch: { ...(progress.sessionEpoch || {}) }, pendingResults: { ...progress.pendingResults },
+      // RTDB transactions reject `undefined` at any depth (INVALID_ARGUMENT,
+      // surfaced as an INTERNAL 500 by the callable). A newly enrolled participant
+      // has no total until their first completed session. Never include the field
+      // until it is an integer; the completion branch below initializes it.
+      ...(Number.isInteger(progress.totalCompletedSessions) ? { totalCompletedSessions: progress.totalCompletedSessions } : {}),
       ...(saved?.stageOverride ? { stageOverride: saved.stageOverride } : {}),
+      ...(saved?.scheduleOverride ? { scheduleOverride: saved.scheduleOverride } : {}),
       ...(saved?.pretestPendingLogin ? { pretestPendingLogin: true } : {}),
       ...(saved?.lastCompletedSessionAt ? { lastCompletedSessionAt: saved.lastCompletedSessionAt } : {}) };
     const entries = [...done, `${sid}:${ix}`];
     copy.completed[String(week)] = entries;
     if (assignments.every((_, i) => entries.includes(`${sid}:${i}`))) {
+      copy.totalCompletedSessions = (Number.isInteger(progress.totalCompletedSessions) ? progress.totalCompletedSessions :
+        Object.values(progress.sessions).reduce((n, v) => n + Number(v || 0), 0)) + 1;
       copy.sessions[String(week)] = count + 1;
       copy.lastCompletedSessionAt = completedAt;
       delete copy.activeSession[String(week)];
       if (copy.stageOverride?.week === week) delete copy.stageOverride;
-      if (week === 0) copy.pretestPendingLogin = true;
+      if (week === 0) { copy.pretestPendingLogin = true; copy.pretestAuthTime = req.auth?.token?.auth_time || 0; }
     } else copy.activeSession[String(week)] = sid;
     return copy;
   });
@@ -786,6 +973,11 @@ exports.advanceStudyStep = onCall(options, async req => {
   return { ok: true, ...(transaction.committed ? {} : { resynced: true, alreadyCompleted }),
     progress: { completed: saved.completed || {}, sessions: saved.sessions || {},
       activeSession: saved.activeSession || {}, choices: saved.choices || {},
+    ...(saved.sessionEpoch ? { sessionEpoch: saved.sessionEpoch } : {}),
+    ...(Number.isInteger(saved.totalCompletedSessions) ? { totalCompletedSessions: saved.totalCompletedSessions } : {}),
+      ...(saved.stageOverride ? { stageOverride: saved.stageOverride } : {}),
+      ...(saved.scheduleOverride ? { scheduleOverride: saved.scheduleOverride } : {}),
+      ...(saved.pretestPendingLogin ? { pretestPendingLogin: true, pretestAuthTime: saved.pretestAuthTime || 0 } : {}),
       ...(saved.lastCompletedSessionAt ? { lastCompletedSessionAt: saved.lastCompletedSessionAt } : {}) } };
 });
 /** Read-only authorization before playing an assigned level. Detects stale tabs,
@@ -803,13 +995,16 @@ exports.preparePlay = onCall(options, async req => {
   const saved = (await db.ref(`progress/${account.studyId}/${account.uid}`).get()).val() || {};
   const progress = { completed: saved.completed || {}, sessions: saved.sessions || {},
     activeSession: saved.activeSession || {}, choices: saved.choices || {},
+    ...(saved.sessionEpoch ? { sessionEpoch: saved.sessionEpoch } : {}),
+    ...(Number.isInteger(saved.totalCompletedSessions) ? { totalCompletedSessions: saved.totalCompletedSessions } : {}),
     ...(saved.stageOverride ? { stageOverride: saved.stageOverride } : {}),
+      ...(saved.scheduleOverride ? { scheduleOverride: saved.scheduleOverride } : {}),
     ...(saved.pretestPendingLogin ? { pretestPendingLogin: true } : {}) };
   const timing = studyTiming(settings, account, weeks, progress);
   const expectedWeek = timing.week;
-  const steps = weeks[String(expectedWeek)] || [];
+  const steps = slidesForStudyWeek(weeks, expectedWeek);
   const sid = timing.sessionId || progress.activeSession[String(expectedWeek)] ||
-    `${expectedWeek}-${(progress.sessions[String(expectedWeek)] || 0) + 1}`;
+    sessionIdFor(expectedWeek, (progress.sessions[String(expectedWeek)] || 0) + 1, progress);
   const done = progress.completed[String(expectedWeek)] || [];
   const expectedIndex = steps.findIndex((_, i) => !done.includes(`${sid}:${i}`));
   const step = steps[expectedIndex];
@@ -854,13 +1049,13 @@ exports.submitResult = onCall(options, async req => {
     fail('Play authorization expired or does not match the completed level. Contact a researcher and retain a backup.', 'failed-precondition');
   if (!data || JSON.stringify(data).length > 800000 || data.schemaVersion !== 1 || data.studyId !== account.studyId ||
       data.participantId !== account.participantId || data.group !== (account.group || '') ||
-      typeof data.sessionId !== 'string' || !/^-?\d+-\d+$/.test(data.sessionId) ||
+      typeof data.sessionId !== 'string' || !/^-?\d+-\d+(?:-r\d+)?$/.test(data.sessionId) ||
       !Number.isInteger(data.week) || !Number.isInteger(data.assignmentIndex) ||
       !data.sessionId.startsWith(`${data.week}-`)) fail('Invalid study result');
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings || !settings.enabled) fail('Study disabled', 'failed-precondition');
   const weeks = effectiveWeeks(account.weeksOverride || settings.weeks);
-  const sourceSteps = weeks[String(data.week)] || [];
+  const sourceSteps = slidesForStudyWeek(weeks, data.week);
   const sourceStep = sourceSteps[data.assignmentIndex];
   const selection = authorization.choiceIndex !== undefined;
   if (selection) {
@@ -894,8 +1089,11 @@ exports.submitResult = onCall(options, async req => {
       activeSession: { ...(value?.activeSession || {}) }, choices: { ...(value?.choices || {}) },
       pendingResults: { ...(value?.pendingResults || {}) },
       ...(value?.lastCompletedSessionAt ? { lastCompletedSessionAt: value.lastCompletedSessionAt } : {}),
+      ...(value?.sessionEpoch ? { sessionEpoch: value.sessionEpoch } : {}),
+      ...(Number.isInteger(value?.totalCompletedSessions) ? { totalCompletedSessions: value.totalCompletedSessions } : {}),
       ...(value?.stageOverride ? { stageOverride: value.stageOverride } : {}),
-      ...(value?.pretestPendingLogin ? { pretestPendingLogin: true } : {})
+      ...(value?.scheduleOverride ? { scheduleOverride: value.scheduleOverride } : {}),
+      ...(value?.pretestPendingLogin ? { pretestPendingLogin: true, pretestAuthTime: value.pretestAuthTime || 0 } : {})
     };
     // Another attempt may have advanced progress and failed during delivery.
     if (progress.pendingResults[key]) return progress;
@@ -911,9 +1109,9 @@ exports.submitResult = onCall(options, async req => {
     }
     const timing = studyTiming(settings, account, weeks, progress);
     const week = timing.week;
-    const steps = weeks[String(week)] || [];
+    const steps = slidesForStudyWeek(weeks, week);
     const sessionsDone = progress.sessions[String(week)] || 0;
-    const sessionId = timing.sessionId || progress.activeSession[String(week)] || `${week}-${sessionsDone + 1}`;
+    const sessionId = timing.sessionId || progress.activeSession[String(week)] || sessionIdFor(week, sessionsDone + 1, progress);
     const done = [...(progress.completed[String(week)] || [])];
     const index = steps.findIndex((_, i) => !done.includes(`${sessionId}:${i}`));
     if ((timing.beforeStart && week !== 0) || timing.afterEnd || sessionsDone >= timing.cap ||
@@ -939,11 +1137,13 @@ exports.submitResult = onCall(options, async req => {
     } else done.push(`${sessionId}:${index}`);
     progress.completed[String(week)] = done;
     if (steps.every((_, i) => done.includes(`${sessionId}:${i}`))) {
+      progress.totalCompletedSessions = (Number.isInteger(progress.totalCompletedSessions) ? progress.totalCompletedSessions :
+        Object.values(progress.sessions).reduce((n, v) => n + Number(v || 0), 0)) + 1;
       progress.sessions[String(week)] = sessionsDone + 1;
       progress.lastCompletedSessionAt = record.completedAt;
       delete progress.activeSession[String(week)];
       if (progress.stageOverride?.week === week) delete progress.stageOverride;
-      if (week === 0) progress.pretestPendingLogin = true;
+      if (week === 0) { progress.pretestPendingLogin = true; progress.pretestAuthTime = req.auth?.token?.auth_time || 0; }
     } else progress.activeSession[String(week)] = sessionId;
     // One atomic commit for both the progress update and the durable result.
     progress.pendingResults[key] = record;
@@ -953,7 +1153,7 @@ exports.submitResult = onCall(options, async req => {
     const current = (await stateRef.get()).val() || {};
     if (!current.pendingResults?.[key]) {
       const timing = studyTiming(settings, account, weeks, current);
-      const sid = current.activeSession?.[String(timing.week)] || `${timing.week}-${(current.sessions?.[String(timing.week)] || 0) + 1}`;
+      const sid = current.activeSession?.[String(timing.week)] || sessionIdFor(timing.week, (current.sessions?.[String(timing.week)] || 0) + 1, current);
       fail(`Study progress is out of date (server: week ${timing.week}, session ${sid}). Return to the study screen to refresh. Your completed play has not been counted; contact a researcher if this continues.`, 'failed-precondition');
     }
   }
@@ -974,8 +1174,11 @@ exports.submitResult = onCall(options, async req => {
   return { ok: true, queued, reviewRequired: !!staged.reviewRequired, progress: {
     completed: state.completed || {}, sessions: state.sessions || {},
     activeSession: state.activeSession || {}, choices: state.choices || {},
+    ...(state.sessionEpoch ? { sessionEpoch: state.sessionEpoch } : {}),
+    ...(Number.isInteger(state.totalCompletedSessions) ? { totalCompletedSessions: state.totalCompletedSessions } : {}),
     ...(state.stageOverride ? { stageOverride: state.stageOverride } : {}),
-    ...(state.pretestPendingLogin ? { pretestPendingLogin: true } : {}),
+      ...(state.scheduleOverride ? { scheduleOverride: state.scheduleOverride } : {}),
+    ...(state.pretestPendingLogin ? { pretestPendingLogin: true, pretestAuthTime: state.pretestAuthTime || 0 } : {}),
     ...(state.lastCompletedSessionAt ? { lastCompletedSessionAt: state.lastCompletedSessionAt } : {})
   } };
 });

@@ -58,7 +58,8 @@ export class Button extends MatterSprite {
       const textCenter: Vector2 = this.getCenter();
       this.text = this.scene.add
         .text(textCenter.x, textCenter.y, textContent, buttonTextStyle)
-        .setOrigin(0.5, 0.5);
+        .setOrigin(0.5, 0.5)
+        .setDepth(buttonDepth + 1); // Never render the label behind its button sprite.
     }
 
     setInteraction(this, true);
@@ -67,6 +68,47 @@ export class Button extends MatterSprite {
     this.setDepth(buttonDepth);
 
     this.setOnPinch(onPinch);
+    this.fitTextToButton();
+  }
+
+  /** Phaser's Text objects are independent of their button sprites. The old
+   * word-wrap/shrink loop frequently drove labels back to a tiny font (or
+   * measured wrapped lines), even after callers enlarged the sprite. Instead,
+   * render at a large real font size, then SCALE the text Game Object by the
+   * measured unwrapped text texture size. This works with Phaser 3 Canvas and
+   * WebGL and does not depend on the original 50px style. */
+  public fitTextToButton(maxLines?: number): this {
+    if (!this.text) return this;
+    const visibleWidth = Math.max(1, this.displayWidth);
+    const visibleHeight = Math.max(1, this.displayHeight);
+    const label = this.text;
+    const lines = label.text.split('\n').length;
+    // A large starting texture keeps scaled labels legible, including on
+    // buttons reduced to 40–60% of the sprite's native 400×200 pixels.
+    const renderSize = 180;
+    label.setOrigin(0.5, 0.5)
+      .setAlign('center')
+      .setPosition(this.getCenter().x, this.getCenter().y)
+      .setWordWrapWidth(null)
+      .setMaxLines(maxLines || Math.max(3, lines));
+    label.setScale(1);
+    label.setFontSize(renderSize);
+    // Text.width/height are the source canvas dimensions (not already scaled).
+    // displayWidth/height are reliable for Phaser Text as a fallback.
+    const naturalWidth = Math.max(1, label.width || label.displayWidth);
+    const naturalHeight = Math.max(1, label.height || label.displayHeight);
+    // Preserve ~7% horizontal and ~10% vertical breathing room per side.
+    const scale = Math.min(1, (visibleWidth * 0.86) / naturalWidth,
+      (visibleHeight * 0.80) / naturalHeight);
+    label.setScale(scale);
+    return this;
+  }
+
+  /** Also refit when a scene subsequently shrinks or stretches the sprite. */
+  public setScale(x: number, y?: number): this {
+    super.setScale(x, y === undefined ? x : y);
+    if (this.text) this.fitTextToButton();
+    return this;
   }
 
   public removePinchCallbacks() {

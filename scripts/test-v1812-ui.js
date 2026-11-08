@@ -19,8 +19,11 @@ assert(dashboard.includes('uploadedDate ? `${level.name} (${uploadedDate})` : le
 const helper = dashboard.match(/function levelDate\(iso\?: string\): string \{[\s\S]*?\n\}/);
 assert(helper, 'Upload-date formatter missing');
 const js = helper[0].replace('iso?: string): string', 'iso)') + '\nlevelDate;';
-const format = vm.runInNewContext(js, { Date, Number });
-assert.equal(format('2026-11-05T23:12:01.000Z'), '2026-11-05');
+const format = vm.runInNewContext(js, { Date, Number, displayDate: iso => {
+  const parts = /^\d{4}-\d{2}-\d{2}/.exec(iso);
+  return parts ? `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}` : iso;
+} });
+assert.equal(format('2026-11-05T23:12:01.000Z'), '05-11-2026');
 assert.equal(format('not-a-date'), '');
 assert.equal(format(undefined), '');
 console.log('PASS: empty study spacing, green no-glow login, updated levels copy, upload-date handling and participant tooltip');

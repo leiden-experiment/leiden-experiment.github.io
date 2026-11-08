@@ -7,6 +7,9 @@ export function friendlyLoginError(reason: unknown): string {
     typeof (reason as { code?: unknown }).code === 'string'
     ? (reason as { code: string }).code : '';
 
+  const message = reason instanceof Error ? reason.message : typeof reason === 'string' ? reason : '';
+  if (code === 'functions/failed-precondition' && /study (?:is currently )?disabled/i.test(message))
+    return 'This study is currently disabled. Please contact a researcher.';
   switch (code) {
     case 'auth/invalid-credential':
     case 'auth/invalid-login-credentials':
@@ -42,8 +45,6 @@ export function friendlyLoginError(reason: unknown): string {
       return 'The login service is temporarily busy. Please try again later.';
   }
 
-  const message = reason instanceof Error ? reason.message :
-    typeof reason === 'string' ? reason : '';
   if (message === 'Invalid offline account') return 'Invalid username or password.';
   if (message.startsWith('Firebase is not configured'))
     return 'Login is not configured. Please contact an administrator.';

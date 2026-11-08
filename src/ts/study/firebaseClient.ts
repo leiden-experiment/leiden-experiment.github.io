@@ -50,6 +50,8 @@ export const studyApi = {
   setParticipant: (uid: string, changes: object) => callBackend<{ ok: boolean }>('setParticipant', { uid, changes }),
   saveParticipantPreferences: (preferences: Record<string, unknown>) =>
     callBackend<{ preferences: Record<string, unknown> }>('saveParticipantPreferences', { preferences }),
+  setParticipantWeekSessions: (uid: string, week: number, count: number) =>
+    callBackend<{ ok: boolean; progress: Progress }>('setParticipantWeekSessions', { uid, week, count }),
   setParticipantStage: (uid: string, stage: number | null) =>
     callBackend<{ ok: boolean; progress: Progress }>('setParticipantStage', { uid, stage }),
   advanceStep: (week: number, sessionId: string, index: number, stepType: string) => callBackend<{ ok: boolean; progress?: Progress }>('advanceStudyStep', { week, sessionId, index, stepType }),
@@ -67,6 +69,7 @@ export const studyApi = {
       ...(choiceIndex !== undefined ? { choiceIndex, selectionPlay } : {}) }),
   fetchParticipant: (resume = false) => callBackend<{ account: Account; settings: StudySettings; progress: Progress }>('getParticipantBundle', resume ? { resume: true } : {}),
   saveResult: (data: ResultEnvelope, playToken: string) => callBackend<{ ok: boolean; queued?: boolean; reviewRequired?: boolean; duplicate?: boolean; progress?: Progress }>('submitResult', { data, playToken }),
+  setStudyEnabled: (studyId: string, enabled: boolean) => callBackend<{ ok: boolean; revision: number }>('setStudyEnabled', { studyId, enabled }),
   removeStudy: (studyId: string) => callBackend<{ ok: boolean }>('removeStudy', { studyId }),
   exportResults: (studyId: string, uid?: string) =>
     callBackend<{ results: ResultEnvelope[]; partial?: boolean }>('exportResults', { studyId, ...(uid ? { uid } : {}) }),

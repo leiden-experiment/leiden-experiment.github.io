@@ -27,7 +27,8 @@ assert.equal(calculateStudyWeek('2026-10-26', new Date('2026-10-26T10:00Z')), 1)
 assert.equal(calculateStudyWeek('2026-10-26', new Date('2026-11-02T10:00Z')), 2);
 assert.equal(calculateStudyWeek('2026-03-23', new Date('2026-03-30T13:00Z')), 2);
 assert.equal(getNextAssignment(study, emptyProgress(), study.startDate, new Date('2026-10-25T12:00:00Z')).week, 0);
-assert.equal(getNextAssignment(study, { ...emptyProgress(), sessions: { '0': 1 } }, study.startDate, new Date('2026-11-16T12:00:00Z')).week, -1);
+assert.equal(getNextAssignment(study, { ...emptyProgress(), sessions: { '0': 1 } }, study.startDate, new Date('2026-11-16T12:00:00Z')).state, 'awaiting-posttest');
+assert.equal(getNextAssignment(study, { ...emptyProgress(), sessions: { '0': 1 }, stageOverride: { week: -1, sessionNumber: 14 } }, study.startDate, new Date('2026-11-16T12:00:00Z')).week, -1);
 let p = { ...emptyProgress(), sessions: { '0': 1 } };
 let step = getNextAssignment(study, p, study.startDate, new Date('2026-10-28T12:00Z'));
 assert.equal(step.index, 0); assert.equal(step.sessionId, '1-1');
@@ -43,18 +44,18 @@ assert.deepEqual(validateSettings(freeStudy), []);
 assert.equal(getNextAssignment(freeStudy, { ...emptyProgress(), sessions: { '1': 100 } }, freeStudy.startDate, new Date('2027-05-01T00:00:00Z')).week, 1);
 assert.equal(getNextAssignment({ ...freeStudy, weeks: { ...freeStudy.weeks, '0': study.weeks['0'] } }, emptyProgress(), freeStudy.startDate, new Date('2027-05-01T00:00:00Z')).week, 1);
 assert.equal(getNextAssignment(freeStudy, { ...emptyProgress(), sessions: { '1': 100 } }, freeStudy.startDate, new Date('2027-05-01T00:00:00Z')).capped, false);
-const boundedStudy = { ...freeStudy, dateRangeEnabled: true, endDate: '2026-11-01' };
+const boundedStudy = { ...freeStudy, weeklyEnabled:true, scheduleMode:'fixed', durationWeeks:undefined, dateRangeEnabled:true, endDate: '2026-11-01' };
 assert.equal(getNextAssignment(boundedStudy, emptyProgress(), boundedStudy.startDate, new Date('2026-11-02T00:00:00Z')).capped, true);
 assert.equal(getNextAssignment(boundedStudy, emptyProgress(), boundedStudy.startDate, new Date('2026-11-02T00:00:00Z')).afterEnd, true);
 assert(validateSettings({ ...boundedStudy, endDate: '2026-01-01' }).length > 0);
 // Participant-specific duration, first-login anchored scheduling and completion.
-const perPerson = { ...freeStudy, durationWeeks: 3, participantStartMode: 'first-login' };
+const perPerson = { ...freeStudy, weeklyEnabled:true, scheduleMode:'individual', durationWeeks: 3, participantStartMode: 'first-login' };
 assert.deepEqual(validateSettings(perPerson), []);
 assert.equal(getNextAssignment(perPerson, emptyProgress(), '2026-10-26', new Date('2026-11-09T12:00:00Z')).afterEnd, false);
 assert.equal(getNextAssignment(perPerson, emptyProgress(), '2026-10-26', new Date('2026-11-16T12:00:00Z')).afterEnd, true);
 assert.equal(getNextAssignment(perPerson, emptyProgress(), '2026-11-09', new Date('2026-11-09T12:00:00Z')).afterEnd, false);
 assert.equal(getNextAssignment(perPerson, emptyProgress(), '2026-11-09', new Date('2026-11-08T12:00:00Z')).beforeStart, true);
-assert.equal(getNextAssignment({ ...perPerson, dateRangeEnabled: true, startDate: '2026-11-15' }, emptyProgress(), '2026-11-09', new Date('2026-11-10T12:00:00Z')).beforeStart, true); // global start still enforced
+assert.equal(getNextAssignment({ ...perPerson, dateRangeEnabled: true, startDate: '2026-11-15' }, emptyProgress(), '2026-11-09', new Date('2026-11-10T12:00:00Z')).beforeStart, false); // personal schedule no global anchor
 assert(validateSettings({ ...perPerson, durationWeeks: 0 }).length > 0);
 assert(validateSettings({ ...perPerson, durationWeeks: 105 }).length > 0);
 const finite = { ...study, weeks: { '1': [{ levelId: 'legacy:Cheerful Bliss', bpmIndex: 0, loops: 2 }] }, weeklyEnabled: true,

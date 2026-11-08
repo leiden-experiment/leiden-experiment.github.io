@@ -1,11 +1,12 @@
 import { studyApi } from './firebaseClient';
 import { DashboardCache } from './dashboardCache';
 import { normalizeUsername } from './username';
-import { Account, StudySettings, StudySummary, defaultStudySettings, validateSettings, isLevelStep, normalizeStudyWeeks, migrateLegacySettingsSlides } from './types';
+import { slidesForStudyWeek, Account, StudySettings, StudySummary, defaultStudySettings, validateSettings, isLevelStep, normalizeStudyWeeks, migrateLegacySettingsSlides, getNextAssignment, emptyProgress } from './types';
 import { createFlowBoard } from './flowBoard';
 import { LevelConverter } from '../util/levelConverter';
 import { downloadFile } from './offline';
 import { gameplayDefaults, gameplayOptions, GameplayValue, validateGameplayConfig } from './gameplayFields';
+import { displayDate, displayDateTime, isoDate } from './dateFormat';
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, text?: string): HTMLElementTagNameMap[K] {
   const item = document.createElement(tag); if (text !== undefined) item.textContent = text; parent.appendChild(item); return item;
@@ -22,6 +23,31 @@ function field(parent: HTMLElement, title: string, value = '', kind: 'input' | '
   const control = document.createElement(kind); control.value = value; if (help) control.title = help;
   label.appendChild(control); return control;
 }
+/** Always display DD-MM-YYYY, while retaining the browser's calendar picker. */
+function dateField(parent: HTMLElement, title: string, storedISO: string, help: string) {
+  const label = node('label', parent); label.className = 'study-field';
+  const caption = node('span', label, title); tooltip(caption, help);
+  const wrapper = node('span', label); wrapper.className = 'study-european-date';
+  const entry = node('input', wrapper);
+  entry.type = 'text'; entry.className = 'study-date-entry'; entry.value = displayDate(storedISO);
+  entry.placeholder = 'DD-MM-YYYY'; entry.inputMode = 'numeric'; entry.autocomplete = 'off';
+  entry.pattern = '\\d{2}-\\d{2}-\\d{4}'; entry.title = help;
+  const calendar = node('button', wrapper, '▦'); calendar.type = 'button'; calendar.className = 'study-date-calendar';
+  calendar.title = `Choose ${title.toLowerCase()} from the calendar`;
+  calendar.setAttribute('aria-label', calendar.title);
+  const picker = node('input', wrapper); picker.type = 'date'; picker.className = 'study-native-picker'; picker.tabIndex = -1;
+  picker.value = storedISO || '';
+  calendar.addEventListener('click', () => { try { picker.showPicker(); } catch { picker.focus(); picker.click(); } });
+  picker.addEventListener('change', () => {
+    entry.value = displayDate(picker.value);
+    entry.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  entry.addEventListener('change', () => {
+    try { picker.value = isoDate(entry.value); } catch { picker.value = ''; }
+  });
+  return { input: entry, picker };
+}
+
 function groupSelect(parent: HTMLElement, title: string, names: string[], selected = '', help = 'Optional study group or condition.') {
   const label = node('label', parent); label.className = 'study-field';
   const caption = node('span', label, title); tooltip(caption, help);
@@ -52,11 +78,11 @@ function downloadJSON(name: string, data: unknown) { downloadFile(name, JSON.str
 function levelDate(iso?: string): string {
   if (!iso) return '';
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+  return Number.isNaN(date.getTime()) ? '' : displayDate(date.toISOString());
 }
 function exportName(study: StudySummary, person = 'all-participants') {
   // Local time at the moment of download, down to the second.
-  const now = new Date(); const stamp = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}-${String(now.getMinutes()).padStart(2,'0')}-${String(now.getSeconds()).padStart(2,'0')}`;
+  const now = new Date(); const stamp = `${String(now.getDate()).padStart(2,'0')}-${String(now.getMonth()+1).padStart(2,'0')}-${now.getFullYear()}_${String(now.getHours()).padStart(2,'0')}-${String(now.getMinutes()).padStart(2,'0')}-${String(now.getSeconds()).padStart(2,'0')}`;
   return `pizzicato-${fileSlug(study.title)}-${fileSlug(person)}-${stamp}.json`;
 }
 /** Cryptographically random, collision-resistant public IDs; no manually entered identifier. */
@@ -144,7 +170,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const page = section(output, 'Studies');
     const commands = actions(page);
     if (user.role === 'admin') {
-      const createStudy = action(commands, '+ Create study', () => navigate('Create study', () => editStudy('', { ...defaultStudySettings(), weeklyEnabled: false, dateRangeEnabled: false }), true), 'primary');
+      const createStudy = action(commands, '+ Create study', () => navigate('Create study', () => editStudy('', { ...defaultStudySettings(), weeklyEnabled: false, scheduleMode: 'single', dateRangeEnabled: false }), true), 'primary');
       createStudy.classList.add('study-block-button');
       commands.classList.add('study-full-actions');
 
@@ -160,9 +186,20 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       const row = node('div', list); row.className = 'study-row';
       const title = node('div', row); title.className = 'study-row-title';
       node('strong', title, study.title);
-      action(row, 'Manage study', () => navigate(study.title, () => showStudy(study)), 'primary');
+      const studyActions = actions(row); studyActions.classList.add('study-study-row-actions');
+      action(studyActions, 'Manage study', () => navigate(study.title, () => showStudy(study)), 'primary');
       if (user.role === 'admin') {
-        const remove = action(row, '×', async () => {
+        const status = action(studyActions, study.enabled ? 'Disable' : 'Enable', async () => {
+          if (study.enabled && !confirm(`Disable “${study.title}”? Participants will be unable to enter the study until you enable it again.`)) return;
+          const saved = await studyApi.setStudyEnabled(study.id, !study.enabled);
+          cache.saveStudy(study.id, { ...cache.settings(study.id), enabled: !study.enabled }, saved.revision);
+          navigate('Studies', showStudies, false);
+        }, study.enabled ? 'secondary' : 'primary');
+        status.title = study.enabled ? 'Pause participant access without deleting results' : 'Restore participant access';
+        status.classList.add('study-compact-toggle');
+      }
+      if (user.role === 'admin') {
+        const remove = action(studyActions, '×', async () => {
           if (!confirm(`Remove study “${study.title}”?\n\nParticipants and moderators will lose access. Existing results will be retained for audit, but the study will disappear from the dashboard. This cannot be undone from the dashboard.`)) return;
           await studyApi.removeStudy(study.id);
           cache.removeStudy(study.id);
@@ -193,53 +230,83 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const basic = node('div', page); basic.className = 'study-form-grid';
     const title = field(basic, 'Study title', data.title, 'input', 'The name shown to researchers and participants.');
     const options = section(page, 'Schedule options'); options.classList.add('study-subsection');
-    const weekly = check(options, 'Weekly study (different timeline for each week)', data.weeklyEnabled !== false,
-      'Enable weekly schedules and a maximum number of completed sessions each week. When off, week 1 repeats without a weekly cap.');
-    const dateEnabled = check(options, 'Restrict study to a start/end date', data.dateRangeEnabled !== false,
-      'Prevent participation before the start date or after the optional end date.');
-    const weeklyBlock = node('div', options); weeklyBlock.className = 'study-form-grid';
-    const limit = field(weeklyBlock, 'Maximum completed sessions per week', String(data.maxSessionsPerWeek), 'input', 'A completed session is a full pass through its timeline.');
-    limit.type = 'number'; limit.min = '1'; limit.max = '50'; limit.step = '1';
-    const dates = node('div', options); dates.className = 'study-form-grid';
-    const start = field(dates, 'Start date', data.startDate, 'input', 'The first permitted date and week-1 anchor for weekly studies.'); start.type = 'date';
-    const end = field(dates, 'End date (optional)', data.endDate || '', 'input', 'After this date participants cannot start or continue sessions.'); end.type = 'date';
-    const perParticipant = check(options, 'Limit each participant to a number of weeks', !!data.durationWeeks,
-      'End each participant’s access after the chosen number of weeks from their personal start date.');
-    const durationBlock = node('div', options); durationBlock.className = 'study-form-grid';
-    const duration = field(durationBlock, 'Weeks per participant', String(data.durationWeeks || 3), 'input', 'For example, 3 ends access after three 7-day periods.');
+    // One always-visible scheduling control. Legacy weeklyEnabled=false maps to Single session.
+    // Weekly schedule rows: mode/explanation, dates or duration, then session limit.
+    const weeklyRow = node('div', options); weeklyRow.className = 'study-schedule-mode-row';
+    const modeLabel = node('label', weeklyRow); modeLabel.className = 'study-field';
+    const modeText = node('span', modeLabel, 'Weekly scheduling');
+    tooltip(modeText, 'Single session repeats the same timeline. Fixed uses shared study dates; Individual uses each participant’s start date.');
+    const mode = node('select', modeLabel);
+    for (const [value, text] of [
+      ['single', 'Single session — repeat the same timeline'],
+      ['fixed', 'Fixed schedule — all participants follow the same dates'],
+      ['individual', 'Individual schedule — starts on first regular login']
+    ]) { const option = node('option', mode, text); option.value = value; }
+    mode.value = data.weeklyEnabled === false || data.scheduleMode === 'single' ? 'single' :
+      (data.scheduleMode || (data.durationWeeks ? 'individual' : 'fixed'));
+    const modeHelp = node('p', weeklyRow); modeHelp.className = 'study-schedule-explanation';
+    const dates = node('div', options); dates.className = 'study-schedule-date-row';
+    const startField = dateField(dates, 'Study start date (Week 1)', data.startDate,
+      'Participants cannot play Week 1 before this date. Everyone follows this same calendar.');
+    const start = startField.input;
+    const legacyFixedWeeks = data.endDate && data.startDate ? Math.max(1,
+      Math.ceil((Date.parse(`${data.endDate}T00:00:00Z`) - Date.parse(`${data.startDate}T00:00:00Z`) + 86400000) / 604800000)) : 0;
+    const fallbackWeeks = Math.max(1, ...Object.keys(data.weeks || {}).map(Number).filter(n => n > 0));
+    const fixedWeeks = field(dates, 'Number of study weeks', String(data.scheduleMode === 'fixed' && data.durationWeeks ? data.durationWeeks : legacyFixedWeeks || fallbackWeeks), 'input',
+      'The study has this many seven-day weeks, beginning on the study start date.');
+    fixedWeeks.type = 'number'; fixedWeeks.min = '1'; fixedWeeks.max = '104'; fixedWeeks.step = '1';
+    const endInfo = node('p', dates, ''); endInfo.className = 'study-schedule-week-count';
+    const durationBlock = node('div', options); durationBlock.className = 'study-schedule-duration-row';
+    const duration = field(durationBlock, 'Weeks per participant', String(data.scheduleMode === 'individual' ? data.durationWeeks || 3 : 3), 'input',
+      'Each participant gets this many consecutive seven-day weeks after their first regular login.');
     duration.type = 'number'; duration.min = '1'; duration.max = '104'; duration.step = '1';
-    const modeLabel = node('label', durationBlock); modeLabel.className = 'study-field';
-    const modeHeading = node('span', modeLabel, 'Participant start date determined by');
-    tooltip(modeHeading, 'Manual: set the date on each participant. First login: record it automatically when they sign in for the first time.');
-    const startMode = node('select', modeLabel);
-    for (const [value, text] of [['manual', 'Researcher assigns a date'], ['first-login', 'First participant login']]) {
-      const option = node('option', startMode, text); option.value = value;
-    }
-    startMode.value = data.participantStartMode || 'manual';
-
-    const sync = () => {
-      weeklyBlock.hidden = !weekly.checked; durationBlock.hidden = !perParticipant.checked; dates.hidden = !(dateEnabled.checked || weekly.checked);
-      end.closest('label')!.hidden = !dateEnabled.checked;
-      start.closest('label')!.querySelector('span')!.firstChild!.textContent = dateEnabled.checked ? 'Start date' : 'Week 1 reference date';
-      board.setWeekly(weekly.checked);
-      board.setScheduleNote(perParticipant.checked
-        ? startMode.value === 'first-login'
-          ? `Week 1 begins on the first regular login after Pre-test; each participant has ${duration.value || 'the configured number of'} weeks. Pre-test does not start that clock.`
-          : `Week 1 follows the researcher-assigned participant start date; the per-participant duration is ${duration.value || 'the configured number of'} weeks.`
-        : dateEnabled.checked
-          ? `Week 1 is anchored to the study start date (${start.value || 'not set'}). The global end date is ${end.value || 'not set'}; the Post-test occurs after the final week.`
-          : `Week 1 follows the study's reference date (${start.value || 'not set'}), without a global date restriction.`);
+    const limitRow = node('div', options); limitRow.className = 'study-schedule-limit-row';
+    const limit = field(limitRow, 'Maximum completed sessions per week', String(data.maxSessionsPerWeek), 'input',
+      'The maximum number of full study sessions a participant can finish during each seven-day week.');
+    limit.type = 'number'; limit.min = '1'; limit.max = '50'; limit.step = '1';
+    const fixedWeekCount = () => {
+      let begin = '';
+      try { begin = isoDate(start.value); } catch { /* Form validation will explain. */ }
+      const count = Number(fixedWeeks.value);
+      const validCount = Number.isInteger(count) && count >= 1 && count <= 104;
+      if (begin && validCount) {
+        const inclusiveEnd = new Date(Date.parse(`${begin}T00:00:00Z`) + (count * 7 - 1) * 86400000);
+        endInfo.textContent = `Calculated end date: ${displayDate(inclusiveEnd.toISOString().slice(0, 10))}`;
+      } else endInfo.textContent = 'Enter a start date and 1–104 weeks.';
+      return validCount ? count : null;
     };
-    weekly.addEventListener('change', sync); dateEnabled.addEventListener('change', sync); perParticipant.addEventListener('change', sync);
-    startMode.addEventListener('change', sync); start.addEventListener('change', sync); end.addEventListener('change', sync);
-    duration.addEventListener('change', sync);
+    const sync = () => {
+      const weekly = mode.value !== 'single';
+      dates.hidden = mode.value !== 'fixed';
+      durationBlock.hidden = mode.value !== 'individual';
+      limitRow.hidden = !weekly;
+      modeHelp.textContent = mode.value === 'single'
+        ? 'The same study session is available on every login, with no week-based limit.'
+        : mode.value === 'fixed'
+          ? 'Everyone follows the same calendar. Week 1 opens on the start date and each new week opens seven days later.'
+          : 'Each participant follows their own seven-day calendar, beginning on their first regular login after any Pre-test.';
+      const count = fixedWeekCount();
+      board.setWeekly(weekly);
+      // The fixed number of weeks bounds the timeline; reducing it removes
+      // later regular weeks, but never Pre-test or Post-test.
+      board.setWeekLimit(mode.value === 'fixed' ? count : mode.value === 'individual' ? Number(duration.value) : 1);
+      board.setScheduleNote(mode.value === 'single'
+        ? 'Single session: the same timeline repeats without a calendar.'
+        : mode.value === 'fixed'
+          ? `All participants follow the same dates: Week 1 begins ${start.value || 'on the study start date'}, then each week opens seven days later for ${fixedWeeks.value || 'the configured number of'} weeks. A researcher can give an individual participant an independent rolling calendar.`
+          : `Each participant's Week 1 begins on their first regular login${data.weeks?.['0']?.length ? ' after their Pre-test' : ''}. Weeks run for ${duration.value || 'the configured number of'} seven-day periods. Researchers can assign an independent rolling calendar from any week.`);
+    };
+    mode.addEventListener('change', sync);
+    start.addEventListener('change', sync); fixedWeeks.addEventListener('change', sync);
+    start.addEventListener('input', sync); fixedWeeks.addEventListener('input', sync);
+    duration.addEventListener('change', sync); duration.addEventListener('input', sync);
     const timelineHost = section(page, 'Study timeline'); timelineHost.classList.add('study-subsection');
-    const board = createFlowBoard(timelineHost, normalizeStudyWeeks(data.weeks), () => {}, weekly.checked);
+    const board = createFlowBoard(timelineHost, normalizeStudyWeeks(data.weeks), () => {}, mode.value !== 'single');
     board.setAvailableLevels(cache.levels().map(l => ({ id: `library:${l.id}`, name: `Uploaded: ${l.name}`, bpm: l.bpm })));
     sync();
     const collection = section(page, 'Research data'); collection.classList.add('study-subsection');
     const collectFingers = check(collection, 'Collect normalized positions and radii', data.collectFingerPositions === true,
-      'Off by default. When disabled, normalized finger and target coordinates and radii are omitted; scores and timing are still recorded.');
+      'When disabled, normalized finger and target coordinates and radii are omitted; scores and timing are still recorded.');
     const participantControls = section(page, 'Participant screen controls');
     participantControls.classList.add('study-subsection');
     const enableParticipantSettings = check(participantControls, 'Allow participants to edit settings', data.participantSettingsEnabled === true,
@@ -309,13 +376,14 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         title: title.value.trim(), description: data.description || '', introText: '', collectFingerPositions: collectFingers.checked,
         participantSettingsEnabled: enableParticipantSettings.checked,
         participantSettingsAllowed: enableParticipantSettings.checked ? permittedSettings.filter(item => item.box.checked).map(item => item.key) : [],
-        startDate: dateEnabled.checked || weekly.checked ? start.value : data.startDate || new Date().toISOString().slice(0, 10),
-        endDate: dateEnabled.checked ? end.value : '',
-        weeklyEnabled: weekly.checked, dateRangeEnabled: dateEnabled.checked,
-        maxSessionsPerWeek: weekly.checked ? Number(limit.value) : data.maxSessionsPerWeek || 3,
-        enabled: true,
-        ...(perParticipant.checked ? { durationWeeks: Number(duration.value),
-          participantStartMode: startMode.value as 'manual' | 'first-login' } : {}),
+        startDate: mode.value === 'fixed' ? isoDate(start.value) : data.startDate || new Date().toISOString().slice(0, 10),
+        endDate: '', // Derived from fixed start date and durationWeeks, never a separate lock.
+        weeklyEnabled: mode.value !== 'single', scheduleMode: mode.value as 'single' | 'fixed' | 'individual',
+        dateRangeEnabled: false,
+        maxSessionsPerWeek: mode.value !== 'single' ? Number(limit.value) : data.maxSessionsPerWeek || 3,
+        enabled: id ? data.enabled !== false : true,
+        ...(mode.value === 'fixed' ? { durationWeeks: Number(fixedWeeks.value) } : {}),
+        ...(mode.value === 'individual' ? { durationWeeks: Number(duration.value), participantStartMode: 'first-login' as const } : {}),
         weeks: normalizeStudyWeeks(board.getWeeks()),
         defaultConfig: defaultEnabled.checked ? readDefaults() : {}, groupConfigs,
       };
@@ -384,20 +452,14 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const settings = cache.settings(study.id);
     if (!page.isConnected) return;
     const groups = Object.keys(settings.groupConfigs || {});
-    const showStartDate = settings.dateRangeEnabled !== false || !!settings.durationWeeks;
-    const requiredStartDate = !!settings.durationWeeks && settings.participantStartMode !== 'first-login';
-    const dateHelp = settings.participantStartMode === 'first-login'
-      ? 'Leave empty to record first login, or set a specific date.' : 'Individual start date and weekly schedule anchor.';
+    // Participant startDate is a read-only historical first regular login date.
+    // Researchers adjust the rolling schedule through Next session stage.
     if (canEdit) {
       const create = node('div', page); create.className = 'study-form-grid';
       const username = field(create, 'New participant username', '', 'input', 'Participant login name.');
       const password = field(create, 'Password', '', 'input', 'Participant login password. Share it securely.'); password.type = 'password';
       const group = groupSelect(create, 'Group / condition', groups);
-      let start: HTMLInputElement | undefined;
-      if (showStartDate) {
-        start = field(create, requiredStartDate ? 'Participant start date' : 'Participant start date (optional)', '', 'input', dateHelp);
-        start.type = 'date'; start.required = requiredStartDate;
-      }
+
       const customToggle = check(page, 'Use custom gameplay settings for this participant', false,
         'Participant-specific values take precedence over study defaults and group settings.');
       const customPanel = node('div', page); customPanel.className = 'study-individual-config'; customPanel.hidden = true;
@@ -410,11 +472,10 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       group.onchange = () => { if (customToggle.checked) refreshCustom(); };
       customToggle.onchange = () => { customPanel.hidden = !customToggle.checked; };
       const createButton = action(actions(page), '+ Add participant', async () => {
-        if (requiredStartDate && !start?.value) throw new Error('Choose a participant start date.');
         const customConfig = customToggle.checked ? readCustom() : undefined;
-        const { uid } = await studyApi.provisionAccount(study.id, username.value.trim(), password.value, 'participant', group.value, start?.value || '', customConfig);
+        const { uid } = await studyApi.provisionAccount(study.id, username.value.trim(), password.value, 'participant', group.value, '', customConfig);
         const normalized = normalizeUsername(username.value.trim());
-        cache.addAccount(study.id, { uid, username: normalized, participantId: normalized, role: 'participant', studyId: study.id, active: true, group: group.value, startDate: start?.value || '', ...(customConfig ? { customConfig } : {}) });
+        cache.addAccount(study.id, { uid, username: normalized, participantId: normalized, role: 'participant', studyId: study.id, active: true, group: group.value, startDate: '', ...(customConfig ? { customConfig } : {}) });
         navigate(`Participants · ${study.title}`, () => showRoster(study), false);
       }, 'primary');
       createButton.classList.add('study-block-button');
@@ -429,11 +490,11 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     search.placeholder = 'Search participants…'; search.classList.add('study-search');
     const progressDescription = (uid: string) => {
       const progress = cache.progress(study.id, uid);
-      const completed = Object.values(progress?.sessions || {}).reduce((sum, count) => sum + Number(count || 0), 0);
+      const completed = progress?.totalCompletedSessions ?? Object.values(progress?.sessions || {}).reduce((sum, count) => sum + Number(count || 0), 0);
       const recordedAt = progress?.lastCompletedSessionAt;
       const date = recordedAt ? new Date(recordedAt) : null;
       const lastCompleted = date && Number.isFinite(date.valueOf())
-        ? date.toLocaleString() : completed ? 'time not recorded for earlier sessions' : 'never';
+        ? displayDateTime(recordedAt) : completed ? 'time not recorded for earlier sessions' : 'never';
       return `${completed} completed session${completed === 1 ? '' : 's'} (last completed: ${lastCompleted})`;
     };
     const results = node('div', page); results.className = 'study-roster'; node('p', results, 'Loading participants…');
@@ -449,9 +510,18 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       const details = node('div', row); details.className = 'study-row-title';
       node('strong', details, member.username);
       node('small', details, `Group: ${member.group || 'None'} · ${member.active ? 'Active' : 'Disabled'}${member.customConfig ? ' · Custom settings' : ''}`);
+      node('small', details, `Participant start date: ${member.startDate ? displayDate(member.startDate) : 'Not started'}`);
       node('small', details, progressDescription(member.uid));
-      const activeOverride = cache.progress(study.id, member.uid)?.stageOverride;
-      if (activeOverride) node('small', details, `Next session: ${activeOverride.week === 0 ? 'Pre-test' : activeOverride.week === -1 ? 'Post-test' : `Week ${activeOverride.week}`} (researcher override)`);
+      const savedProgress = cache.progress(study.id, member.uid) || emptyProgress();
+      const currentPlan = getNextAssignment(settings, savedProgress, member.startDate || '');
+      if (settings.weeklyEnabled !== false && settings.scheduleMode !== 'single' && currentPlan.week > 0 &&
+          currentPlan.week <= currentPlan.totalWeeks) {
+        node('small', details, `Week ${currentPlan.week}: ${savedProgress.sessions[String(currentPlan.week)] || 0} of ${settings.maxSessionsPerWeek} sessions completed`);
+      }
+      const activeOverride = savedProgress.stageOverride;
+      const rolling = savedProgress.scheduleOverride;
+      if (activeOverride) node('small', details, `Next session: ${activeOverride.week === 0 ? 'Pre-test' : activeOverride.week === -1 ? 'Post-test' : `Week ${activeOverride.week}`} (researcher test stage)`);
+      else if (rolling) node('small', details, `Personal schedule: ${rolling.startDate ? `Week ${currentPlan.week} (began Week ${rolling.week} on ${displayDate(rolling.startDate)})` : `Week ${rolling.week} starts on next login`}`);
       const commands = actions(row); commands.classList.add('study-row-actions');
       const iconAction = (text: string, hint: string, fn: () => void | Promise<void>, style: 'primary' | 'secondary' | 'danger' = 'secondary') => {
         const button = action(commands, text, fn, style); button.title = hint; button.setAttribute('aria-label', hint); return button;
@@ -465,11 +535,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         const edit = node('div', item); edit.className = 'study-inline-edit'; edit.hidden = true;
         const assignmentFields = node('div', edit); assignmentFields.className = 'study-form-grid';
         const group = groupSelect(assignmentFields, 'Group / condition', groups, member.group || '');
-        let date: HTMLInputElement | undefined;
-        if (showStartDate) {
-          date = field(assignmentFields, requiredStartDate ? 'Participant start date' : 'Participant start date (optional)', member.startDate || '', 'input', dateHelp);
-          date.type = 'date'; date.required = requiredStartDate;
-        }
+
         const customToggle = check(edit, 'Use custom gameplay settings', !!member.customConfig,
           'Enable individual gameplay settings at any time, even if the participant was created without them.');
         const customPanel = node('div', edit); customPanel.className = 'study-individual-config';
@@ -483,32 +549,54 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         fillCustom(); customPanel.hidden = !customToggle.checked;
         customToggle.onchange = () => { customPanel.hidden = !customToggle.checked; };
         group.onchange = () => { if (customToggle.checked) fillCustom(); };
+        // A researcher can correct an allowance without modifying or deleting historic results.
+        let correctedWeeklyCount: HTMLInputElement | undefined;
+        const editWeek = currentPlan.week;
+        if (settings.weeklyEnabled !== false && settings.scheduleMode !== 'single' && editWeek > 0 &&
+            editWeek <= currentPlan.totalWeeks && slidesForStudyWeek(normalizeStudyWeeks(settings.weeks), editWeek).length > 0) {
+          correctedWeeklyCount = field(assignmentFields, `Completed sessions in Week ${editWeek}`,
+            String(savedProgress.sessions[String(editWeek)] || 0), 'input',
+            'Correct this week’s session allowance. Historical results and the total completed count remain unchanged. Any unfinished session for this week restarts on the participant’s next login.');
+          correctedWeeklyCount.type = 'number'; correctedWeeklyCount.min = '0';
+          correctedWeeklyCount.max = String(settings.maxSessionsPerWeek); correctedWeeklyCount.step = '1';
+        }
         let stageSelect: HTMLSelectElement | undefined;
-        if (settings.weeklyEnabled !== false) {
+        if (settings.weeklyEnabled !== false && settings.scheduleMode !== 'single') {
           const stageLabel = node('label', assignmentFields); stageLabel.className = 'study-field';
           const caption = node('span', stageLabel, 'Next session stage');
-          tooltip(caption, 'Choose Pre-test, a configured week or Post-test for the next complete session. It then returns to automatic scheduling.');
+          tooltip(caption, 'Automatic follows the study calendar. Selecting a week starts a persistent personal seven-day schedule from that week on the participant’s next login, even beyond a fixed study end date. Pre-test/Post-test are special one-session test stages. Automatic cancels the personal schedule.');
           stageSelect = node('select', stageLabel);
           const auto = node('option', stageSelect, 'Automatic (study dates)'); auto.value = '';
+          if (rolling && !activeOverride) {
+            const keep = node('option', stageSelect, `Keep personal calendar — ${rolling.startDate ? `currently Week ${currentPlan.week}` : `Week ${rolling.week} starts at next login`}`);
+            keep.value = 'keep';
+          }
           const configured = normalizeStudyWeeks(settings.weeks);
           if (configured['0']?.length) { const opt = node('option', stageSelect, 'Pre-test'); opt.value = '0'; }
-          for (const week of Object.keys(configured).map(Number).filter(n => n > 0).sort((a, b) => a - b)) {
-            if (!configured[String(week)]?.length) continue;
-            const opt = node('option', stageSelect, `Week ${week}`); opt.value = String(week);
+          for (let week = 1; week <= currentPlan.totalWeeks; week++) {
+            if (!slidesForStudyWeek(configured, week).length) continue;
+            const source = configured[String(week)] ? '' : ' (repeats previous week)';
+            const opt = node('option', stageSelect, `Week ${week}${source}`); opt.value = String(week);
           }
           if (configured['-1']?.length) { const opt = node('option', stageSelect, 'Post-test'); opt.value = '-1'; }
-          stageSelect.value = activeOverride ? String(activeOverride.week) : '';
+          stageSelect.value = activeOverride ? String(activeOverride.week) : rolling ? 'keep' : '';
         }
         const save = action(actions(edit), 'Save participant settings', async () => {
-          if (requiredStartDate && !date?.value) throw new Error('Choose a participant start date.');
           const changed: Partial<Account> = { group: group.value,
-            ...(showStartDate ? { startDate: date?.value || '' } : {}),
             customConfig: customToggle.checked ? readCustom() : undefined };
-          const previousStage = activeOverride ? String(activeOverride.week) : '';
+          const previousStage = activeOverride ? String(activeOverride.week) : rolling ? 'keep' : '';
           const stageChanged = !!stageSelect && stageSelect.value !== previousStage;
-          if (stageChanged && !confirm('Change the participant’s next study stage? This abandons any unfinished screen in that stage but retains saved results.')) return;
+          if (stageChanged && !confirm('Change the participant’s schedule? Selecting a week starts a new rolling calendar on their next login; Automatic restores the study calendar. Unfinished screens may restart, but saved results are kept.')) return;
           await studyApi.setParticipant(member.uid, { ...changed, ...(!customToggle.checked ? { customConfig: null } : {}) });
           cache.updateAccount(member.uid, changed);
+          if (correctedWeeklyCount && Number(correctedWeeklyCount.value) !== (savedProgress.sessions[String(editWeek)] || 0)) {
+            const count = Number(correctedWeeklyCount.value);
+            if (!Number.isInteger(count) || count < 0 || count > settings.maxSessionsPerWeek)
+              throw new Error('Enter a whole-number session count within the weekly limit.');
+            if (!confirm(`Set Week ${editWeek} completed sessions to ${count}? Historical results will be retained. Any unfinished Week ${editWeek} session will restart; ask the participant to reload or sign in again.`)) return;
+            const response = await studyApi.setParticipantWeekSessions(member.uid, editWeek, count);
+            cache.setProgress(study.id, member.uid, response.progress);
+          }
           if (stageChanged && stageSelect) {
             const selectedStage = stageSelect.value === '' ? null : Number(stageSelect.value);
             const response = await studyApi.setParticipantStage(member.uid, selectedStage);

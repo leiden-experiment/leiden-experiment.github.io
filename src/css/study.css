@@ -517,3 +517,73 @@
   outline: 1px solid #858585 !important; outline-offset: 0;
   border-color: #858585 !important;
 }
+
+
+/* v1.8.22 — compact study actions and legible, orderly weekly scheduling. */
+.study-admin-dashboard .study-study-row-actions {
+  display:flex; flex:0 0 auto; margin-left:auto; gap:8px; align-items:center; flex-wrap:nowrap;
+}
+.study-admin-dashboard .study-study-row-actions > .study-btn {
+  box-sizing:border-box; height:40px!important; min-height:40px!important;
+}
+.study-admin-dashboard .study-study-row-actions .study-compact-toggle {
+  flex:0 0 84px; width:84px!important; padding:6px 8px!important;
+}
+.study-admin-dashboard .study-study-row-actions .study-remove-study {
+  flex:0 0 40px; width:40px!important;
+}
+.study-admin-dashboard .study-schedule-mode-row { display:grid; gap:8px; }
+.study-admin-dashboard .study-schedule-mode-row > .study-field { max-width:100%; }
+.study-admin-dashboard .study-schedule-explanation { color:#bdbdbd; margin:0 0 4px; }
+.study-admin-dashboard .study-schedule-date-row {
+  display:grid; grid-template-columns:repeat(2,minmax(185px,1fr)) minmax(180px,.9fr);
+  align-items:end; gap:14px 18px;
+}
+.study-admin-dashboard .study-schedule-duration-row,
+.study-admin-dashboard .study-schedule-limit-row { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
+.study-admin-dashboard .study-schedule-week-count {
+  display:flex; align-items:center; align-self:end; min-height:42px;
+  margin:0 0 .25rem; font-variant-numeric:tabular-nums;
+}
+.study-admin-dashboard .study-european-date {
+  position:relative; display:flex; width:100%; height:42px; align-items:stretch; gap:0;
+}
+.study-admin-dashboard .study-european-date > .study-date-entry {
+  flex:1; min-width:0; width:100%!important; height:42px!important;
+  padding-right:48px!important; font-variant-numeric:tabular-nums;
+}
+.study-admin-dashboard .study-european-date > .study-date-calendar {
+  position:absolute; right:1px; top:1px; width:40px; height:40px; min-height:40px;
+  padding:0!important; display:flex; align-items:center; justify-content:center;
+  border:0; border-left:1px solid #575757; cursor:pointer; font-size:20px;
+}
+.study-admin-dashboard .study-european-date > .study-native-picker {
+  position:absolute; right:0; top:0; width:1px!important; height:1px!important;
+  opacity:0; pointer-events:none; padding:0!important;
+}
+.study-admin-dashboard .study-date-entry:invalid { border-color:#c17777!important; }
+@media(max-width:900px) {
+  .study-admin-dashboard .study-schedule-date-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .study-admin-dashboard .study-schedule-week-count { grid-column:1/-1; margin:0; }
+}
+@media(max-width:620px) {
+  .study-admin-dashboard .study-list-card .study-row { flex-wrap:wrap; }
+  .study-admin-dashboard .study-study-row-actions { width:100%; justify-content:flex-end; }
+  .study-admin-dashboard .study-schedule-date-row { grid-template-columns:minmax(0,1fr); }
+  .study-admin-dashboard .study-schedule-week-count { grid-column:auto; }
+}
+
+/* Date inputs use the monochrome dashboard focus treatment with no glow. */
+.study-admin-dashboard .study-european-date .study-date-entry,
+.study-admin-dashboard .study-european-date .study-date-calendar,
+.study-admin-dashboard .study-european-date .study-native-picker,
+.study-admin-dashboard .study-european-date .study-date-entry:focus,
+.study-admin-dashboard .study-european-date .study-date-entry:focus-visible,
+.study-admin-dashboard .study-european-date .study-date-calendar:focus,
+.study-admin-dashboard .study-european-date .study-date-calendar:focus-visible {
+  box-shadow:none!important; text-shadow:none!important; filter:none!important;
+}
+.study-admin-dashboard .study-european-date .study-date-entry:focus,
+.study-admin-dashboard .study-european-date .study-date-entry:focus-visible {
+  outline:1px solid #bcbcbc!important; outline-offset:0!important; border-color:#777!important;
+}
