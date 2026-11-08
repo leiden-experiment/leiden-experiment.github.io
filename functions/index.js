@@ -77,7 +77,7 @@ const boolConfigFields = new Set([
   'showSkipButton', 'skipLayersAutomatically', 'ignoreMultifingerPinches', 'mousePinchesEnabled',
   'uiPinchesEnabled', 'sonificationEnabled', 'synchronizationEnabled', 'playableBackingTracksEnabled',
   'unplayableBackingTracksEnabled', 'disableLayerProgression', 'indexFingerOnly', 'enableCameraVisibility',
-  'postProcessingDisabled', 'displayVisualMetronome', 'autoSaveCSV'
+  'postProcessingDisabled', 'displayVisualMetronome', 'autoSaveCSV' /* Read legacy saved values, but never expose this option in web controls. */
 ]);
 const configValid = config => config && typeof config === 'object' && !Array.isArray(config) &&
   JSON.stringify(config).length <= 12000 && Object.entries(config).every(([key, value]) =>
@@ -142,6 +142,8 @@ function validateSettings(s) {
       if (a.configOverride !== undefined && !configValid(a.configOverride)) fail('Invalid level gameplay override');
       if (['start', 'break', 'end', 'settings'].includes(a.type)) {
         if (typeof a.text !== 'string' || a.text.length > 2000) fail('Screen text must be under 2,000 characters');
+        if (a.showWeeklySessionProgress !== undefined && (!['start', 'end'].includes(a.type) || typeof a.showWeeklySessionProgress !== 'boolean'))
+          fail('Invalid slide weekly session progress setting');
         if (a.type === 'settings' && (!Array.isArray(a.allowedSettings) || a.allowedSettings.length < 1 ||
             a.allowedSettings.length > 30 || a.allowedSettings.some(key => !boolConfigFields.has(key) &&
               !Object.prototype.hasOwnProperty.call(numericLimits, key)))) fail('Choose valid participant settings');
@@ -155,6 +157,7 @@ function validateSettings(s) {
       } else fail('Invalid level assignment');
     }
   }
+  if (s.showWeeklySessionProgress !== undefined && typeof s.showWeeklySessionProgress !== 'boolean') fail('Invalid weekly session progress display setting');
   if (s.defaultConfig !== undefined && !configValid(s.defaultConfig)) fail('Invalid default gameplay settings');
   if (s.groupConfigs && (typeof s.groupConfigs !== 'object' || Array.isArray(s.groupConfigs) ||
       Object.values(s.groupConfigs).some(g => !configValid(g)))) fail('Invalid group configurations');
@@ -199,12 +202,18 @@ function studyTiming(settings, account, weeks, progress) {
   const nextBoundary = validAnchor ? firstDay + Math.max(1, elapsedWeek) * 604800000 : NaN;
   const daysUntilNextWeek = validAnchor && elapsedWeek >= 1 && activeWeek < totalWeeks ?
     Math.max(0, Math.ceil((nextBoundary - today) / 86400000)) : 0;
-  const completed = weekly && (posttestDone || (!posttestConfigured && afterWeeks));
+  const finalWeekDone = (sessions[String(totalWeeks)] || 0) >= settings.maxSessionsPerWeek;
+  // Researcher-assigned stages and personal calendars can replay a completed study.
+  const completed = weekly && !manual && (
+    (posttestDone && (!personal || (finalWeekDone && activeWeek >= totalWeeks))) ||
+    (!posttestConfigured && finalWeekDone && (!personal || activeWeek >= totalWeeks)));
+  const awaitingPosttest = weekly && !manual && !posttestDone && posttestConfigured &&
+    (!personal || activeWeek >= totalWeeks) && (finalWeekDone || afterWeeks);
   const weeklyLimit = weekly && !manual && !pretestNeeded && (sessions[String(week)] || 0) >= settings.maxSessionsPerWeek;
   const waitingLogin = !!progress.pretestPendingLogin;
   const state = waitingLogin ? 'awaiting-login' : completed ? 'completed' :
     !manual && personal && !personal.startDate && !pretestNeeded ? 'awaiting-login' :
-    !manual && afterWeeks && posttestConfigured ? 'awaiting-posttest' :
+    awaitingPosttest ? 'awaiting-posttest' :
     beforeStart ? 'waiting-start' : weeklyLimit ? 'weekly-complete' : 'active';
   return { week, cap: manual ? Number.MAX_SAFE_INTEGER : weekly ? (week <= 0 ? 1 : settings.maxSessionsPerWeek) : Number.MAX_SAFE_INTEGER,
     beforeStart: waitingLogin || beforeStart,
@@ -592,7 +601,7 @@ exports.saveParticipantPreferences = onCall(options, async req => {
   if (account.role !== 'participant') fail('Participant permission required', 'permission-denied');
   const preferences = req.data?.preferences;
   if (!configValid(preferences) || 'skipButtonAppearsAfterLoop' in preferences ||
-      'skipLayersAutomaticallyAfterLoop' in preferences) fail('Invalid participant settings');
+      'skipLayersAutomaticallyAfterLoop' in preferences || 'autoSaveCSV' in preferences) fail('Invalid participant settings');
   const settings = (await db.ref(`studies/${account.studyId}/settings`).get()).val();
   if (!settings?.enabled) fail('Study is disabled', 'failed-precondition');
   const legacySlides = Object.values(effectiveWeeks(account.weeksOverride || settings.weeks)).flat()
@@ -658,6 +667,7 @@ exports.setParticipantStage = onCall(options, async req => {
   }
   const progressRef = db.ref(`progress/${account.studyId}/${uid}`);
   const initial = (await progressRef.get()).val();
+  const replayEpoch = `${Date.now()}${randomBytes(4).readUInt32BE(0)}`;
   let firstAttempt = true;
   const transaction = await progressRef.transaction(value => {
     // RTDB may call the updater with null before loading the existing record.
@@ -665,7 +675,6 @@ exports.setParticipantStage = onCall(options, async req => {
     const source = value == null && firstAttempt && initial != null ? initial : value;
     firstAttempt = false;
     const next = { ...(source || {}) };
-    if (stage !== null && (next.sessions?.['-1'] || 0) > 0) return; // Fully completed Post-test is final.
     if (stage === null) {
       delete next.stageOverride;
       delete next.scheduleOverride;
@@ -675,11 +684,15 @@ exports.setParticipantStage = onCall(options, async req => {
       delete next.stageOverride;
       next.scheduleOverride = { week: stage, assignedAt: Math.floor(Date.now() / 1000) };
       const key = String(stage);
+      // Reopen this week's allowance while retaining the historical results
+      // and lifetime completion counter. Each replay receives a fresh epoch.
+      next.sessions = { ...(next.sessions || {}), [key]: 0 };
+      delete next.pretestPendingLogin;
       next.activeSession = { ...(next.activeSession || {}) };
       delete next.activeSession[key];
       // Rotate this week's session ID; old completed steps/results must not
       // be mistaken for a newly assigned session.
-      next.sessionEpoch = { ...(next.sessionEpoch || {}), [key]: String(Date.now()) };
+      next.sessionEpoch = { ...(next.sessionEpoch || {}), [key]: replayEpoch };
     } else {
       const key = String(stage);
       const previousStage = next.stageOverride?.sessionNumber || 0;
@@ -688,13 +701,14 @@ exports.setParticipantStage = onCall(options, async req => {
       const sessionNumber = Math.max(Date.now(), previousStage + 1, activeNumber + 1, last + 1, (next.sessions?.[key] || 0) + 1);
       next.lastManualSessionNumber = sessionNumber;
       next.stageOverride = { week: stage, sessionNumber };
+      delete next.scheduleOverride;
       next.activeSession = { ...(next.activeSession || {}) };
       delete next.activeSession[key];
       delete next.pretestPendingLogin;
     }
     return next;
   });
-  if (!transaction.committed) fail('Could not change participant stage. A completed Post-test cannot be reopened.', 'failed-precondition');
+  if (!transaction.committed) fail('Could not change participant stage because progress changed. Reload and try again.', 'aborted');
   return { ok: true, progress: progressSummary({ [uid]: transaction.snapshot.val() })[uid] };
 });
 /** Researcher correction of the current week's allowance. Historic results are immutable.

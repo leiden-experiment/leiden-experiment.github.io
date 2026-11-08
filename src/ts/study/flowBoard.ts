@@ -175,7 +175,18 @@ export function createFlowBoard(parent: HTMLElement, source: StudySettings['week
         trigger(); render();
       }, 'add');
       addChoice.disabled = step.choices.length >= 9;
-    } else item('Participant message', step.text, value => { step.text = value; }, 'Shown on this start, break, or end screen.', true);
+    } else {
+      item('Participant message', step.text, value => { step.text = value; },
+        'Shown on this start, break, or end screen.', true);
+      if (step.type === 'start' || step.type === 'end') {
+        const progressLabel = make('label', editor); progressLabel.className = 'study-check';
+        progressLabel.title = 'Display the number of sessions completed in this week, for example 1/3 weekly sessions completed.';
+        const progressCheckbox = make('input', progressLabel); progressCheckbox.type = 'checkbox';
+        progressCheckbox.checked = step.showWeeklySessionProgress !== false;
+        make('span', progressLabel, 'Show weekly session progress on this slide');
+        progressCheckbox.onchange = () => { step.showWeeklySessionProgress = progressCheckbox.checked; trigger(); };
+      }
+    }
   }
   function render() {
     clearPreview();

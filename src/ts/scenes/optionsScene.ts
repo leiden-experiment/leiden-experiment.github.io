@@ -82,13 +82,10 @@ export default class Options extends HandScene {
       ...(session.settings.groupConfigs?.[session.account.group || ''] || {}),
       ...(session.account.customConfig || {}) } as Record<string, unknown>;
     const initial = { ...baseline, ...(session.account.participantPreferences || {}) };
-    updateConfig({ ...config, ...initial } as ConfigData, false);
+    updateConfig({ ...config, ...initial, autoSaveCSV: false } as ConfigData, false);
 
     this.add.text(this.center.x, 64, 'YOUR SETTINGS', {
       font: '52px Courier New', color: '#18db43', align: 'center'
-    }).setOrigin(.5);
-    this.add.text(this.center.x, 112, 'Change the settings your researcher has enabled.', {
-      font: '26px Courier New', color: '#dddddd', align: 'center'
     }).setOrigin(.5);
 
     // The same animated target preview used by the original Options scene.
@@ -131,7 +128,7 @@ export default class Options extends HandScene {
         this.options.push(slider); this.add.existing(slider);
       }
     }
-    const status = this.add.text(this.center.x, this.height - 178, '', {
+    const status = this.add.text(this.center.x, this.height - 200, '', {
       font: '23px Courier New', color: '#ffc78b', align: 'center',
       wordWrap: {width: this.width * .9}
     }).setOrigin(.5);
@@ -178,7 +175,7 @@ export default class Options extends HandScene {
           if (pack) importOfflinePack({ ...pack, account: { ...pack.account, participantPreferences: preferences } });
         }
         updateParticipantPreferences(preferences);
-        updateConfig({ ...this.researchOriginal!, ...baseline, ...preferences } as ConfigData, false);
+        updateConfig({ ...this.researchOriginal!, ...baseline, ...preferences, autoSaveCSV: false } as ConfigData, false);
         webcam.setVisibility(config.enableCameraVisibility);
         this.scene.start('studySession');
       } catch (error) {
@@ -194,8 +191,7 @@ export default class Options extends HandScene {
     for (const [label, x, onClick] of actions) {
       const button = new Button(this, label, x, this.height - 91, onClick);
       button.setScale(.75);
-      button.text?.setPosition(button.x, button.y).setOrigin(.5).setAlign('center')
-        .setFontSize(30).setWordWrapWidth(button.displayWidth * .95);
+      button.fitTextToButton(2);
     }
     this.input.keyboard?.on(escapeKey, exit);
     this.events.once('shutdown', () => this.input.keyboard?.off(escapeKey, exit));

@@ -122,5 +122,45 @@ const participant=(uid,studyId,startDate='') => ({uid,username:uid,participantId
   const gated=await api.getParticipantBundle(request('pretest-user',{},nowSeconds+1));
   assert.equal(gated.progress.scheduleOverride.startDate,undefined);
   assert.equal(types.getNextAssignment({...individual,weeks:{...levels,'0':[level]}},gated.progress,gated.account.startDate,new Date()).week,0);
-  console.log('PASS: fixed week-count validation, automatic vs persistent rolling calendar, fresh-login anchor, week progression past study end, Pre-test gate, special Post-test, automatic reset, original participant start-date preservation');
+  // Researchers may reopen any configured stage after a previously completed
+  // Post-test. Past results remain stored; a repeated week gets a fresh session
+  // epoch and its weekly allowance is reset without reducing lifetime totals.
+  const replaySettings={...fixed,weeks:{...levels,'0':[level]}};
+  await dbRef('studies/replay/settings').set(replaySettings);
+  await dbRef('accounts/replay-user').set(participant('replay-user','replay',offset(-35)));
+  await dbRef('progress/replay/replay-user').set({
+    sessions:{'0':1,'1':2,'2':2,'3':2,'-1':1},
+    completed:{'-1':['-1-old:0'], '3':['3-1:0']},
+    totalCompletedSessions:8, activeSession:{},
+  });
+  const previous=(await dbRef('progress/replay/replay-user').get()).val();
+  const repeatPost=await api.setParticipantStage(request('admin',{uid:'replay-user',stage:-1}));
+  assert.equal(repeatPost.progress.stageOverride.week,-1);
+  assert.equal(types.getNextAssignment(replaySettings,repeatPost.progress,offset(-35),new Date()).capped,false,
+    'Post-test history must not block a manually reopened Post-test');
+  const repeatPre=await api.setParticipantStage(request('admin',{uid:'replay-user',stage:0}));
+  assert.equal(types.getNextAssignment(replaySettings,repeatPre.progress,offset(-35),new Date()).week,0,
+    'A completed Pre-test can be repeated after a completed Post-test');
+  const repeatWeek=await api.setParticipantStage(request('admin',{uid:'replay-user',stage:3}));
+  assert.equal(repeatWeek.progress.sessions['3'],0,'Repeating a week reopens its completion allowance');
+  assert.equal(repeatWeek.progress.totalCompletedSessions,8,'Historical completion totals remain intact');
+  assert.equal(repeatWeek.progress.completed['3'][0],previous.completed['3'][0],
+    'Historical completed steps are preserved');
+  assert(repeatWeek.progress.sessionEpoch['3'],'A replay needs a fresh session epoch');
+  const relogged=await api.getParticipantBundle(request('replay-user',{},nowSeconds+1));
+  assert.equal(types.getNextAssignment(replaySettings,relogged.progress,relogged.account.startDate,new Date()).capped,false,
+    'A prior Post-test must not cap the reassigned week');
+  await api.setParticipantStage(request('admin',{uid:'replay-user',stage:null}));
+  const replayReset=(await dbRef('progress/replay/replay-user').get()).val();
+  assert.equal(types.getNextAssignment(replaySettings,replayReset,offset(-35),new Date()).state,'completed',
+    'Automatic schedule returns to completed study after replay cancellation');
+  const noPostWeeks={...levels}; delete noPostWeeks['-1'];
+  const noPost={...fixed,weeks:noPostWeeks};
+  assert.equal(types.getNextAssignment(noPost,{...previous,sessions:{...previous.sessions,'-1':0}},offset(-35),new Date()).state,
+    'completed','A study without Post-test finishes as soon as the final weekly quota is fulfilled');
+  assert.equal(types.getNextAssignment(fixed,{...previous,sessions:{...previous.sessions,'-1':0}},offset(-35),new Date()).state,
+    'awaiting-posttest','A study with Post-test instead waits for its researcher');
+  assert.equal(types.validateSettings({...fixed,showWeeklySessionProgress:false}).length,0);
+  assert(types.validateSettings({...fixed,showWeeklySessionProgress:'yes'}).length>0);
+  console.log('PASS: rolling calendars, stage replay after Post-test, fresh session epochs, final-week completion and settings validation');
 })().catch(error=>{console.error(error);process.exitCode=1;});

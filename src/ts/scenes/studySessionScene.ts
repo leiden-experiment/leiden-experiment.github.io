@@ -30,12 +30,15 @@ export default class StudySessionScene extends HandScene {
     const isSelectionScreen = !!step && isSelectionStep(step);
     this.add.text(this.center.x, isSelectionScreen ? 125 : 180, session.settings.title, { font: '65px Courier New', color: '#ffffff', align: 'center' }).setOrigin(.5);
     const daysUntil = plan?.daysUntilNextWeek || 0;
+    const posttestAvailable = !!session.settings.weeks?.['-1']?.length;
     const cappedText = daysUntil > 0
       ? `You have finished this week's sessions. Week ${plan!.week + 1} unlocks in ${daysUntil} day${daysUntil === 1 ? '' : 's'}.`
-      : plan?.week === plan?.totalWeeks ? 'You have completed the final week of training. Ask your researcher about the Post-test.'
+      : plan?.week === plan?.totalWeeks
+        ? `The final week of training has ended.${posttestAvailable ? '\nAsk your researcher about the Post-test.' : ''}`
       : 'You have completed the maximum sessions for this week.';
-    const message = plan?.state === 'completed' ? 'You have completed the entire study. Thank you for participating.' :
-      plan?.state === 'awaiting-posttest' ? 'Your weekly training is complete. The Post-test will be unlocked by your researcher.' :
+    const message = plan?.state === 'completed'
+      ? `${posttestAvailable ? '' : 'You have completed the final week of training.\n'}You have completed the entire study. Thank you for participating.` :
+      plan?.state === 'awaiting-posttest' ? 'You have completed the final week of training.\nAsk your researcher about the Post-test.' :
       plan?.state === 'awaiting-login' ? (getStudyProgress().scheduleOverride && !getStudyProgress().scheduleOverride?.startDate ? 'Your researcher has assigned a new weekly schedule. Sign out and sign in again to begin your assigned week.' : 'Pre-test complete. Sign out and sign in again when you are ready to start your weekly programme.') :
       plan?.beforeStart && plan.week !== 0 ?
         `Your training programme has not started yet. Please return on ${displayDate(session.settings.scheduleMode === 'fixed' ? session.settings.startDate : session.account.startDate) || 'your assigned start date'}.` :
@@ -45,12 +48,30 @@ export default class StudySessionScene extends HandScene {
       step ? (!isLevelStep(step) ? step.text : `Ready to play: ${this.displayLevelName(step.levelId)}`) :
       'Session complete! Thank you for playing.';
     this.add.text(this.center.x, isSelectionScreen ? 285 : 430, message, { font: '31px Courier New', color: '#ffffff', align: 'center', wordWrap: { width: 1500 } }).setOrigin(.5);
+    // Week totals count finished sessions, not individual levels. The End slide
+    // updates after its completion is acknowledged by the server.
+    const showWeekCount = session.settings.showWeeklySessionProgress !== false &&
+      session.settings.weeklyEnabled !== false && session.settings.scheduleMode !== 'single' &&
+      plan && plan.week > 0 && plan.week <= plan.totalWeeks &&
+      (step?.type === 'start' || step?.type === 'end') &&
+      step.showWeeklySessionProgress !== false;
+    const weekCountText = showWeekCount ? this.add.text(this.center.x, 535, '', {
+      font: '30px Courier New', color: '#aaf4b0', align: 'center'
+    }).setOrigin(.5) : null;
+    const updateWeekCount = () => {
+      if (!weekCountText || !plan) return;
+      const count = Math.min(session.settings.maxSessionsPerWeek,
+        getStudyProgress().sessions[String(plan.week)] || 0);
+      weekCountText.setText(`${count}/${session.settings.maxSessionsPerWeek} weekly sessions completed`);
+    };
+    updateWeekCount();
     this.status = this.add.text(this.center.x, isSelectionScreen ? 365 : 620, '', { font: '25px Courier New', color: '#ffd676', align: 'center', wordWrap: { width: 1500 } }).setOrigin(.5);
     if (step?.type === 'end' && plan && !plan.capped && !hasJustFinishedSession()) {
       // The End slide must have NO interactive controls, including camera/settings.
       // Its completion is recorded automatically without a Continue button.
       this.status.setText('Saving session completion…');
       void advanceScreenStep(step).then(() => {
+        updateWeekCount();
         this.status.setText('Session completed. You may close this page.');
       }).catch(() => {
         this.status.setText('Unable to confirm completion. Please refresh this page to retry saving.');
@@ -199,22 +220,30 @@ export default class StudySessionScene extends HandScene {
     return id;
   }
 
-  /** A maximum of two lines for the name, plus one play-count line. */
-  private choiceButtonLabel(name: string, played: number, maxChars = 18): string {
-    const words = name.trim().split(/\s+/);
-    const lines: string[] = [];
-    for (const word of words) {
-      if (lines.length >= 2) break;
-      const last = lines.length - 1;
-      if (last >= 0 && (lines[last] + ' ' + word).length <= maxChars) lines[last] += ' ' + word;
-      else if (word.length > maxChars) lines.push(word.slice(0, maxChars - 1) + '…');
-      else lines.push(word);
+  /** Preserve the entire name; Button.fitTextToButton scales all three lines
+   * to the actual sprite size rather than clipping or inserting an ellipsis. */
+  private choiceButtonLabel(name: string, played: number, suggestedChars = 18): string {
+    const fullName = name.trim() || 'Unnamed level';
+    const words = fullName.split(/\s+/);
+    let lines: string[];
+    if (words.length === 1 && fullName.length > suggestedChars) {
+      const split = Math.ceil(fullName.length / 2);
+      lines = [fullName.slice(0, split), fullName.slice(split)];
+    } else if (words.length < 2) lines = [fullName];
+    else {
+      // Choose the break with the smallest longest line, rather than discarding
+      // words. Long names simply use a smaller rendered font to fit the button.
+      let best = 1;
+      let shortestLongest = Infinity;
+      for (let i = 1; i < words.length; i++) {
+        const first = words.slice(0, i).join(' ');
+        const second = words.slice(i).join(' ');
+        const longest = Math.max(first.length, second.length);
+        if (longest < shortestLongest) { best = i; shortestLongest = longest; }
+      }
+      lines = [words.slice(0, best).join(' '), words.slice(best).join(' ')];
     }
-    const visible = lines.join(' ').replace(/…/g, '');
-    if (name.trim().length > visible.length && lines.length) {
-      lines[lines.length - 1] = lines[lines.length - 1].replace(/…$/, '').slice(0, maxChars - 1) + '…';
-    }
-    return `${lines.join('\n') || 'Unnamed level'}\n${played} played`;
+    return `${lines.join('\n')}\n${played} played`;
   }
 
   private async playLevel(selected?: Assignment, choiceIndex?: number, selectionPlay?: number) {

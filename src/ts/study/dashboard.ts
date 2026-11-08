@@ -115,6 +115,7 @@ function gameConfigEditor(parent: HTMLElement, current: Record<string, unknown>,
     const value: Record<string, unknown> = { ...current }; // Preserve unrelated legacy settings.
     delete value.skipButtonAppearsAfterLoop;
     delete value.skipLayersAutomaticallyAfterLoop;
+    delete value.autoSaveCSV;
     for (const entry of inputs) {
       if (!entry.isBoolean && entry.element.value.trim() === '') throw new Error(`Enter a value for ${entry.key}`);
       value[entry.key] = entry.isBoolean ? entry.element.checked : Number(entry.element.value);
@@ -307,6 +308,9 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const collection = section(page, 'Research data'); collection.classList.add('study-subsection');
     const collectFingers = check(collection, 'Collect normalized positions and radii', data.collectFingerPositions === true,
       'When disabled, normalized finger and target coordinates and radii are omitted; scores and timing are still recorded.');
+    const showWeeklySessionProgress = check(collection, 'Show weekly session progress on Start and End slides',
+      data.showWeeklySessionProgress !== false,
+      'Show the number of sessions completed out of the weekly maximum, for example 1/3 weekly sessions completed. Enabled by default.');
     const participantControls = section(page, 'Participant screen controls');
     participantControls.classList.add('study-subsection');
     const enableParticipantSettings = check(participantControls, 'Allow participants to edit settings', data.participantSettingsEnabled === true,
@@ -374,6 +378,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
       }
       const settings: StudySettings = {
         title: title.value.trim(), description: data.description || '', introText: '', collectFingerPositions: collectFingers.checked,
+        showWeeklySessionProgress: showWeeklySessionProgress.checked,
         participantSettingsEnabled: enableParticipantSettings.checked,
         participantSettingsAllowed: enableParticipantSettings.checked ? permittedSettings.filter(item => item.box.checked).map(item => item.key) : [],
         startDate: mode.value === 'fixed' ? isoDate(start.value) : data.startDate || new Date().toISOString().slice(0, 10),
@@ -486,8 +491,39 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     }, 'secondary');
     refreshControl.classList.add('study-block-button');
     refreshControl.title = 'Retrieve the latest participants, completed session counts and completion times from Firebase.';
-    const search = field(page, 'Find a participant', '', 'input', 'Filter the participant list by username or group.');
-    search.placeholder = 'Search participants…'; search.classList.add('study-search');
+    const filterHelp = 'Search by username or use filters: pretest, posttest, completed, week:1, week:2, '
+      + 'personal, automatic, custom, notstarted, active, disabled, group:control. Combine terms to narrow results.';
+    const search = field(page, 'Find a participant', '', 'input', filterHelp);
+    search.placeholder = 'Name or pretest, posttest, week:2, group:...';
+    search.classList.add('study-search');
+    const filterBar = node('div', page); filterBar.className = 'study-roster-filters';
+    const statusLabel = node('label', filterBar); statusLabel.className = 'study-field';
+    node('span', statusLabel, 'Participant filter');
+    const statusFilter = node('select', statusLabel);
+    const filterOptions: [string, string][] = [
+      ['', 'All participants'], ['pretest', 'Awaiting Pre-test'],
+      ['posttest', 'Awaiting Post-test'], ['completed', 'Completed study'],
+      ['personal', 'Personal schedule'], ['automatic', 'Automatic schedule'],
+      ['custom', 'Custom gameplay settings'], ['notstarted', 'Not started'],
+      ['active', 'Active accounts'], ['disabled', 'Disabled accounts'],
+    ];
+    const weeks = Math.max(1, settings.durationWeeks ||
+      Math.max(1, ...Object.keys(settings.weeks || {}).map(Number).filter(value => value > 0)));
+    for (let week = 1; week <= weeks; week++) filterOptions.push([`week:${week}`, `Week ${week}`]);
+    for (const [value, label] of filterOptions) {
+      const option = node('option', statusFilter, label); option.value = value;
+    }
+    statusFilter.title = filterHelp;
+    const groupLabel = node('label', filterBar); groupLabel.className = 'study-field';
+    node('span', groupLabel, 'Group / condition');
+    const groupFilter = node('select', groupLabel);
+    const allGroups = node('option', groupFilter, 'All groups'); allGroups.value = '';
+    for (const name of [...new Set([...groups, ...cache.accounts(study.id).map(person => person.group || '')])].filter(Boolean)) {
+      const option = node('option', groupFilter, name); option.value = name;
+    }
+    const filterGuide = node('small', page,
+      'Quick search: pretest · posttest · completed · week:2 · personal · custom · group:name');
+    filterGuide.className = 'study-filter-guide';
     const progressDescription = (uid: string) => {
       const progress = cache.progress(study.id, uid);
       const completed = progress?.totalCompletedSessions ?? Object.values(progress?.sessions || {}).reduce((sum, count) => sum + Number(count || 0), 0);
@@ -503,17 +539,33 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     results.replaceChildren();
     const participants = accounts.filter(a => a.role === 'participant').sort((a,b) => a.username.localeCompare(b.username));
     if (!participants.length) node('p', results, 'No participants yet.');
-    const rows: { element: HTMLElement; member: Account }[] = [];
+    const rows: { element: HTMLElement; member: Account; week: number; status: string; personal: boolean; custom: boolean; completed: boolean; pretest: boolean; posttest: boolean; notstarted: boolean }[] = [];
     for (const member of participants) {
       const item = node('div', results); item.className = 'study-roster-item';
       const row = node('div', item); row.className = 'study-row study-participant-row';
       const details = node('div', row); details.className = 'study-row-title';
-      node('strong', details, member.username);
+      const savedProgress = cache.progress(study.id, member.uid) || emptyProgress();
+      const currentPlan = getNextAssignment(settings, savedProgress, member.startDate || '');
+      const pretest = currentPlan.week === 0 && currentPlan.state !== 'completed';
+      const posttest = currentPlan.state === 'awaiting-posttest' ||
+        (currentPlan.week === -1 && currentPlan.state !== 'completed');
+      const completed = currentPlan.state === 'completed';
+      const personal = !!savedProgress.scheduleOverride;
+      const custom = !!member.customConfig && Object.keys(member.customConfig).length > 0;
+      const notstarted = !member.startDate && !Object.values(savedProgress.sessions).some(count => count > 0);
+      const status = completed ? 'Completed study' : posttest ? 'Awaiting Post-test' :
+        pretest ? 'Awaiting Pre-test' : currentPlan.state === 'waiting-start' ? 'Not started' :
+        currentPlan.state === 'awaiting-login' ? 'Awaiting login' :
+        currentPlan.week > 0 && currentPlan.week <= currentPlan.totalWeeks ?
+          `Week ${currentPlan.week}` : 'Not started';
+      const participantName = node('strong', details, member.username);
+      if (completed) participantName.classList.add('study-participant-completed');
+      else if (posttest) participantName.classList.add('study-participant-posttest');
+      else if (pretest) participantName.classList.add('study-participant-pretest');
+      node('small', details, `Status: ${status}${completed ? ' · All required study sessions complete' : ''}`);
       node('small', details, `Group: ${member.group || 'None'} · ${member.active ? 'Active' : 'Disabled'}${member.customConfig ? ' · Custom settings' : ''}`);
       node('small', details, `Participant start date: ${member.startDate ? displayDate(member.startDate) : 'Not started'}`);
       node('small', details, progressDescription(member.uid));
-      const savedProgress = cache.progress(study.id, member.uid) || emptyProgress();
-      const currentPlan = getNextAssignment(settings, savedProgress, member.startDate || '');
       if (settings.weeklyEnabled !== false && settings.scheduleMode !== 'single' && currentPlan.week > 0 &&
           currentPlan.week <= currentPlan.totalWeeks) {
         node('small', details, `Week ${currentPlan.week}: ${savedProgress.sessions[String(currentPlan.week)] || 0} of ${settings.maxSessionsPerWeek} sessions completed`);
@@ -564,7 +616,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         if (settings.weeklyEnabled !== false && settings.scheduleMode !== 'single') {
           const stageLabel = node('label', assignmentFields); stageLabel.className = 'study-field';
           const caption = node('span', stageLabel, 'Next session stage');
-          tooltip(caption, 'Automatic follows the study calendar. Selecting a week starts a persistent personal seven-day schedule from that week on the participant’s next login, even beyond a fixed study end date. Pre-test/Post-test are special one-session test stages. Automatic cancels the personal schedule.');
+          tooltip(caption, 'Automatic follows the study calendar. Choosing a week reopens its weekly session allowance at zero, then starts a persistent personal seven-day schedule on the next login. Historical results remain saved. Pre-test and Post-test can be repeated after completion. Automatic cancels the personal schedule.');
           stageSelect = node('select', stageLabel);
           const auto = node('option', stageSelect, 'Automatic (study dates)'); auto.value = '';
           if (rolling && !activeOverride) {
@@ -586,7 +638,7 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
             customConfig: customToggle.checked ? readCustom() : undefined };
           const previousStage = activeOverride ? String(activeOverride.week) : rolling ? 'keep' : '';
           const stageChanged = !!stageSelect && stageSelect.value !== previousStage;
-          if (stageChanged && !confirm('Change the participant’s schedule? Selecting a week starts a new rolling calendar on their next login; Automatic restores the study calendar. Unfinished screens may restart, but saved results are kept.')) return;
+          if (stageChanged && !confirm('Change the participant’s schedule? Choosing a week resets that week’s completed-session allowance to zero and starts a rolling calendar on the next login. Historical results are preserved. Pre-test and Post-test can be repeated. Automatic restores the study calendar.')) return;
           await studyApi.setParticipant(member.uid, { ...changed, ...(!customToggle.checked ? { customConfig: null } : {}) });
           cache.updateAccount(member.uid, changed);
           if (correctedWeeklyCount && Number(correctedWeeklyCount.value) !== (savedProgress.sessions[String(editWeek)] || 0)) {
@@ -630,11 +682,36 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
         }, 'danger');
         removeParticipant.classList.add('study-remove-icon');
       }
-      rows.push({ element: item, member });
+      rows.push({ element: item, member, week: currentPlan.week, status, personal, custom, completed, pretest, posttest, notstarted });
     }
-    search.oninput = () => { const query = search.value.trim().toLowerCase();
-      rows.forEach(({ element, member }) => { element.hidden = !!query && !`${member.username} ${member.group || ''}`.toLowerCase().includes(query); });
+    const applyFilters = () => {
+      const query = search.value.trim().toLowerCase().replace(/\bweek\s+(\d+)\b/g, 'week:$1');
+      // A quoted group name may contain spaces: group:"control group".
+      const tokens = (query.match(/group:"[^"]+"|[^\s]+/g) || []).map(token => token.replace(/"/g, ''));
+      const matches = (row: typeof rows[number], token: string) => {
+        const { member } = row;
+        if (['pretest', 'pre-test', 'waiting-pretest'].includes(token)) return row.pretest;
+        if (['posttest', 'post-test', 'waiting-posttest'].includes(token)) return row.posttest;
+        if (['completed', 'finished', 'done'].includes(token)) return row.completed;
+        if (['personal', 'schedule:personal'].includes(token)) return row.personal;
+        if (['automatic', 'schedule:automatic'].includes(token)) return !row.personal;
+        if (['custom', 'settings:custom'].includes(token)) return row.custom;
+        if (['notstarted', 'not-started'].includes(token)) return row.notstarted;
+        if (token === 'active') return member.active;
+        if (token === 'disabled') return !member.active;
+        if (/^week:\d+$/.test(token)) return row.week === Number(token.slice(5)) && !row.completed;
+        if (token.startsWith('group:')) return (member.group || '').toLowerCase().includes(token.slice(6));
+        return `${member.username} ${member.group || ''} ${row.status}`.toLowerCase().includes(token);
+      };
+      rows.forEach(row => {
+        row.element.hidden = !!(groupFilter.value && row.member.group !== groupFilter.value) ||
+          (statusFilter.value ? !matches(row, statusFilter.value) : false) ||
+          !tokens.every(token => matches(row, token));
+      });
     };
+    search.oninput = applyFilters;
+    statusFilter.onchange = applyFilters;
+    groupFilter.onchange = applyFilters;
   }
   async function showLibrary() {
     const page = section(output, 'Levels'); page.classList.add('study-compact-card', 'study-library-card');
@@ -665,7 +742,10 @@ export async function showDashboard(root: HTMLElement, user: Account, onExit: ()
     const list = node('div', page); node('p', list, 'Loading levels…');
     const levels = cache.levels();
     if (!list.isConnected) return; list.replaceChildren();
-    if (!levels.length) node('p', list, 'No custom levels uploaded yet.');
+    if (!levels.length) {
+      const emptyMessage = node('p', list, 'No custom levels uploaded yet.');
+      emptyMessage.style.paddingBottom = '18px';
+    }
     for (const level of levels) {
       const row = node('div', list); row.className = 'study-row study-level-row';
       const label = node('div', row); label.className = 'study-row-title';

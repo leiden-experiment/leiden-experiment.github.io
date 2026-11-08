@@ -23,7 +23,6 @@ export const gameplayOptions: GameplayOption[] = [
   { key: 'cameraOpacity', label: 'Camera opacity', defaultValue: 0, help: 'Camera transparency: 0 hidden, 1 opaque.', min: 0, max: 1, step: .05 },
   { key: 'postProcessingDisabled', label: 'Disable visual postprocessing', defaultValue: false, help: 'Turn off visual effects.' },
   { key: 'displayVisualMetronome', label: 'Visual metronome', defaultValue: true, help: 'Show a metronome in the interface.' },
-  { key: 'autoSaveCSV', label: 'Automatically save CSV', defaultValue: true, help: 'Save local CSV results automatically.' },
 ];
 export const gameplayDefaults = Object.fromEntries(gameplayOptions.map(option => [option.key, option.defaultValue])) as Record<string, GameplayValue>;
 

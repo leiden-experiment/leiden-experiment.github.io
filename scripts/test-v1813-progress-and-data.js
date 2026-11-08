@@ -75,6 +75,25 @@ const types = moduleFrom('src/ts/study/types.ts');
   assert(scene.includes('plays remaining') || scene.includes('play${remaining === 1'), 'selection should show remaining play quota');
   assert(scene.includes('selectable.length === 1 ? 64'), 'level selection text must be larger');
   assert(scene.includes('this.displayLevelName(assignment.levelId)'), 'record actual display name alongside levelId');
+  // Execute the real label formatter in isolation. A long level name must
+  // survive both-line layout intact, including names that have no spaces.
+  const labelStart = scene.indexOf('  private choiceButtonLabel(');
+  const labelEnd = scene.indexOf('  private async playLevel(', labelStart);
+  assert(labelStart>=0 && labelEnd>labelStart);
+  const formatter = ts.transpileModule(`class NameFormatter {${scene.slice(labelStart,labelEnd)}}; exports.NameFormatter = NameFormatter;`,
+    { compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS} }).outputText;
+  const labelModule={}; vm.runInNewContext(formatter, {exports:labelModule,Math,Number,String,Array});
+  const format = new labelModule.NameFormatter();
+  const longName = 'This Is A Very Long Level Name That Must Always Fit Inside A Selection Button';
+  const wrapped = format.choiceButtonLabel(longName,3,12);
+  assert.equal(wrapped.split('\n').slice(0,-1).join(' '),longName,
+    'Long level names retain every word instead of being truncated');
+  assert.equal(wrapped.split('\n').length,3,'Use up to two lines for the name and one for play count');
+  const noSpaces='ExtraordinarilyLongLevelNameWithoutWordBreaks';
+  const unbroken=format.choiceButtonLabel(noSpaces,1,12);
+  assert.equal(unbroken.split('\n').slice(0,-1).join(''),noSpaces,
+    'Single-word long names are split visually without losing characters');
+
   const loading = text('src/ts/scenes/loadingScene.ts');
   assert(loading.includes('PREPARING ${visibleName}') && !loading.includes('PREPARING STUDY LEVEL ${id}'),
     'loading must show display name rather than internal id');

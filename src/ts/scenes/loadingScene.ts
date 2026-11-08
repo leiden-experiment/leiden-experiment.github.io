@@ -167,7 +167,9 @@ export class LoadingScene extends Scene {
     this.updateText(loadingText, 'LOADING CONFIG DATA...');
     assert(this.cache.json.has('defaultConfig'), 'Failed to load default config data');
     updateDefaultConfig(this.cache.json.get('defaultConfig'));
-    updateConfig({ ...defaultConfig, ...(getStudySession()?.settings.defaultConfig || {}), ...(getStudySession()?.account.participantPreferences || {}) });
+    const webUser = typeof window.electron === 'undefined';
+    updateConfig({ ...defaultConfig, ...(getStudySession()?.settings.defaultConfig || {}), ...(getStudySession()?.account.participantPreferences || {}),
+      ...(webUser ? { autoSaveCSV: false } : {}) });
 
     // Generate each assigned library level's audio in the initial loading screen.
     // Its stable key stays in Phaser's audio cache between plays, so there is no

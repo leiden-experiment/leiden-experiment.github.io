@@ -587,3 +587,11 @@
 .study-admin-dashboard .study-european-date .study-date-entry:focus-visible {
   outline:1px solid #bcbcbc!important; outline-offset:0!important; border-color:#777!important;
 }
+
+/* Participant stage colors, independent of the dashboard's dark theme. */
+.study-admin-dashboard .study-participant-pretest { color:#49ce78!important; }
+.study-admin-dashboard .study-participant-posttest { color:#ffd04f!important; }
+.study-admin-dashboard .study-participant-completed { color:#6faeff!important; }
+.study-admin-dashboard .study-roster-filters { display:flex; flex-wrap:wrap; gap:12px; align-items:end; }
+.study-admin-dashboard .study-roster-filters .study-field { flex:1 1 210px; min-width:180px; }
+.study-admin-dashboard .study-filter-guide { color:#b0b0b0!important; font-size:12px; }

@@ -5,7 +5,7 @@ const participantSettingKeys = new Set([
   'playableBackingTracksEnabled', 'unplayableBackingTracksEnabled', 'disableLayerProgression',
   'indexFingerOnly', 'pinchVolume', 'backgroundMusicVolume', 'onTimeDuration', 'lateTimeDuration',
   'enableCameraVisibility', 'cameraOpacity', 'postProcessingDisabled',
-  'displayVisualMetronome', 'autoSaveCSV'
+  'displayVisualMetronome'
 ]);
 const validParticipantSetting = (key: unknown) => typeof key === 'string' && participantSettingKeys.has(key);
 /** Study records contain pseudonyms, not participant names or passwords. */
@@ -23,6 +23,7 @@ export interface ScreenStep {
   text: string;
   /** Participant may edit only these fields on this slide. */
   allowedSettings?: string[];
+  showWeeklySessionProgress?: boolean; // Start/End slide checkbox; default on.
 }
 export interface LevelChoiceStep {
   type: 'selection';
@@ -91,6 +92,7 @@ export interface StudySettings {
   defaultConfig?: Record<string, unknown>;
   groupConfigs?: Record<string, Record<string, unknown>>;
   collectFingerPositions?: boolean; // Opt-in for ALL normalized target/finger positions and radii; absent means none are recorded.
+  showWeeklySessionProgress?: boolean; // Show completed/required weekly sessions on Start and End slides; default on.
   /** Show participant Settings on all study screens, not as a dedicated slide. */
   participantSettingsEnabled?: boolean;
   /** Researcher-controlled list of options participants may change. */
@@ -143,7 +145,7 @@ export interface Progress {
 export interface PublishedLevel { id: string; name: string; data?: unknown; updatedAt?: string; bpm?: number }
 export function defaultStudySettings(title = 'New study'): StudySettings {
   return {
-    title, description: '', introText: '', collectFingerPositions: false,
+    title, description: '', introText: '', collectFingerPositions: false, showWeeklySessionProgress: true,
     participantSettingsEnabled: false, participantSettingsAllowed: [],
     startDate: new Date().toISOString().slice(0, 10), maxSessionsPerWeek: 3, enabled: true,
     dateRangeEnabled: false, scheduleMode: 'individual', durationWeeks: 3, participantStartMode: 'first-login',
@@ -181,6 +183,7 @@ export function validateSettings(value: StudySettings): string[] {
   }
   if (!Number.isInteger(value?.maxSessionsPerWeek) || value.maxSessionsPerWeek < 1 || value.maxSessionsPerWeek > 50) issues.push('Sessions per week must be between 1 and 50');
   if (value?.collectFingerPositions !== undefined && typeof value.collectFingerPositions !== 'boolean') issues.push('Invalid finger position collection option');
+  if (value?.showWeeklySessionProgress !== undefined && typeof value.showWeeklySessionProgress !== 'boolean') issues.push('Invalid weekly session progress display option');
   if (value?.participantSettingsEnabled !== undefined && typeof value.participantSettingsEnabled !== 'boolean') issues.push('Invalid participant settings option');
   if (value?.participantSettingsAllowed !== undefined && (!Array.isArray(value.participantSettingsAllowed) ||
       value.participantSettingsAllowed.length > 30 || value.participantSettingsAllowed.some(key => !validParticipantSetting(key)))) issues.push('Invalid participant setting permissions');
@@ -207,6 +210,8 @@ export function validateSettings(value: StudySettings): string[] {
         });
       } else if (['start', 'break', 'end', 'settings'].includes(step.type)) {
         if (typeof step.text !== 'string' || step.text.length > 2000) issues.push(`${week}/${i}: screen message must be at most 2,000 characters`);
+        if (step.showWeeklySessionProgress !== undefined && (!['start', 'end'].includes(step.type) || typeof step.showWeeklySessionProgress !== 'boolean'))
+          issues.push(`${week}/${i}: invalid slide weekly progress setting`);
         if (step.type === 'settings' && (!Array.isArray(step.allowedSettings) || step.allowedSettings.length < 1 || step.allowedSettings.length > 30 ||
           step.allowedSettings.some(key => !validParticipantSetting(key)))) issues.push(`${week}/${i}: choose at least one valid participant setting`);
       } else issues.push(`${week}/${i}: unknown block type`);
@@ -258,7 +263,14 @@ export function getNextAssignment(settings: StudySettings, progress: Progress, p
   const daysUntilNextWeek = validAnchor && Number.isFinite(nextStart) && weekElapsed >= 1 && activeWeek < totalWeeks
     ? Math.max(0, Math.ceil((nextStart - today) / 86400000)) : 0;
   const pretestPendingLogin = !!progress.pretestPendingLogin;
-  const completed = weekly && (posttestDone || (!posttestConfigured && afterWeeks));
+  const finalWeekDone = (progress.sessions[String(totalWeeks)] || 0) >= settings.maxSessionsPerWeek;
+  // A personal calendar or special stage deliberately reopens the study even when
+  // a historical Post-test or final training week has already been completed.
+  const completed = weekly && !manual && (
+    (posttestDone && (!personal || (finalWeekDone && activeWeek >= totalWeeks))) ||
+    (!posttestConfigured && finalWeekDone && (!personal || activeWeek >= totalWeeks)));
+  const awaitingPosttest = weekly && !manual && !posttestDone && posttestConfigured &&
+    (!personal || activeWeek >= totalWeeks) && (finalWeekDone || afterWeeks);
   const week = manual ? manual.week : pretestNeeded ? 0 : weekly ? Math.max(1, personal?.week || 1, activeWeek) : 1;
   const assignments = slidesForStudyWeek(settings.weeks || {}, week);
   const sessionNo = manual ? manual.sessionNumber : (progress.sessions[String(week)] || 0) + 1;
@@ -269,7 +281,7 @@ export function getNextAssignment(settings: StudySettings, progress: Progress, p
   const capped = completed || pretestPendingLogin || (!manual && !!personal && !personal.startDate && !pretestNeeded) || (!manual && (beforeStart || afterWeeks || limitReached));
   const state = pretestPendingLogin ? 'awaiting-login' : completed ? 'completed' :
     !manual && personal && !personal.startDate && !pretestNeeded ? 'awaiting-login' :
-    !manual && afterWeeks && posttestConfigured ? 'awaiting-posttest' :
+    awaitingPosttest ? 'awaiting-posttest' :
     beforeStart ? 'waiting-start' : limitReached ? 'weekly-complete' : 'active';
   return { week, assignments, sessionId, index, complete: assignments.length > 0 && index === -1,
     capped, beforeStart: pretestPendingLogin || beforeStart, afterEnd: completed || (!manual && afterWeeks),
@@ -302,12 +314,12 @@ export function migrateLegacySettingsSlides(value: StudySettings): StudySettings
   const weeks = normalizeStudyWeeks(value.weeks);
   const legacy = Object.values(weeks).flat().filter(step => step.type === 'settings') as ScreenStep[];
   if (!legacy.length) return value;
-  const allowed = [...new Set(legacy.flatMap(step => step.allowedSettings || []))];
+  const allowed = [...new Set(legacy.flatMap(step => step.allowedSettings || []))].filter(validParticipantSetting);
   const migrated = Object.fromEntries(Object.entries(weeks).map(([week, slides]) => [week, slides.map(step =>
     step.type === 'settings' ? { type: 'start', text: step.text } : step)])) as Record<string, StudyStep[]>;
   return { ...value, weeks: migrated,
     participantSettingsEnabled: value.participantSettingsEnabled ?? true,
-    participantSettingsAllowed: value.participantSettingsAllowed ?? allowed };
+    participantSettingsAllowed: value.participantSettingsAllowed?.filter(validParticipantSetting) ?? allowed };
 }
 
 /** Client-side counterpart of the backend's login checkpoint restoration. */

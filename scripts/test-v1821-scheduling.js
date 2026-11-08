@@ -34,7 +34,7 @@ const released = getNextAssignment(fixed, {...afterPretest,stageOverride:{week:-
 assert.equal(released.week,-1); assert.equal(released.capped,false);
 const complete = getNextAssignment(fixed, {...afterPretest,sessions:{'0':1,'-1':1}}, '', new Date('2026-12-07T12:00:00Z'));
 assert.equal(complete.state,'completed'); assert.equal(complete.capped,true);
-assert.equal(getNextAssignment(fixed,{...afterPretest,sessions:{'0':1,'-1':1},stageOverride:{week:1,sessionNumber:99}},'',new Date('2026-12-07')).capped,true,'Post-test completion must be final even after researcher stage override');
+assert.equal(getNextAssignment(fixed,{...afterPretest,sessions:{'0':1,'-1':1},stageOverride:{week:1,sessionNumber:99}},'',new Date('2026-12-07')).capped,false,'Researcher stage override must allow replay after Post-test completion');
 assert.equal(validateSettings(fixed).length,0);
 assert(validateSettings({...fixed,endDate:''}).some(s=>s.includes('week count')));
 assert.equal(validateSettings({...fixed,endDate:'',durationWeeks:3}).length,0,'Fixed studies can use a duration without an explicit end date');
@@ -64,4 +64,4 @@ assert(scene.includes('daysUntilNextWeek'));
 const dashboard=fs.readFileSync(path.join(root,'src/ts/study/dashboard.ts'),'utf8');
 assert(dashboard.includes('Fixed schedule — all participants') && dashboard.includes('Individual schedule — starts'));
 assert(dashboard.includes('setStudyEnabled(study.id') && dashboard.includes('Study start date (Week 1)'));
-console.log('PASS: fixed/individual weekly calendars, Pre-test access, next-week countdown, manual Post-test, permanent completion, single-session compatibility, End slide and study enabled controls');
+console.log('PASS: fixed/individual weekly calendars, Pre-test access, next-week countdown, manual Post-test, researcher replays after completion, single-session compatibility, End slide and study enabled controls');

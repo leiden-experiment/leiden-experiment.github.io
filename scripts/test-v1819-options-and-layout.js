@@ -10,7 +10,7 @@ const ts = (() => { try { return require('typescript'); } catch { return require
 const transpile = file => ts.transpileModule(read(file), {fileName:file, compilerOptions: {module:ts.ModuleKind.CommonJS, target:ts.ScriptTarget.ES2020}}).outputText;
 const mockText = () => ({setOrigin(){return this},setText(value){this.text=value;return this},setFontSize(){return this},setPosition(){return this},setAlign(){return this},setWordWrapWidth(){return this}});
 class FakeSprite { setTint(){return this} setScale(value){this.size=value;return this} }
-class FakeButton { constructor(scene, label, x, y, handler) {this.label=label;this.x=x;this.y=y;this.handler=handler;this.displayWidth=400;this.text=mockText();scene.buttons.push(this)} setScale(s){this.displayWidth=400*s;return this} }
+class FakeButton { constructor(scene, label, x, y, handler) {this.label=label;this.x=x;this.y=y;this.handler=handler;this.displayWidth=400;this.text=mockText();scene.buttons.push(this)} setScale(s){this.displayWidth=400*s;return this} fitTextToButton(){this.fitted=true;return this} }
 class FakeSlider { constructor(scene,position,size,labelOffset,cfg,key,range,changed) {this.key=key;this.value=cfg[key];this.label=mockText();this.changed=changed;scene.controls.push(this)} getValue(){return this.value} setIsInteger(){return this} reset(cfg){this.value=cfg[this.key];this.changed(this);return this} }
 class FakeCheckbox { constructor(scene,pos,size,offset,label,cfg,key,changed){this.key=key;this.isChecked=cfg[key];this.changed=changed;scene.controls.push(this)} reset(cfg){this.isChecked=cfg[this.key];this.changed(this)} }
 class HandScene {constructor(){this.width=1920;this.height=1080;this.center={x:960,y:540};this.buttons=[];this.controls=[];this.add={text:()=>mockText(),sprite:()=>new FakeSprite(),existing:()=>{}};this.tweens={add:()=>({})};this.scene={start:target=>this.lastScene=target};this.input={keyboard:{on(){},off(){}}};this.events={once(){}};this.hand={setFingerScale:()=>{}};}create(){}setOpacity(){} }
@@ -47,6 +47,7 @@ const Options=exportsObj.default;
   assert.equal(saved,null,'cancel does not write Firebase');
   assert.equal(storage.config.targetSize,initial.targetSize,'cancel restores settings');
   assert.equal(cancelled.lastScene,'studySession');
+  assert(cancelled.buttons.every(button=>button.fitted),'Settings buttons use the same dynamic text fit as main menu buttons');
   const edited=new Options();edited.create();
   const target=edited.controls.find(c=>c.key==='targetSize');
   target.value=2.4; target.changed(target);

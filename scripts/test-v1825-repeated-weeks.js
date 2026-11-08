@@ -119,7 +119,7 @@ const result={schemaVersion:1,studyId:'research1',participantId:'participant01',
   assert.equal(plan.week,3,'The participant calendar still advances to Week 3');
   assert.equal(plan.assignments[0].text,'Instructions for Week 2','Week 3 displays Week 2 instructions');
   assert.equal(plan.sessionId,'3-1','Missing-week fallback must never reuse Week 2 session IDs');
-  assert.equal(getNextAssignment(settings,{...emptyProgress(),sessions:{'3':2}},date14DaysAgo,new Date()).state,'weekly-complete');
+  assert.equal(getNextAssignment(settings,{...emptyProgress(),sessions:{'3':2}},date14DaysAgo,new Date()).state,'completed');
   assert.equal(getNextAssignment(settings,{...emptyProgress(),stageOverride:{week:3,sessionNumber:6}},date14DaysAgo,new Date()).sessionId,'3-6');
   const checkpoint=require(path.join(root,'functions/progressCheckpoint'));
   const partial={completed:{'3':['3-1:0','3-1:1','3-1:2']},sessions:{},activeSession:{'3':'3-1'}};
