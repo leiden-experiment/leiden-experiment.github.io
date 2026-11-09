@@ -41,7 +41,7 @@ export class DifficultyButton extends ToggleButton {
     this.bpm = bpm;
     const textCenter: Vector2 = this.getCenter();
     this.bpmText = this.scene.add
-      .text(textCenter.x, textCenter.y + 30, 'BPM: ' + this.bpm.toString(), {
+      .text(textCenter.x, textCenter.y + 55, 'BPM: ' + this.bpm.toString(), {
         font: '20px Courier New',
       })
       .setOrigin(0.5, 0.5);
