@@ -1,0 +1,30 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const ts = (() => { try { return require('typescript'); } catch { return require('/opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript'); } })();
+const root = path.join(__dirname, '..');
+const text = file => fs.readFileSync(path.join(root, file), 'utf8');
+for (const file of ['src/ts/study/flowBoard.ts','src/ts/scenes/studySessionScene.ts','src/ts/study/participantPreload.ts','src/ts/level/infoHud.ts']) {
+  const result = ts.transpileModule(text(file), { fileName:file, reportDiagnostics:true, compilerOptions:{target:ts.ScriptTarget.ES2018,module:ts.ModuleKind.ES2015,strict:true} });
+  assert(!result.diagnostics?.some(d => d.category===ts.DiagnosticCategory.Error), `TypeScript syntactic error in ${file}`);
+}
+const css=text('src/css/study.css'), board=text('src/ts/study/flowBoard.ts'), session=text('src/ts/scenes/studySessionScene.ts'), preload=text('src/ts/study/participantPreload.ts');
+assert(css.includes('.study-login-error:empty') && css.includes('.study-login-progress:empty'));
+assert(css.includes('.study-login-card button:hover:not(:disabled) { background:#505050!important; }'));
+assert(css.includes('.study-choice-remove'));
+assert(board.includes("'Reset BPM'"));
+assert(board.includes('slider.value = String(originalPosition);'));
+assert(board.includes("slider.value = String(assignment.bpm ?? originalPosition)"));
+assert(board.includes('step.choices.length >= 9'));
+assert(board.includes("remove.classList.add('study-choice-remove')"));
+assert(session.includes("const columns = Math.min(3, selectable.length)"));
+assert(session.includes('this.displayLevelName(choice.levelId)'));
+assert(!session.includes('SLIDE ${plan.index'));
+assert(preload.includes('levels[id].displayName = level.name.trim()'));
+assert(text('src/ts/level/infoHud.ts').includes('this.trackText.setWordWrapWidth'));
+assert(text('functions/index.js').includes('await usernameAlreadyUsedMessage(name)'));
+assert(text('functions/index.js').includes('studyIndex/${account.studyId}'));
+assert(/^1\.8\.(?:[7-9]|[1-9]\d+)$/.test(JSON.parse(text('package.json')).version));
+assert.equal(JSON.parse(text('package-lock.json')).version,JSON.parse(text('package.json')).version);
+console.log('PASS: login layout, same-row BPM with exact reset, nine-choice limits, named level buttons, HUD wrap, study-specific duplicate message');

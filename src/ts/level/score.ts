@@ -14,6 +14,7 @@ import { LayerStats, LevelStats } from '../core/interfaces';
 import Target from '../objects/target';
 import { Track } from '../level/track';
 import HandScene from '../scenes/handScene';
+import { getStudySession } from '../study/runtime';
 
 export class Score {
   public layerStats: LayerStats;
@@ -54,26 +55,25 @@ export class Score {
     playerSongTime: number,
     classification: string,
   ) {
+    const study = getStudySession();
+    const includeNormalized = !study || study.settings.collectFingerPositions === true;
     this.layerStats.hits.push({
       loopNumber: this.getLoopCount(),
       noteID: target.nodeIndex + 1,
       pinchType: target.fingerId,
       correctTime: target.songTime + this.delay,
       playerTime: playerSongTime,
-      classification: classification,
-      normalizedTargetRadius: target.normalizedRadius,
-      normalizedTargetPosition: target.normalizedPosition,
-      normalizedFingerRadius: this.scene.hand.getNormalizedFingerRadius(),
-      normalizedPinkyFingerPosition:
-        this.scene.hand.getNormalizedFingerPosition(pinkyFingerId),
-      normalizedRingFingerPosition:
-        this.scene.hand.getNormalizedFingerPosition(ringFingerId),
-      normalizedMiddleFingerPosition:
-        this.scene.hand.getNormalizedFingerPosition(middleFingerId),
-      normalizedIndexFingerPosition:
-        this.scene.hand.getNormalizedFingerPosition(indexFingerId),
-      normalizedThumbFingerPosition:
-        this.scene.hand.getNormalizedFingerPosition(thumbFingerId),
+      classification,
+      ...(includeNormalized ? {
+        normalizedTargetRadius: target.normalizedRadius,
+        normalizedTargetPosition: target.normalizedPosition,
+        normalizedFingerRadius: this.scene.hand.getNormalizedFingerRadius(),
+        normalizedPinkyFingerPosition: this.scene.hand.getNormalizedFingerPosition(pinkyFingerId),
+        normalizedRingFingerPosition: this.scene.hand.getNormalizedFingerPosition(ringFingerId),
+        normalizedMiddleFingerPosition: this.scene.hand.getNormalizedFingerPosition(middleFingerId),
+        normalizedIndexFingerPosition: this.scene.hand.getNormalizedFingerPosition(indexFingerId),
+        normalizedThumbFingerPosition: this.scene.hand.getNormalizedFingerPosition(thumbFingerId),
+      } : {}),
     });
   }
 

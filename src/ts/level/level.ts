@@ -32,6 +32,7 @@ export default class Level {
   public playableLayers: PlayableLayer[] = [];
   public activeAudioTracks: AudioTrack[] = [];
   private bpmIndex_: number = invalidBpmIndex;
+  private completedLayerIds: string[] = []; // Track completed layers for progressive audio
 
   constructor(scene: Scene, trackKey: string) {
     this.scene = scene;
@@ -41,8 +42,8 @@ export default class Level {
 
   public preload(scene: HandScene) {
     this.scene = scene;
-    this.preloadPreview();
     this.track.preload(scene);
+    this.preloadPreview();
     this.preloadLayers();
   }
 
@@ -93,18 +94,17 @@ export default class Level {
   }
 
   private preloadPreview() {
+    // Designer levels contain no preview MP4 or background image. Legacy
+    // levels still load both files exactly as they did before the merge.
+    if (this.trackKey_.startsWith('temp_level_')) return;
     const previewFile = levelDir + this.getPreviewVideoKey();
     const backgroundFile = levelDir + this.getBackgroundTextureKey();
-
-    this.scene.load.video(
-      this.getPreviewVideoKey(),
-      absPath(previewFile),
-      true,
-    );
-    this.scene.load.image(
-      this.getBackgroundTextureKey(),
-      absPath(backgroundFile),
-    );
+    if (!this.scene.cache.video.has(this.getPreviewVideoKey())) {
+      this.scene.load.video(this.getPreviewVideoKey(), absPath(previewFile), true);
+    }
+    if (!this.scene.textures.exists(this.getBackgroundTextureKey())) {
+      this.scene.load.image(this.getBackgroundTextureKey(), absPath(backgroundFile));
+    }
   }
 
   private preloadLayers() {
@@ -133,6 +133,7 @@ export default class Level {
 
   public start(finishCallback: () => void, abortCallback: () => void) {
     this.activeLayerIndex = 0;
+    this.completedLayerIds = [];
 
     this.removeBackgroundAudio();
 
@@ -145,6 +146,8 @@ export default class Level {
     this.setBPM(this.bpmIndex_);
     this.finishCallback = finishCallback;
     this.abortCallback = abortCallback;
+
+
     // TODO: Consider showing something before first layer starts.
     this.scene.time.delayedCall(levelStartTimeDelay, () => {
       this.startLayer();
@@ -210,10 +213,30 @@ export default class Level {
 
     layer.start(delay);
 
-    const backgroundLayers: string[] = [...layer.data.backgroundLayers];
+    // Progressive audio building: include original background layers + completed layers
+    const backgroundLayers: string[] = [...(layer.data.backgroundLayers || [])];
+
+    // Add all previously completed playable layers to background
+    if (this.trackKey_.startsWith('temp_level_')) {
+      this.completedLayerIds.forEach(completedLayerId => {
+        if (!backgroundLayers.includes(completedLayerId)) {
+          backgroundLayers.push(completedLayerId);
+        }
+      });
+    }
 
     if (config.synchronizationEnabled) {
-      backgroundLayers.push(layer.data.id);
+      // Only add current layer to background if it has pre-recorded loop files
+      const currentLayerData = this.track.data.layers.find(
+        l => l.id === layer.data.id,
+      );
+      if (
+        currentLayerData &&
+        currentLayerData.soundLoopKeys &&
+        currentLayerData.soundLoopKeys.length > 0
+      ) {
+        backgroundLayers.push(layer.data.id);
+      }
     }
 
     this.addBackgroundAudio(
@@ -250,8 +273,20 @@ export default class Level {
 
     if (this.activeLayerIndex < this.playableLayers.length) {
       const previousLayer: PlayableLayer = this.getActiveLayer();
-      previousLayer.preDelayStop();
 
+      // Add the completed layer to the list for progressive audio building
+      if (
+        this.trackKey_.startsWith('temp_level_') &&
+        previousLayer.data.playable &&
+        !this.completedLayerIds.includes(previousLayer.data.id)
+      ) {
+        this.completedLayerIds.push(previousLayer.data.id);
+
+        // Immediately generate programmatic loops for the completed layer
+        this.track.generateProgrammaticLoops([previousLayer.data.id]);
+      }
+
+      previousLayer.preDelayStop();
       this.removeBackgroundAudio();
 
       this.activeLayerIndex++;
@@ -263,6 +298,7 @@ export default class Level {
         this.end();
         return;
       } else {
+        // No extra delay needed since programmatic audio is now cached synchronously
         this.scene.time.delayedCall(layerStartTimeDelay, () => {
           // Ensure that layer has not been skipped.
           if (this.activeLayerIndex == activeIndex) {

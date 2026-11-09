@@ -102,14 +102,14 @@ export interface HitInfo {
   playerTime: number; // When player hit the target relative to the start of the song (unit: seconds). -1 if the player missed the target.
   correctTime: number; // When player was supposed to hit the target relative to the start of the song (unit: seconds).
   classification: string; // Categorical attribute that denotes what we classified this hit as, see score.ts class.
-  normalizedTargetRadius: number; // [0, 1] radius of the target normalized to the game window (based on width).
-  normalizedTargetPosition: [number, number]; // [0, 1] position of the target normalized to the game window.
-  normalizedFingerRadius: number | null; // [0, 1] radius of the finger normalized to the game window (based on width).
-  normalizedPinkyFingerPosition: [number, number] | null; // [0, 1] position on the screen when the hit was registered.
-  normalizedRingFingerPosition: [number, number] | null; // [0, 1] position on the screen when the hit was registered.
-  normalizedMiddleFingerPosition: [number, number] | null; // [0, 1] position on the screen when the hit was registered.
-  normalizedIndexFingerPosition: [number, number] | null; // [0, 1] position on the screen when the hit was registered.
-  normalizedThumbFingerPosition: [number, number] | null; // [0, 1] position on the screen when the hit was registered.
+  normalizedTargetRadius?: number; // [0, 1] radius of the target normalized to the game window (based on width).
+  normalizedTargetPosition?: [number, number]; // [0, 1] position of the target normalized to the game window.
+  normalizedFingerRadius?: number | null; // [0, 1] radius of the finger normalized to the game window (based on width).
+  normalizedPinkyFingerPosition?: [number, number] | null; // [0, 1] position on the screen when the hit was registered.
+  normalizedRingFingerPosition?: [number, number] | null; // [0, 1] position on the screen when the hit was registered.
+  normalizedMiddleFingerPosition?: [number, number] | null; // [0, 1] position on the screen when the hit was registered.
+  normalizedIndexFingerPosition?: [number, number] | null; // [0, 1] position on the screen when the hit was registered.
+  normalizedThumbFingerPosition?: [number, number] | null; // [0, 1] position on the screen when the hit was registered.
 }
 
 export class LayerStats {

@@ -109,7 +109,12 @@ export class Streak extends GameObject {
         yoyo: true,
         onUpdate: tween => {
           if (this && this.hsv) {
-            const value = Math.floor(tween.getValue());
+            // Phaser's counter can return null while the tween is inactive.
+            // Clamp the index so both color-wheel lookups stay valid.
+            const value = Math.max(0, Math.min(
+              streakOnFireColorWheelExtent,
+              Math.floor(tween.getValue() ?? 0),
+            ));
             const top = this.hsv[value].color;
             const bottom = this.hsv[streakOnFireColorWheelExtent - value].color;
             if (this.streakText)

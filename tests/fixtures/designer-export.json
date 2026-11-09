@@ -1,0 +1,26 @@
+{
+  "project": {
+    "name": "Unified-format regression sample",
+    "version": "1.0",
+    "created": "2026-10-28T00:00:00Z",
+    "lastModified": "2026-10-28T00:00:00Z"
+  },
+  "music": {
+    "bpm": 100,
+    "timeSignature": "4/4",
+    "key": "C",
+    "isMajor": true,
+    "tracks": {
+      "Chords": [
+        {"id": "c1", "pitch": 60, "startTime": 0, "duration": 1, "velocity": 100, "trackName": "Chords", "type": "trigger", "finger": 2, "position": {"x": 0.32, "y": 0.67, "assigned": true}, "supportNotes": ["c2"], "triggerNote": null},
+        {"id": "c2", "pitch": 64, "startTime": 0, "duration": 1, "velocity": 100, "trackName": "Chords", "type": "support", "finger": null, "position": {"x": null, "y": null, "assigned": false}, "supportNotes": [], "triggerNote": "c1"},
+        {"id": "c3", "pitch": 67, "startTime": 4.25, "duration": 0.5, "velocity": 110, "trackName": "Chords", "type": "trigger", "finger": 4, "position": {"x": 0.85, "y": 0.22, "assigned": true}, "supportNotes": [], "triggerNote": null}
+      ],
+      "Melody": [
+        {"id": "m1", "pitch": 72, "startTime": 0.5, "duration": 0.5, "velocity": 90, "trackName": "Melody", "type": "trigger", "finger": 1, "position": {"x": 0.12, "y": 0.42, "assigned": true}, "supportNotes": ["m2"], "triggerNote": null},
+        {"id": "m2", "pitch": 74, "startTime": 1, "duration": 0.25, "velocity": 90, "trackName": "Melody", "type": "support", "finger": null, "position": {"x": null, "y": null, "assigned": false}, "supportNotes": [], "triggerNote": "m1"}
+      ]
+    },
+    "sections": []
+  }
+}

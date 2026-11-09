@@ -96,6 +96,7 @@ export default class LevelSelect extends HandScene {
       buttonOffsetX,
       this.height - buttonOffsetY,
       () => {
+        this.stopAudio();
         this.scene.start('mainMenu');
       },
     );
@@ -114,6 +115,7 @@ export default class LevelSelect extends HandScene {
     );
 
     this.input.keyboard!.on(escapeKey, () => {
+      this.stopAudio();
       this.scene.start('mainMenu');
     });
 
@@ -142,6 +144,7 @@ export default class LevelSelect extends HandScene {
   }
 
   private startLevel(level: Level) {
+    this.stopAudio();
     this.scene.start('level', level);
   }
 

@@ -1,0 +1,207 @@
+{
+  "title": "Leiden-style three-week training (template)",
+  "description": "Example inspired by Leiden Experiment; verify protocol against study approval before research use.",
+  "introText": "Welcome. Follow the on-screen instructions for your study session.",
+  "startDate": "2026-11-01",
+  "maxSessionsPerWeek": 3,
+  "enabled": false,
+  "groupConfigs": {
+    "sonification": {
+      "targetSize": 1.0,
+      "fingerSize": 1.0,
+      "showSkipButton": false,
+      "skipButtonAppearsAfterLoop": 1,
+      "skipLayersAutomatically": true,
+      "skipLayersAutomaticallyAfterLoop": 16,
+      "ignoreMultifingerPinches": true,
+      "mousePinchesEnabled": false,
+      "uiPinchesEnabled": false,
+      "sonificationEnabled": true,
+      "synchronizationEnabled": false,
+      "playableBackingTracksEnabled": false,
+      "unplayableBackingTracksEnabled": false,
+      "disableLayerProgression": true,
+      "indexFingerOnly": false,
+      "pinchVolume": 1.0,
+      "backgroundMusicVolume": 1.0,
+      "onTimeDuration": 500,
+      "lateTimeDuration": 500,
+      "enableCameraVisibility": false,
+      "cameraOpacity": 0.0,
+      "postProcessingDisabled": true,
+      "displayVisualMetronome": true,
+      "autoSaveCSV": true
+    },
+    "synchronization": {
+      "targetSize": 1.0,
+      "fingerSize": 1.0,
+      "showSkipButton": false,
+      "skipButtonAppearsAfterLoop": 1,
+      "skipLayersAutomatically": true,
+      "skipLayersAutomaticallyAfterLoop": 16,
+      "ignoreMultifingerPinches": true,
+      "mousePinchesEnabled": false,
+      "uiPinchesEnabled": false,
+      "sonificationEnabled": false,
+      "synchronizationEnabled": true,
+      "playableBackingTracksEnabled": true,
+      "unplayableBackingTracksEnabled": true,
+      "disableLayerProgression": true,
+      "indexFingerOnly": false,
+      "pinchVolume": 1.0,
+      "backgroundMusicVolume": 1.0,
+      "onTimeDuration": 500,
+      "lateTimeDuration": 500,
+      "enableCameraVisibility": false,
+      "cameraOpacity": 0.0,
+      "postProcessingDisabled": true,
+      "displayVisualMetronome": true,
+      "autoSaveCSV": true
+    },
+    "both": {
+      "targetSize": 1.0,
+      "fingerSize": 1.0,
+      "showSkipButton": false,
+      "skipButtonAppearsAfterLoop": 1,
+      "skipLayersAutomatically": true,
+      "skipLayersAutomaticallyAfterLoop": 16,
+      "ignoreMultifingerPinches": true,
+      "mousePinchesEnabled": false,
+      "uiPinchesEnabled": false,
+      "sonificationEnabled": true,
+      "synchronizationEnabled": false,
+      "playableBackingTracksEnabled": true,
+      "unplayableBackingTracksEnabled": true,
+      "disableLayerProgression": true,
+      "indexFingerOnly": false,
+      "pinchVolume": 1.0,
+      "backgroundMusicVolume": 1.0,
+      "onTimeDuration": 500,
+      "lateTimeDuration": 500,
+      "enableCameraVisibility": false,
+      "cameraOpacity": 0.0,
+      "postProcessingDisabled": true,
+      "displayVisualMetronome": true,
+      "autoSaveCSV": true
+    },
+    "nosound": {
+      "targetSize": 1.0,
+      "fingerSize": 1.0,
+      "showSkipButton": false,
+      "skipButtonAppearsAfterLoop": 1,
+      "skipLayersAutomatically": true,
+      "skipLayersAutomaticallyAfterLoop": 16,
+      "ignoreMultifingerPinches": true,
+      "mousePinchesEnabled": false,
+      "uiPinchesEnabled": false,
+      "sonificationEnabled": false,
+      "synchronizationEnabled": false,
+      "playableBackingTracksEnabled": false,
+      "unplayableBackingTracksEnabled": false,
+      "disableLayerProgression": true,
+      "indexFingerOnly": false,
+      "pinchVolume": 0.0,
+      "backgroundMusicVolume": 0.0,
+      "onTimeDuration": 500,
+      "lateTimeDuration": 500,
+      "enableCameraVisibility": false,
+      "cameraOpacity": 0.0,
+      "postProcessingDisabled": true,
+      "displayVisualMetronome": true,
+      "autoSaveCSV": true
+    }
+  },
+  "weeks": {
+    "0": [
+      {
+        "levelId": "legacy:Tryout",
+        "bpmIndex": 0,
+        "loops": 2
+      },
+      {
+        "levelId": "legacy:Trained",
+        "bpmIndex": 2,
+        "loops": 6
+      },
+      {
+        "levelId": "legacy:Untrained",
+        "bpmIndex": 2,
+        "loops": 6
+      }
+    ],
+    "1": [
+      {
+        "levelId": "legacy:Trained",
+        "bpmIndex": 0,
+        "loops": 6
+      },
+      {
+        "levelId": "legacy:Trained",
+        "bpmIndex": 0,
+        "loops": 6
+      },
+      {
+        "levelId": "legacy:Trained",
+        "bpmIndex": 0,
+        "loops": 6
+      }
+    ],
+    "2": [
+      {
+        "levelId": "legacy:Trained",
+        "bpmIndex": 1,
+        "loops": 6
+      },
+      {
+        "levelId": "legacy:Trained",
+        "bpmIndex": 1,
+        "loops": 6
+      },
+      {
+        "levelId": "legacy:Trained",
+        "bpmIndex": 1,
+        "loops": 6
+      }
+    ],
+    "3": [
+      {
+        "levelId": "legacy:Trained",
+        "bpmIndex": 2,
+        "loops": 6
+      },
+      {
+        "levelId": "legacy:Trained",
+        "bpmIndex": 2,
+        "loops": 6
+      },
+      {
+        "levelId": "legacy:Trained",
+        "bpmIndex": 2,
+        "loops": 6
+      }
+    ],
+    "-1": [
+      {
+        "levelId": "legacy:Trained",
+        "bpmIndex": 2,
+        "loops": 6
+      },
+      {
+        "levelId": "legacy:Untrained",
+        "bpmIndex": 2,
+        "loops": 6
+      },
+      {
+        "levelId": "legacy:Nosound",
+        "bpmIndex": 2,
+        "loops": 6,
+        "configOverride": {
+          "sonificationEnabled": false,
+          "synchronizationEnabled": false,
+          "pinchVolume": 0,
+          "backgroundMusicVolume": 0
+        }
+      }
+    ]
+  }
+}

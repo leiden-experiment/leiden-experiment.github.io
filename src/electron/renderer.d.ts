@@ -1,14 +1,11 @@
 export interface IElectronAPI {
   initVariables: () => Promise<void>;
   getAppPath: () => string;
-  isDebugMode: () => bool;
-  storeData: (
-    path: string,
-    data: string | Buffer | ArrayBufferView | DataView,
-  ) => void;
-  loadData: (path: string) => string;
-  listSubDirectories: (parentDir: string) => string[];
-  fileExists: (absoluteFilePath: string) => boolean;
+  saveStudyRecord: (record: import('../ts/study/types').ResultEnvelope) => Promise<{ path: string }>;
+  readStudyRecords: (studyId: string, participantId: string) => Promise<import('../ts/study/types').ResultEnvelope[]>;
+  storeCSV: (name: string, text: string) => Promise<void>;
+  isDebugMode: () => boolean;
+
 }
 
 declare global {

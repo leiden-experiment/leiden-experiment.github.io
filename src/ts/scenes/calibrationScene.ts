@@ -1,3 +1,4 @@
+import { getStudySession } from '../study/runtime';
 import {
   appendHandDistanceToText,
   calibrationMenuWebcamOpacity,
@@ -28,7 +29,7 @@ export default class Calibration extends HandScene {
   }
 
   private exit() {
-    this.scene.start('mainMenu');
+    this.scene.start(getStudySession() ? 'studySession' : 'mainMenu');
   }
 
   create() {

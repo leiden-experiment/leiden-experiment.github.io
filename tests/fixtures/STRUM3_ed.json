@@ -1,0 +1,1332 @@
+{
+  "project": {
+    "name": "generation-0",
+    "version": "1.0",
+    "created": "2026-07-02T11:51:57.131Z",
+    "lastModified": "2026-07-02T11:51:57.131Z"
+  },
+  "music": {
+    "bpm": 120,
+    "timeSignature": {
+      "numerator": 4,
+      "denominator": 4
+    },
+    "key": "C",
+    "isMajor": false,
+    "tracks": [
+      {
+        "name": "chd",
+        "id": "track_chd",
+        "notes": [
+          {
+            "id": "note_1782818900470_wfd51hse4",
+            "pitch": 36,
+            "startTime": 0,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "C2",
+            "finger": 1,
+            "position": {
+              "x": 0.30500000000000005,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_6nx84xv6g",
+            "pitch": 48,
+            "startTime": 0,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "C3",
+            "finger": 1,
+            "position": {
+              "x": 0.30500000000000005,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_5uprhg5vy",
+            "pitch": 52,
+            "startTime": 0,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "E3",
+            "finger": 1,
+            "position": {
+              "x": 0.30500000000000005,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_quet30g54",
+            "pitch": 55,
+            "startTime": 0,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G3",
+            "finger": 1,
+            "position": {
+              "x": 0.30500000000000005,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_n2mnqoyk8",
+            "pitch": 38,
+            "startTime": 4,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D2",
+            "finger": 1,
+            "position": {
+              "x": 0.545,
+              "y": 0.715,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_kt6p7x8hp",
+            "pitch": 50,
+            "startTime": 4,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D3",
+            "finger": 1,
+            "position": {
+              "x": 0.545,
+              "y": 0.715,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_yo3jdz5fm",
+            "pitch": 55,
+            "startTime": 4,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G3",
+            "finger": 1,
+            "position": {
+              "x": 0.545,
+              "y": 0.715,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_zu87w62zx",
+            "pitch": 59,
+            "startTime": 4,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "B3",
+            "finger": 1,
+            "position": {
+              "x": 0.545,
+              "y": 0.715,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_xihlkv4u1",
+            "pitch": 43,
+            "startTime": 8,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G2",
+            "finger": 1,
+            "position": {
+              "x": 0.395,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_v0hs1rvzm",
+            "pitch": 50,
+            "startTime": 8,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D3",
+            "finger": 1,
+            "position": {
+              "x": 0.395,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_05zdktyc1",
+            "pitch": 55,
+            "startTime": 8,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G3",
+            "finger": 1,
+            "position": {
+              "x": 0.395,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_tbriq3i9u",
+            "pitch": 59,
+            "startTime": 8,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "B3",
+            "finger": 1,
+            "position": {
+              "x": 0.395,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_bnmzpw31p",
+            "pitch": 38,
+            "startTime": 12,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D2",
+            "finger": 1,
+            "position": {
+              "x": 0.335,
+              "y": 0.645,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_un23auspl",
+            "pitch": 48,
+            "startTime": 12,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "C3",
+            "finger": 1,
+            "position": {
+              "x": 0.335,
+              "y": 0.645,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_44s45v18i",
+            "pitch": 52,
+            "startTime": 12,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "E3",
+            "finger": 1,
+            "position": {
+              "x": 0.335,
+              "y": 0.645,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_1eqwb3z7o",
+            "pitch": 55,
+            "startTime": 12,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G3",
+            "finger": 1,
+            "position": {
+              "x": 0.335,
+              "y": 0.645,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_y1pq9dzt1",
+            "pitch": 43,
+            "startTime": 16,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G2",
+            "finger": 1,
+            "position": {
+              "x": 0.5750000000000001,
+              "y": 0.715,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_scmwgwvv6",
+            "pitch": 48,
+            "startTime": 16,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "C3",
+            "finger": 1,
+            "position": {
+              "x": 0.5750000000000001,
+              "y": 0.715,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_2jxzw9n92",
+            "pitch": 52,
+            "startTime": 16,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "E3",
+            "finger": 1,
+            "position": {
+              "x": 0.5750000000000001,
+              "y": 0.715,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_1jq7hpinn",
+            "pitch": 55,
+            "startTime": 16,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G3",
+            "finger": 1,
+            "position": {
+              "x": 0.5750000000000001,
+              "y": 0.715,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_3om1uu0gq",
+            "pitch": 58,
+            "startTime": 16,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "A#3",
+            "finger": 1,
+            "position": {
+              "x": 0.5750000000000001,
+              "y": 0.715,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_jhocjyef0",
+            "pitch": 38,
+            "startTime": 20,
+            "duration": 2,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D2",
+            "finger": 1,
+            "position": {
+              "x": 0.515,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_6z4vc9p67",
+            "pitch": 50,
+            "startTime": 20,
+            "duration": 2,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D3",
+            "finger": 1,
+            "position": {
+              "x": 0.515,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_1bz603lww",
+            "pitch": 54,
+            "startTime": 20,
+            "duration": 2,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "F#3",
+            "finger": 1,
+            "position": {
+              "x": 0.515,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_bfmh6ejvz",
+            "pitch": 57,
+            "startTime": 20,
+            "duration": 2,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "A3",
+            "finger": 1,
+            "position": {
+              "x": 0.515,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_da3sva9cg",
+            "pitch": 59,
+            "startTime": 20,
+            "duration": 2,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "B3",
+            "finger": 1,
+            "position": {
+              "x": 0.515,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_efurza3qb",
+            "pitch": 38,
+            "startTime": 22,
+            "duration": 2,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D2",
+            "finger": 1,
+            "position": {
+              "x": 0.635,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_30jupvuec",
+            "pitch": 50,
+            "startTime": 22,
+            "duration": 2,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D3",
+            "finger": 1,
+            "position": {
+              "x": 0.635,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_npst1145g",
+            "pitch": 54,
+            "startTime": 22,
+            "duration": 2,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "F#3",
+            "finger": 1,
+            "position": {
+              "x": 0.635,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_73pruom29",
+            "pitch": 57,
+            "startTime": 22,
+            "duration": 2,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "A3",
+            "finger": 1,
+            "position": {
+              "x": 0.635,
+              "y": 0.505,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_cwlm86zax",
+            "pitch": 36,
+            "startTime": 24,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "C2",
+            "finger": 1,
+            "position": {
+              "x": 0.695,
+              "y": 0.645,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_cj441knc7",
+            "pitch": 48,
+            "startTime": 24,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "C3",
+            "finger": 1,
+            "position": {
+              "x": 0.695,
+              "y": 0.645,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_mu3eeofjg",
+            "pitch": 51,
+            "startTime": 24,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D#3",
+            "finger": 1,
+            "position": {
+              "x": 0.695,
+              "y": 0.645,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_z5mk9mbzj",
+            "pitch": 55,
+            "startTime": 24,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G3",
+            "finger": 1,
+            "position": {
+              "x": 0.695,
+              "y": 0.645,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_9713b50e1",
+            "pitch": 38,
+            "startTime": 28,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D2",
+            "finger": 1,
+            "position": {
+              "x": 0.545,
+              "y": 0.715,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_raxmw1s4s",
+            "pitch": 50,
+            "startTime": 28,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D3",
+            "finger": 1,
+            "position": {
+              "x": 0.545,
+              "y": 0.715,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_9rhc7mjgj",
+            "pitch": 55,
+            "startTime": 28,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G3",
+            "finger": 1,
+            "position": {
+              "x": 0.545,
+              "y": 0.715,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_40g320e9b",
+            "pitch": 59,
+            "startTime": 28,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "B3",
+            "finger": 1,
+            "position": {
+              "x": 0.545,
+              "y": 0.715,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_2vpln8s76",
+            "pitch": 38,
+            "startTime": 32,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D2",
+            "finger": 1,
+            "position": {
+              "x": 0.335,
+              "y": 0.5750000000000001,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_65g61lxy4",
+            "pitch": 50,
+            "startTime": 32,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D3",
+            "finger": 1,
+            "position": {
+              "x": 0.335,
+              "y": 0.5750000000000001,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_6ds2vt8dd",
+            "pitch": 55,
+            "startTime": 32,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G3",
+            "finger": 1,
+            "position": {
+              "x": 0.335,
+              "y": 0.5750000000000001,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_n3dhk4vea",
+            "pitch": 59,
+            "startTime": 32,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "B3",
+            "finger": 1,
+            "position": {
+              "x": 0.335,
+              "y": 0.5750000000000001,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_b2brij5vg",
+            "pitch": 38,
+            "startTime": 36,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D2",
+            "finger": 1,
+            "position": {
+              "x": 0.395,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_olev8ae9g",
+            "pitch": 50,
+            "startTime": 36,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D3",
+            "finger": 1,
+            "position": {
+              "x": 0.395,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_wpjzr92im",
+            "pitch": 55,
+            "startTime": 36,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G3",
+            "finger": 1,
+            "position": {
+              "x": 0.395,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_26fbwj81f",
+            "pitch": 57,
+            "startTime": 36,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "A3",
+            "finger": 1,
+            "position": {
+              "x": 0.395,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_oftq5rizk",
+            "pitch": 38,
+            "startTime": 40,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D2",
+            "finger": 1,
+            "position": {
+              "x": 0.455,
+              "y": 0.5750000000000001,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_djghkzamh",
+            "pitch": 50,
+            "startTime": 40,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D3",
+            "finger": 1,
+            "position": {
+              "x": 0.455,
+              "y": 0.5750000000000001,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_0pyzulci0",
+            "pitch": 55,
+            "startTime": 40,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G3",
+            "finger": 1,
+            "position": {
+              "x": 0.455,
+              "y": 0.5750000000000001,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_6q8bl1unf",
+            "pitch": 59,
+            "startTime": 40,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "B3",
+            "finger": 1,
+            "position": {
+              "x": 0.455,
+              "y": 0.5750000000000001,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_1sno8gqnd",
+            "pitch": 38,
+            "startTime": 44,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D2",
+            "finger": 1,
+            "position": {
+              "x": 0.545,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_dgg7m133r",
+            "pitch": 50,
+            "startTime": 44,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D3",
+            "finger": 1,
+            "position": {
+              "x": 0.545,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_hcronsnux",
+            "pitch": 55,
+            "startTime": 44,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G3",
+            "finger": 1,
+            "position": {
+              "x": 0.545,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_53f0i02fs",
+            "pitch": 59,
+            "startTime": 44,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "B3",
+            "finger": 1,
+            "position": {
+              "x": 0.545,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_1683sp0qp",
+            "pitch": 36,
+            "startTime": 48,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "C2",
+            "finger": 1,
+            "position": {
+              "x": 0.635,
+              "y": 0.645,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_t3n3l1grh",
+            "pitch": 48,
+            "startTime": 48,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "C3",
+            "finger": 1,
+            "position": {
+              "x": 0.635,
+              "y": 0.645,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_llkgej6xn",
+            "pitch": 52,
+            "startTime": 48,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "E3",
+            "finger": 1,
+            "position": {
+              "x": 0.635,
+              "y": 0.645,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_ux9yw9ypr",
+            "pitch": 55,
+            "startTime": 48,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G3",
+            "finger": 1,
+            "position": {
+              "x": 0.635,
+              "y": 0.645,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_iqfmzby1i",
+            "pitch": 38,
+            "startTime": 52,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D2",
+            "finger": 1,
+            "position": {
+              "x": 0.695,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_bsf885sw8",
+            "pitch": 50,
+            "startTime": 52,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D3",
+            "finger": 1,
+            "position": {
+              "x": 0.695,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_62064w8c4",
+            "pitch": 54,
+            "startTime": 52,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "F#3",
+            "finger": 1,
+            "position": {
+              "x": 0.695,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_hy5g6vzov",
+            "pitch": 57,
+            "startTime": 52,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "A3",
+            "finger": 1,
+            "position": {
+              "x": 0.695,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_bk2ne0p00",
+            "pitch": 43,
+            "startTime": 56,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G2",
+            "finger": 1,
+            "position": {
+              "x": 0.48500000000000004,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_y3uugutfo",
+            "pitch": 50,
+            "startTime": 56,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D3",
+            "finger": 1,
+            "position": {
+              "x": 0.48500000000000004,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_bv8z9905o",
+            "pitch": 55,
+            "startTime": 56,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G3",
+            "finger": 1,
+            "position": {
+              "x": 0.48500000000000004,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_600tb53w6",
+            "pitch": 59,
+            "startTime": 56,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "B3",
+            "finger": 1,
+            "position": {
+              "x": 0.48500000000000004,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_mb5ef1mlv",
+            "pitch": 38,
+            "startTime": 60,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D2",
+            "finger": 1,
+            "position": {
+              "x": 0.665,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_6ccihl46z",
+            "pitch": 50,
+            "startTime": 60,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "D3",
+            "finger": 1,
+            "position": {
+              "x": 0.665,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_ero37tgdf",
+            "pitch": 55,
+            "startTime": 60,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "G3",
+            "finger": 1,
+            "position": {
+              "x": 0.665,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          },
+          {
+            "id": "note_1782818900470_jr0fxzd8l",
+            "pitch": 59,
+            "startTime": 60,
+            "duration": 4,
+            "velocity": 100,
+            "trackName": "chd",
+            "type": "trigger",
+            "noteName": "B3",
+            "finger": 1,
+            "position": {
+              "x": 0.665,
+              "y": 0.785,
+              "assigned": true
+            },
+            "supportNotes": [],
+            "triggerNote": null
+          }
+        ]
+      }
+    ],
+    "sections": [
+      {
+        "id": "section_0",
+        "name": "Section 1",
+        "type": "i",
+        "startBar": 0,
+        "endBar": 2,
+        "duration": 2,
+        "noteCount": 8
+      },
+      {
+        "id": "section_1",
+        "name": "Section 2",
+        "type": "A",
+        "startBar": 2,
+        "endBar": 6,
+        "duration": 4,
+        "noteCount": 22
+      },
+      {
+        "id": "section_2",
+        "name": "Section 3",
+        "type": "B",
+        "startBar": 6,
+        "endBar": 10,
+        "duration": 4,
+        "noteCount": 16
+      },
+      {
+        "id": "section_3",
+        "name": "Section 4",
+        "type": "b",
+        "startBar": 10,
+        "endBar": 14,
+        "duration": 4,
+        "noteCount": 16
+      },
+      {
+        "id": "section_4",
+        "name": "Section 5",
+        "type": "o",
+        "startBar": 14,
+        "endBar": 16,
+        "duration": 2,
+        "noteCount": 8
+      }
+    ]
+  }
+}

@@ -1,8 +1,6 @@
 /* eslint-disable no-undef */
 /* eslint @typescript-eslint/no-var-requires: "off" */
 const { contextBridge, ipcRenderer } = require('electron');
-const fs = require('fs');
-const path = require('path');
 
 window.addEventListener('DOMContentLoaded', async () => {
   // ...
@@ -28,28 +26,8 @@ contextBridge.exposeInMainWorld('electron', {
   isDebugMode: () => {
     return process.env.ELECTRON_DEBUG === 'true';
   },
-  storeData: (path, data) => storeData(path, data),
-  listSubDirectories: parentDir => listSubDirectories(parentDir),
-  fileExists: absoluteFilePath => fileExists(absoluteFilePath),
-  loadData: filePath => loadData(filePath),
+  saveStudyRecord: record => ipcRenderer.invoke('save-study-record', record),
+  readStudyRecords: (studyId, participantId) => ipcRenderer.invoke('read-study-records', studyId, participantId),
+  storeCSV: (name, text) => ipcRenderer.invoke('store-legacy-csv', name, text),
 });
 
-function fileExists(absoluteFilePath) {
-  return fs.existsSync(absoluteFilePath);
-}
-
-function listSubDirectories(parentDir) {
-  return fs
-    .readdirSync(parentDir, { withFileTypes: true })
-    .filter(dirent => dirent.isDirectory())
-    .map(dirent => dirent.name);
-}
-
-function storeData(filePath, data) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, data);
-}
-
-function loadData(filePath) {
-  return fs.readFileSync(filePath, 'utf8');
-}

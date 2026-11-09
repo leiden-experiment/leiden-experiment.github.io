@@ -3,6 +3,7 @@
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const { app, protocol, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true';
 
@@ -41,7 +42,7 @@ protocol.registerSchemesAsPrivileged([
       secure: true,
       stream: true,
       supportFetchAPI: true,
-      bypassCSP: true,
+      bypassCSP: false,
     },
   },
 ]);
@@ -76,12 +77,13 @@ function registerAppProtocol() {
       resolvedPath.startsWith('levels/') ||
       resolvedPath.startsWith('csv/');
 
-    callback({
-      path: path.join(
-        shouldUseEditableRoot ? editableRoot : packagedDistRoot,
-        resolvedPath,
-      ),
-    });
+    const root = shouldUseEditableRoot ? editableRoot : packagedDistRoot;
+    const requested = path.resolve(root, resolvedPath);
+    if (requested !== root && !requested.startsWith(root + path.sep)) {
+      callback({ error: -6 });
+      return;
+    }
+    callback({ path: requested });
   });
 }
 
@@ -101,8 +103,9 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, electronPreloadPath),
       contextIsolation: true,
-      nodeIntegration: true,
-      webSecurity: false,
+      nodeIntegration: false,
+      sandbox: false,
+      webSecurity: true,
       // allowRunningInsecureContent: true,
     },
   });
@@ -151,4 +154,42 @@ app.on('activate', () => {
 
 ipcMain.handle('get-app-path', () => {
   return app.isPackaged ? path.dirname(app.getPath('exe')) : app.getAppPath();
+});
+
+// All new local study data is written beneath Electron's per-user data directory.
+// No renderer-supplied path is accepted by either method.
+function safeSegment(value) {
+  if (typeof value !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(value)) throw new Error('Invalid record identifier');
+  return value;
+}
+ipcMain.handle('save-study-record', (_event, data) => {
+  if (!data || data.schemaVersion !== 1 || typeof data !== 'object' || JSON.stringify(data).length > 800000)
+    throw new Error('Invalid study record');
+  const study = safeSegment(data.studyId);
+  const participant = safeSegment(data.participantId);
+  const session = safeSegment(data.sessionId);
+  if (!Number.isInteger(data.assignmentIndex) || data.assignmentIndex < 0 || data.assignmentIndex > 100)
+    throw new Error('Invalid assignment index');
+  const folder = path.join(app.getPath('userData'), 'studies', study, participant);
+  fs.mkdirSync(folder, { recursive: true });
+  const filename = `${session}_${data.assignmentIndex}.json`;
+  const out = path.join(folder, filename);
+  const temp = `${out}.pending`;
+  fs.writeFileSync(temp, JSON.stringify(data, null, 2), { encoding: 'utf8', flag: 'w' });
+  fs.renameSync(temp, out);
+  return { path: out };
+});
+ipcMain.handle('store-legacy-csv', (_event, name, data) => {
+  const file = `${safeSegment(name)}.csv`;
+  if (typeof data !== 'string' || data.length > 5000000) throw new Error('Invalid CSV');
+  const folder = path.join(app.getPath('userData'), 'csv');
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, file), data, 'utf8');
+});
+
+ipcMain.handle('read-study-records', (_event, studyId, participantId) => {
+  const folder = path.join(app.getPath('userData'), 'studies', safeSegment(studyId), safeSegment(participantId));
+  if (!fs.existsSync(folder)) return [];
+  const files = fs.readdirSync(folder).filter(name => /^-?\d+-\d+_\d+\.json$/.test(name)).slice(0, 5000);
+  return files.map(name => JSON.parse(fs.readFileSync(path.join(folder, name), 'utf8')));
 });

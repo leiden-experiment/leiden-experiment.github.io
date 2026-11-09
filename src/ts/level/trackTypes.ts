@@ -17,6 +17,34 @@ export interface TrackNode {
   soundKey: string; // Sound key for the target.
 }
 
+export interface ProgrammaticNoteDefinition {
+  pitch: number; // MIDI note number (0-127)
+  duration: number; // Duration in seconds
+  volume?: number; // Volume (0-1), defaults to 0.7
+}
+
+export interface ProgrammaticTrackNode extends TrackPinchNode {
+  programmaticNote?: ProgrammaticNoteDefinition; // If present, this node uses programmatic generation
+  programmaticChord?: ProgrammaticChordDefinition; // If present, this node uses programmatic chord generation
+  programmaticSequenceChord?: ProgrammaticSequenceChordDefinition; // If present, this node uses programmatic sequence chord generation
+}
+
+export interface ProgrammaticChordDefinition {
+  pitches: number[]; // Array of MIDI note numbers
+  duration: number; // Duration in seconds
+  volume?: number; // Volume (0-1), defaults to 0.7
+}
+
+export interface ProgrammaticSequenceChordDefinition {
+  notes: Array<{
+    pitch: number;
+    startTime: number; // Relative to sequence start (in seconds)
+    duration: number; // Duration in seconds
+  }>;
+  totalDuration: number; // Total duration of the sequence in seconds
+  volume?: number; // Volume (0-1), defaults to 0.7
+}
+
 export interface PlayableTrackLayerData extends TrackLayerData {
   playable: true; // True if layer is playable.
   previewTime: SongTimePosition; // How far in advance are nodes spawned? Higher values give players a longer time to respond.
@@ -39,6 +67,7 @@ export interface TrackLayerData {
 export interface TrackData {
   id: string; // Id of the song
   displayName: string; // The name of the song that will be displayed in menus.
+  backgroundType?: 'default' | 'custom'; // Background type: 'default' uses global background, 'custom' uses level-specific
   bpm: number[]; // List of BPMs  the song is designed to play at.
   timeSignatureNumerator: number; // Default: 4.
   timeSignatureDenominator: number; // Default: 4.
