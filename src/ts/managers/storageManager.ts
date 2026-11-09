@@ -2,7 +2,7 @@ import { ConfigData, LevelStats } from '../core/interfaces';
 import { levelStatsToCSV } from '../util/csvFormat';
 import { csvFileExtension } from '../core/config';
 import FileSaver from 'file-saver';
-import { currentUser, writeDataToCurrentUser } from '../core/game';
+import { getStudySession } from '../study/runtime';
 
 export let defaultConfig: ConfigData;
 export let config: ConfigData;
@@ -33,25 +33,23 @@ export function saveToCSV(data: LevelStats) {
     type: 'text/plain;charset=utf-8',
   });
   FileSaver.saveAs(blob, data.id + csvFileExtension);
-  //saveCSV(data.id, levelStatsToCSV(data));
+  saveCSV(data.id, levelStatsToCSV(data));
 }
 
 export function autoSaveToCSV(data: LevelStats) {
-  // TODO: Figure this out in browser.
-  //saveCSV(data.id, levelStatsToCSV(data));
-  if (currentUser) {
-    const jsonData = JSON.parse(JSON.stringify(data));
-    writeDataToCurrentUser(data.id, jsonData)
-      .then(result => {
-        console.info('INFO: ' + result);
-      })
-      .catch(err => {
-        console.info('INFO: ' + err);
-      });
+  const isElectronRenderer = typeof window.electron !== 'undefined';
+  const isLocalBuild = isElectronRenderer;
+  if (isLocalBuild) {
+    saveCSV(data.id, levelStatsToCSV(data));
   }
+  // Study records are submitted only on full level completion (scoreboard).
+  // Partial statistics must never advance a participant's study progression.
+  if (getStudySession()) return;
 }
 
-// export function saveCSV(fileName: string, csv: string): void {
-//   const path = absRootPath(csvFilePath) + fileName + csvFileExtension;
-//   storeData(path, csv);
-// }
+export function saveCSV(fileName: string, csv: string): void {
+  if (!window?.electron?.storeCSV) return;
+  // Keep the legacy CSV name and format; save under Electron userData/csv.
+  const safeName = fileName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+  void window.electron.storeCSV(safeName, csv).catch(console.error);
+}

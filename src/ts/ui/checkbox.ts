@@ -58,10 +58,6 @@ export class Checkbox extends Graphics {
 
     this.on('pointerdown', this.toggleCheck, this);
     this.draw();
-
-    this.on('destroy', () => {
-      if (this.label) this.label.destroy();
-    });
   }
 
   public reset(configData: ConfigData) {

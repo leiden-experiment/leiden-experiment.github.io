@@ -1,0 +1,11 @@
+{
+  "mode": "online",
+  "allowGuest": false,
+  "firebase": {
+    "apiKey": "REPLACE_FROM_FIREBASE_CONSOLE",
+    "authDomain": "YOUR-PROJECT.firebaseapp.com",
+    "projectId": "YOUR-PROJECT",
+    "databaseURL": "https://YOUR-PROJECT-default-rtdb.europe-west1.firebasedatabase.app",
+    "appId": "REPLACE_FROM_FIREBASE_CONSOLE"
+  }
+}

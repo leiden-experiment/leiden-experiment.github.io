@@ -15,7 +15,7 @@ export function levelStatsToCSV(levelStats: LevelStats): string {
       const fingerRadius = hitInfo.normalizedFingerRadius
         ? hitInfo.normalizedFingerRadius
         : null;
-      const [targetX, targetY] = hitInfo.normalizedTargetPosition;
+      const [targetX, targetY] = hitInfo.normalizedTargetPosition || [null, null];
       const [pinkyX, pinkyY] = hitInfo.normalizedPinkyFingerPosition
         ? hitInfo.normalizedPinkyFingerPosition
         : [null, null];
@@ -32,7 +32,7 @@ export function levelStatsToCSV(levelStats: LevelStats): string {
         ? hitInfo.normalizedThumbFingerPosition
         : [null, null];
 
-      const row: string = `${layerID},${hitInfo.noteID},${hitInfo.pinchType},${hitInfo.loopNumber},${millisecondsToSeconds(hitInfo.playerTime)},${millisecondsToSeconds(hitInfo.correctTime)},${hitInfo.classification},${hitInfo.normalizedTargetRadius},${targetX},${targetY},${fingerRadius},${pinkyX},${pinkyY},${ringX},${ringY},${middleX},${middleY},${indexX},${indexY},${thumbX},${thumbY}\n`;
+      const row: string = `${layerID},${hitInfo.noteID},${hitInfo.pinchType},${hitInfo.loopNumber},${millisecondsToSeconds(hitInfo.playerTime)},${millisecondsToSeconds(hitInfo.correctTime)},${hitInfo.classification},${hitInfo.normalizedTargetRadius ?? ''},${targetX},${targetY},${fingerRadius},${pinkyX},${pinkyY},${ringX},${ringY},${middleX},${middleY},${indexX},${indexY},${thumbX},${thumbY}\n`;
 
       csvContent += row;
     }

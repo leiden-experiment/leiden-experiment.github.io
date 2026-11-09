@@ -34,12 +34,6 @@ export default class Metronome extends GameObject {
       .setOrigin(0.5, 0.5)
       .setDepth(30);
     this.setVisible(false);
-    this.on('destroy', () => {
-      if (this.shrinkTween) this.shrinkTween.destroy();
-      if (this.countdownTexture) this.countdownTexture.destroy();
-      if (this.countdownText) this.countdownText.destroy();
-      if (this.timer) this.timer.destroy();
-    });
   }
 
   public setup() {
@@ -62,11 +56,11 @@ export default class Metronome extends GameObject {
 
   public stop() {
     this.setVisible(false);
+    this.scene?.time.removeEvent(this.timer);
+    this.scene?.sound.stopByKey('metronomeHigh');
+    this.scene?.sound.stopByKey('metronomeLow');
     if (this.scene) {
-      this.scene.time.removeEvent(this.timer);
-      this.scene.sound.stopByKey('metronomeHigh');
-      this.scene.sound.stopByKey('metronomeLow');
-      if (this.shrinkTween) this.scene.tweens.remove(this.shrinkTween);
+      this.shrinkTween?.remove();
     }
   }
 

@@ -34,7 +34,6 @@
     "pwa/*",
     "@types/*",
     "typings/*",
-    "scripts/*",
     "database/*",
     "tsconfig.json",
   ],

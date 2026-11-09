@@ -1,7 +1,8 @@
+import { isStudyTrackKey } from '../study/participantPreload';
 import HandScene from '../scenes/handScene';
 import Level from '../level/level';
 import { escapeKey, initialScene, levelCompletionScene } from '../core/config';
-import { setIncrementIndex } from './continueScene';
+import { getStudySession, clearPendingAssignment } from '../study/runtime';
 
 export default class LevelScene extends HandScene {
   private level: Level;
@@ -12,6 +13,14 @@ export default class LevelScene extends HandScene {
 
   preload() {
     this.level = this.scene.settings.data as Level;
+    if (!this.level || typeof this.level.preload !== 'function') {
+      this.scene.start(getStudySession() ? 'studySession' : 'mainMenu');
+      return;
+    }
+    if (this.level.trackKey.startsWith('temp_level_')) {
+      this.level.preload(this);
+      if (this.level.bpmIndex < 0) this.level.setBPM(0);
+    }
   }
 
   create() {
@@ -31,12 +40,16 @@ export default class LevelScene extends HandScene {
     this.level.start(
       () => {
         // Finished level callback.
-        setIncrementIndex(true);
         this.scene.start(levelCompletionScene, this.level);
       },
       () => {
         // Aborted level callback.
-        this.scene.start(initialScene);
+        if (this.level.trackKey.startsWith('temp_level_') && !isStudyTrackKey(this.level.trackKey)) {
+          this.level.unload();
+          this.cache.json.remove(this.level.trackKey);
+        }
+        clearPendingAssignment();
+        this.scene.start(getStudySession() ? 'studySession' : initialScene);
       },
     );
   }

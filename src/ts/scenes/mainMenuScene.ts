@@ -9,6 +9,7 @@ export default class MainMenu extends HandScene {
   private calibration: Button;
   private levelSelect: Button;
   private options: Button;
+  private openLevel: Button;
 
   constructor() {
     super('mainMenu');
@@ -30,12 +31,12 @@ export default class MainMenu extends HandScene {
     });
 
     const buttonsY: number = 800;
-    const buttonGapX: number = 500;
+    const buttonGapX: number = 370;
 
     this.calibration = new Button(
       this,
       'SETUP\nCAMERA',
-      this.center.x - buttonGapX,
+      this.center.x - buttonGapX * 1.8,
       buttonsY,
       () => {
         this.scene.start('calibration');
@@ -44,7 +45,7 @@ export default class MainMenu extends HandScene {
     this.options = new Button(
       this,
       'OPTIONS',
-      this.center.x + buttonGapX,
+      this.center.x + buttonGapX * 1.8,
       buttonsY,
       () => {
         this.scene.start('options');
@@ -54,10 +55,19 @@ export default class MainMenu extends HandScene {
     this.levelSelect = new Button(
       this,
       'SELECT\nLEVEL',
-      this.center.x,
+      this.center.x - buttonGapX * 0.6,
       buttonsY,
       () => {
         this.scene.start('levelSelect');
+      },
+    );
+    this.openLevel = new Button(
+      this,
+      'OPEN A\nLEVEL',
+      this.center.x + buttonGapX * 0.6,
+      buttonsY,
+      () => {
+        this.scene.start('levelUpload');
       },
     );
 

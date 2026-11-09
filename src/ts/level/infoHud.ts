@@ -35,15 +35,6 @@ export default class InfoHUD extends GameObject {
     super(scene, 'infoHUD');
     this.scene = scene;
     this.level = level;
-    this.on('destroy', () => {
-      if (this.trackText) this.trackText.destroy();
-      if (this.difficultyText) this.difficultyText.destroy();
-      if (this.bpmText) this.bpmText.destroy();
-      if (this.layerText) this.layerText.destroy();
-      if (this.loopText) this.loopText.destroy();
-      if (this.infoBackground) this.infoBackground.destroy();
-      if (this.skipButton) this.skipButton.destroy();
-    });
   }
 
   public setup() {
@@ -137,6 +128,10 @@ export default class InfoHUD extends GameObject {
       },
       trackName,
     );
+    // Long imported track names may occupy a second line, but never extend
+    // beyond the right-hand HUD column or cover the difficulty row below.
+    this.trackText.setWordWrapWidth(this.scene.width * .14, true);
+    this.trackText.setMaxLines(2);
 
     const layerName: string =
       layerInfoText +

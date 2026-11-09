@@ -20,6 +20,17 @@ export class Slider extends Graphics {
   private height: number;
   private updateSliderCallback: (slider: Slider) => void;
 
+  private readonly onScenePointerUp = () => {
+    this.stopDrag();
+    this.stopDragCallback?.();
+  };
+
+  private readonly onScenePointerMove = (pointer: Pointer) => {
+    this.doDrag(pointer);
+  };
+
+  private stopDragCallback?: () => void;
+
   constructor(
     scene: HandScene,
     boxPosition: Vector2,
@@ -60,16 +71,11 @@ export class Slider extends Graphics {
 
     this.setInteractive(this.box, Rectangle.Contains);
 
+    this.stopDragCallback = stopDragCallback;
+
     this.on('pointerdown', this.startDrag, this);
-    this.scene.input.on(
-      'pointerup',
-      () => {
-        this.stopDrag();
-        stopDragCallback?.();
-      },
-      this,
-    );
-    this.scene.input.on('pointermove', this.doDrag, this);
+    this.scene.input.on('pointerup', this.onScenePointerUp, this);
+    this.scene.input.on('pointermove', this.onScenePointerMove, this);
 
     assert(
       typeof configData[this.key] == 'number',
@@ -78,10 +84,6 @@ export class Slider extends Graphics {
     this.setValue(configData[this.key] as number);
 
     this.draw();
-
-    this.on('destroy', () => {
-      if (this.label) this.label.destroy();
-    });
   }
 
   public reset(configData: ConfigData) {

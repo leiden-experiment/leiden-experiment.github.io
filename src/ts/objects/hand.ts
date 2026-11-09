@@ -176,14 +176,6 @@ export class Hand extends GameObject {
       thumb.setOnCollideEnd.bind(thumb),
       FingerOverlapStates.end,
     );
-
-    this.on('destroy', () => {
-      for (const f of this.fingers) {
-        if (f) {
-          f.destroy();
-        }
-      }
-    });
   }
 
   // @return Returns the display width normalized to the game width of the first finger in the fingers list that exists.

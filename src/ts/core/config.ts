@@ -79,7 +79,8 @@ export const pinkyFingerId: string = 'pinky';
 
 export const buttonTextStyle = {
   align: 'center',
-  font: '50px Courier New',
+  fontFamily: 'Courier New',
+  fontSize: '180px',
   color: '#01C303',
 };
 export const buttonPinchFinger: string = indexFingerId;
@@ -273,8 +274,8 @@ export const optionsSliderLabelOffset = new Vector2(32, -32);
 
 // Scene keys
 
-export const initialScene: string = 'continueScene';
-export const levelCompletionScene: string = initialScene;
+export const initialScene: string = 'mainMenu';
+export const levelCompletionScene: string = 'scoreboard';
 
 // Depths
 

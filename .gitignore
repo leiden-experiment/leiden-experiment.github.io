@@ -5,6 +5,8 @@
 # build
 build
 dist
+release
+release.zip
 
 # module
 node_modules
@@ -18,3 +20,20 @@ Library/
 src/assets/ui/reset_button.xcf
 src/data/*.csv
 csv/*.csv
+
+# Study data and credentials must never be committed
+*.pizzicato-study.json
+*service-account*.json
+.env
+.env.*
+.firebase/
+*-debug.log
+
+# Personal browser setup; do not push research deployment details to branches
+web-config.local.json
+private/
+credentials/
+*-firebase-adminsdk-*.json
+
+# Local encrypted admin vault backups are private by default. Never commit their passphrases.
+*admin-vault*.json

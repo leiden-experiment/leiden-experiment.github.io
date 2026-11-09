@@ -96,8 +96,8 @@ export default class LevelSelect extends HandScene {
       buttonOffsetX,
       this.height - buttonOffsetY,
       () => {
+        this.stopAudio();
         this.scene.start('mainMenu');
-        this.exit();
       },
     );
     const muteOffset: Vector2 = new Vector2(150 / 2);
@@ -115,8 +115,8 @@ export default class LevelSelect extends HandScene {
     );
 
     this.input.keyboard!.on(escapeKey, () => {
+      this.stopAudio();
       this.scene.start('mainMenu');
-      this.exit();
     });
 
     const _videoBackground = this.add.sprite(
@@ -143,26 +143,14 @@ export default class LevelSelect extends HandScene {
     });
   }
 
-  private exit() {
-    for (const button of this.difficultyButtons) {
-      if (button) {
-        button.destroy();
-      }
-    }
-
-    this.stopAudio();
-  }
-
   private startLevel(level: Level) {
-    this.exit();
+    this.stopAudio();
     this.scene.start('level', level);
   }
 
   private createDifficultyButtons(level: Level) {
     for (const button of this.difficultyButtons) {
-      if (button) {
-        button.destroy();
-      }
+      button?.destroy();
     }
     this.difficultyButtons = [];
 
@@ -233,7 +221,7 @@ export default class LevelSelect extends HandScene {
   }
 
   private startVideo(level: Level) {
-    if (this.videoPreview) this.videoPreview.destroy();
+    this.videoPreview?.destroy();
     if (level.hasPreviewVideo()) {
       this.videoPreview = this.add.video(
         this.center.x,
@@ -292,7 +280,7 @@ export default class LevelSelect extends HandScene {
   }
 
   private stopAudio() {
-    if (this.videoRefreshEvent) this.videoRefreshEvent.destroy();
+    this.videoRefreshEvent?.destroy();
 
     for (const level of levels) {
       level.removeBackgroundAudio();

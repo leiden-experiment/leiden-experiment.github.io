@@ -1,0 +1,69 @@
+name: Deploy GitHub Pages
+
+# On-demand only: choose main OR dev in the Actions "Run workflow" branch selector.
+# Both branches publish to the SAME Pages URL; the latest deployment replaces the old one.
+on:
+  workflow_dispatch:
+    inputs:
+      site_mode:
+        description: 'What should visitors see?'
+        required: true
+        type: choice
+        default: guest
+        options:
+          - guest
+          - online
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get selected source branch
+        uses: actions/checkout@v4
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate deployment configuration
+        env:
+          PIZZICATO_WEB_CONFIG: ${{ secrets.PIZZICATO_WEB_CONFIG }}
+          PIZZICATO_REQUIRED_MODE: ${{ inputs.site_mode }}
+          PIZZICATO_FORCE_GUEST: ${{ inputs.site_mode == 'guest' && '1' || '0' }}
+        run: npm run check:web
+      - name: Run tests
+        run: npm test
+      - name: Build website
+        env:
+          PIZZICATO_WEB_CONFIG: ${{ secrets.PIZZICATO_WEB_CONFIG }}
+          PIZZICATO_REQUIRED_MODE: ${{ inputs.site_mode }}
+          PIZZICATO_FORCE_GUEST: ${{ inputs.site_mode == 'guest' && '1' || '0' }}
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          npm run build
+          touch dist/.nojekyll
+      - name: Upload Pages files
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        name: Publish selected branch
+        uses: actions/deploy-pages@v4

@@ -19,6 +19,6 @@
     "moduleResolution": "node",
     "lib": ["dom", "esnext"]
   },
-  "include": ["src", "src/ts", "src/electron", "src/**/*"],
+  "include": ["src", "src/ts", "src/electron", "src/**/*", "scripts"],
   "exclude": ["node_modules", "**/*.spec.ts"]
 }

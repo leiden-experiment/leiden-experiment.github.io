@@ -1,3 +1,8 @@
+import { getStudySession, updateParticipantPreferences } from '../study/runtime';
+import { studyApi } from '../study/firebaseClient';
+import { getOfflinePack, importOfflinePack } from '../study/offline';
+import { gameplayDefaults, gameplayOptions, validateGameplayConfig } from '../study/gameplayFields';
+import { ConfigData } from '../core/interfaces';
 import HandScene from '../scenes/handScene';
 import { Button } from '../ui/button';
 import { Slider } from '../ui/slider';
@@ -34,6 +39,8 @@ export default class Options extends HandScene {
   options: (Slider | Checkbox)[] = [];
 
   private emitter: EventEmitter;
+  private researchOriginal: ConfigData | null = null;
+  private researchSaving = false;
 
   constructor() {
     super('options');
@@ -41,11 +48,9 @@ export default class Options extends HandScene {
 
   private saveAndExit() {
     webcam.setVisibility(config.enableCameraVisibility);
-    //this.setOpacity(config.cameraOpacity);
-    if (this.rotateTween) this.rotateTween.destroy();
-    if (this.glowTween) this.glowTween.destroy();
-    if (this.glow) this.glow.destroy();
-    this.scene.start('mainMenu');
+    // this.setOpacity(config.cameraOpacity);
+
+    this.scene.start(getStudySession() ? 'studySession' : 'mainMenu');
   }
 
   public create() {
@@ -53,7 +58,143 @@ export default class Options extends HandScene {
 
     this.onTimeDurationLimits = new Vector2(50, 1000);
 
-    this.createOptions();
+    if (getStudySession()) this.createResearchOptions();
+    else this.createOptions();
+  }
+
+  /** Research mode reuses Pizzicato's original Options visuals: a rotating
+   * target-size preview, numeric Phaser sliders, and checkboxes. Unlike guest
+   * mode, edits are provisional until Save and Exit confirms them on Firebase. */
+  private createResearchOptions() {
+    const session = getStudySession();
+    if (!session) return;
+    this.researchSaving = false;
+    this.researchOriginal = structuredClone(config);
+    this.options = [];
+    // Legacy studies may still contain old Settings slides. Honor their
+    // permissions but never expose assignment-owned loop counters.
+    const oldPermissions = Object.values(session.settings.weeks || {}).flat()
+      .filter(step => step.type === 'settings')
+      .flatMap(step => step.type === 'settings' ? (step.allowedSettings || []) : []);
+    const permissions = session.settings.participantSettingsAllowed || oldPermissions;
+    const allowed = gameplayOptions.filter(option => permissions.includes(option.key));
+    const baseline = { ...gameplayDefaults, ...session.settings.defaultConfig,
+      ...(session.settings.groupConfigs?.[session.account.group || ''] || {}),
+      ...(session.account.customConfig || {}) } as Record<string, unknown>;
+    const initial = { ...baseline, ...(session.account.participantPreferences || {}) };
+    updateConfig({ ...config, ...initial, autoSaveCSV: false } as ConfigData, false);
+
+    this.add.text(this.center.x, 64, 'YOUR SETTINGS', {
+      font: '52px Courier New', color: '#18db43', align: 'center'
+    }).setOrigin(.5);
+
+    // The same animated target preview used by the original Options scene.
+    this.targetExample = this.add.sprite(this.center.x, 260, 'targetInner')
+      .setTint(fingerColors[thumbFingerId]).setScale(config.targetSize);
+    this.rotateTween = this.tweens.add({ targets: this.targetExample,
+      rotation: 2 * Math.PI, duration: 2000, repeat: -1 });
+    this.add.text(this.center.x, 350, 'TARGET SIZE PREVIEW', {
+      font: '20px Courier New', color: '#aaaaaa'
+    }).setOrigin(.5);
+
+    const perColumn = Math.max(1, Math.ceil(allowed.length / 2));
+    const rowGap = Math.min(55, 690 / perColumn);
+    const baseY = 176;
+    const columns = [this.width * .085, this.width * .635];
+    for (let i = 0; i < allowed.length; i++) {
+      const option = allowed[i];
+      const x = columns[Math.floor(i / perColumn)];
+      const y = baseY + (i % perColumn) * rowGap;
+      const key = option.key as keyof ConfigData;
+      if (typeof option.defaultValue === 'boolean') {
+        const check = new Checkbox(this, new Vector2(x, y + 7), 27,
+          new Vector2(37, -2), option.label, config, key, checkbox => {
+            updateConfigValue(key, checkbox.isChecked);
+            if (key === 'enableCameraVisibility') webcam.setVisibility(checkbox.isChecked);
+          });
+        this.options.push(check); this.add.existing(check);
+      } else {
+        const slider = new Slider(this, new Vector2(x, y + 29),
+          new Vector2(this.width * .265, 22), new Vector2(0, -28),
+          config, key, new Vector2(option.min ?? 0, option.max ?? 1), control => {
+            const value = option.step === 1 ? Math.round(control.getValue()) : control.getValue();
+            control.label?.setText(`${option.label}: ${Number(value.toFixed(2))}${option.label.includes('(ms)') ? ' ms' : ''}`);
+            updateConfigValue(key, value);
+            if (key === 'targetSize') this.targetExample?.setScale(value);
+            if (key === 'fingerSize') this.hand?.setFingerScale(value);
+            if (key === 'cameraOpacity') this.setOpacity(value);
+          });
+        if (option.step === 1) slider.setIsInteger(true);
+        this.options.push(slider); this.add.existing(slider);
+      }
+    }
+    const status = this.add.text(this.center.x, this.height - 200, '', {
+      font: '23px Courier New', color: '#ffc78b', align: 'center',
+      wordWrap: {width: this.width * .9}
+    }).setOrigin(.5);
+    const exit = () => {
+      if (this.researchSaving) return;
+      if (this.researchOriginal) updateConfig(this.researchOriginal, false);
+      webcam.setVisibility(config.enableCameraVisibility);
+      this.setOpacity(config.cameraOpacity);
+      this.scene.start('studySession');
+    };
+    const reset = () => {
+      if (this.researchSaving) return;
+      // Only change researcher-authorized fields, not the assigned loop count.
+      for (const option of allowed) {
+        const value = baseline[option.key] ?? option.defaultValue;
+        updateConfigValue(option.key as keyof ConfigData, value);
+      }
+      for (const control of this.options) control.reset(config);
+      this.targetExample.setScale(config.targetSize);
+      this.hand.setFingerScale(config.fingerSize);
+      webcam.setVisibility(config.enableCameraVisibility);
+      this.setOpacity(config.cameraOpacity);
+      status.setText('Defaults loaded. Save and Exit to keep them.');
+    };
+    const save = async () => {
+      if (this.researchSaving) return;
+      const changes: Record<string, boolean | number> = {};
+      for (const option of allowed) {
+        const value = config[option.key as keyof ConfigData];
+        if (typeof value === 'boolean' || typeof value === 'number') changes[option.key] = value;
+      }
+      const errors = validateGameplayConfig(changes);
+      if (errors.length) { status.setText(errors.join(' · ')); return; }
+      this.researchSaving = true;
+      status.setText('Saving settings…');
+      try {
+        let preferences: Record<string, unknown>;
+        if (session.mode === 'online') {
+          const result = await studyApi.saveParticipantPreferences(changes);
+          preferences = result.preferences;
+        } else {
+          preferences = { ...(session.account.participantPreferences || {}), ...changes };
+          const pack = getOfflinePack();
+          if (pack) importOfflinePack({ ...pack, account: { ...pack.account, participantPreferences: preferences } });
+        }
+        updateParticipantPreferences(preferences);
+        updateConfig({ ...this.researchOriginal!, ...baseline, ...preferences, autoSaveCSV: false } as ConfigData, false);
+        webcam.setVisibility(config.enableCameraVisibility);
+        this.scene.start('studySession');
+      } catch (error) {
+        this.researchSaving = false;
+        status.setText(error instanceof Error ? error.message : String(error));
+      }
+    };
+    const actions: [string, number, () => void][] = [
+      ['EXIT WITHOUT\nSAVING', this.center.x - 420, exit],
+      ['RESET TO\nDEFAULTS', this.center.x, reset],
+      ['SAVE AND\nEXIT', this.center.x + 420, () => { void save(); }]
+    ];
+    for (const [label, x, onClick] of actions) {
+      const button = new Button(this, label, x, this.height - 91, onClick);
+      button.setScale(.75);
+      button.fitTextToButton(2);
+    }
+    this.input.keyboard?.on(escapeKey, exit);
+    this.events.once('shutdown', () => this.input.keyboard?.off(escapeKey, exit));
   }
 
   private normalizeDuration(duration: number) {
@@ -70,7 +211,7 @@ export default class Options extends HandScene {
   }
 
   private setGlowTimeScale(duration: number) {
-    this.glowTween.setTimeScale(this.normalizeDuration(duration));
+    this.glowTween?.setTimeScale(this.normalizeDuration(duration));
   }
 
   private createOptions() {
@@ -108,9 +249,7 @@ export default class Options extends HandScene {
       },
     );
 
-    this.input.keyboard!.on(escapeKey, () => {
-      this.saveAndExit();
-    });
+    this.input.keyboard?.on(escapeKey, this.saveAndExit, this);
 
     const _background1l: Sprite = this.add
       .sprite(this.width * 0.09, this.height * 0.05, 'optionsBackground')
@@ -687,21 +826,28 @@ export default class Options extends HandScene {
 
     // --------------------------------------------------------
 
-    // TODO: Re-enable this once there is a way to store it automatically on a server or elsewhere.
-    // const autoSaveCSV = new Checkbox(
-    //   this,
-    //   new Vector2(this.width * 0.64, this.height * 0.57 + this.height * 0.08 * 2),
-    //   25,
-    //   new Vector2(-optionsCheckboxOffset.x, 0),
-    //   'Automatically Save CSV',
-    //   config,
-    //   'autoSaveCSV',
-    //   (checkbox: Checkbox) => {
-    //     config[checkbox.key] = checkbox.isChecked
-    //   }
-    // )
-    // this.options.push(autoSaveCSV)
-    // this.add.existing(autoSaveCSV)
+    const isElectronRenderer = typeof window.electron !== 'undefined';
+    const isLocalBuild = isElectronRenderer;
+
+    if (isLocalBuild) {
+      const autoSaveCSV = new Checkbox(
+        this,
+        new Vector2(
+          this.width * 0.1,
+          this.height * 0.57 + this.height * 0.08 * 1.5,
+        ),
+        25,
+        new Vector2(-optionsCheckboxOffset.x, 0),
+        'Automatically Save CSV',
+        config,
+        'autoSaveCSV',
+        (checkbox: Checkbox) => {
+          updateConfigValue(checkbox.key, checkbox.isChecked);
+        },
+      );
+      this.options.push(autoSaveCSV);
+      this.add.existing(autoSaveCSV);
+    }
 
     // -------------------------------------------------------- MENU BUTTONS --------------------------------------------------------
   }

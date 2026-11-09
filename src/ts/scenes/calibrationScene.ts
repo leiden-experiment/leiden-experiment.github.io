@@ -1,3 +1,4 @@
+import { getStudySession } from '../study/runtime';
 import {
   appendHandDistanceToText,
   calibrationMenuWebcamOpacity,
@@ -13,7 +14,6 @@ import {
   handTooFarThreshold,
   undefinedText,
   escapeKey,
-  initialScene,
 } from '../core/config';
 import { PhaserText } from '../core/phaserTypes';
 import HandScene from '../scenes/handScene';
@@ -29,7 +29,7 @@ export default class Calibration extends HandScene {
   }
 
   private exit() {
-    this.scene.start(initialScene);
+    this.scene.start(getStudySession() ? 'studySession' : 'mainMenu');
   }
 
   create() {

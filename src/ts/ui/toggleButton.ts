@@ -26,25 +26,6 @@ export class ToggleButton extends Button {
     this.toggleState = toggled;
 
     this.setTexture(this.getSpriteKey());
-
-    this.on('destroy', () => {
-      this.scene.hand.removePinchCheck(buttonPinchFinger, this);
-      if (this.sound) {
-        if (this.sound.isPlaying) {
-          this.sound.on('complete', () => {
-            if (this.sound) {
-              this.sound.destroy();
-            }
-          });
-        } else {
-          this.sound.destroy();
-        }
-      }
-      if (this.text) {
-        this.text.destroy();
-        this.text = undefined;
-      }
-    });
   }
 
   public setToggleState(newToggleState: boolean) {

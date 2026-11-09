@@ -1,0 +1,52 @@
+{
+  "title": "Example study with slides",
+  "description": "Sample visual study",
+  "introText": "Welcome!",
+  "startDate": "2026-11-01",
+  "maxSessionsPerWeek": 1,
+  "enabled": false,
+  "weeks": {
+    "1": [
+      {
+        "type": "start",
+        "text": "Welcome to Week 1. Press Continue to start."
+      },
+      {
+        "type": "level",
+        "levelId": "legacy:Cheerful Bliss",
+        "bpmIndex": 0,
+        "loops": 2
+      },
+      {
+        "type": "break",
+        "text": "Time for a break. Rest your hands and press Resume when ready."
+      },
+      {
+        "type": "level",
+        "levelId": "legacy:Birthday Vibes",
+        "bpmIndex": 0,
+        "loops": 2
+      },
+      {
+        "type": "end",
+        "text": "Thanks for playing! Come back next week."
+      }
+    ],
+    "2": [
+      {
+        "type": "start",
+        "text": "Welcome back for Week 2!"
+      },
+      {
+        "type": "level",
+        "levelId": "legacy:Trained",
+        "bpmIndex": 0,
+        "loops": 2
+      },
+      {
+        "type": "end",
+        "text": "All done for today. Thank you!"
+      }
+    ]
+  }
+}

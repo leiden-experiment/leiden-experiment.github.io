@@ -11,29 +11,48 @@
       "email": "j.a.rijsdijk@student.tudelft.nl"
     }
   ],
-  "version": "1.2.0",
+  "version": "1.8.27",
   "description": "A serious game about sonification of hand and finger movements",
-  "main": "index.js",
+  "main": "src/electron/main.js",
   "scripts": {
     "prepare": "husky install",
     "start": "webpack serve --config webpack/webpack.dev.js",
     "build": "rimraf dist && webpack --config webpack/webpack.prod.js",
+    "build:exe": "npm run build && electron-builder --win --dir && node scripts/flatten-release.js",
+    "electron": "npm run build && npx electron .",
     "bundle": "npm run build",
     "serve": "serve dist",
-    "deploy": "npm run build && touch dist/.nojekyll && gh-pages -t -d dist -m \"Build for $(git log -n1 --pretty=format:\"%h %s\") [skip ci]\"",
+    "deploy": "node scripts/print-deploy-help.js",
     "lint": "eslint . --ignore-path .gitignore --ext .js,.ts",
     "format": "prettier --ignore-path .gitignore --check \"**/*.+(js|ts|json)\"",
     "fix:lint": "eslint . --ignore-path .gitignore --ext .js,.ts --fix",
     "fix:format": "prettier --ignore-path .gitignore --write \"**/*.+(js|ts|json)\"",
-    "fix:all": "npm run fix:format && npm run fix:lint"
+    "fix:all": "npm run fix:format && npm run fix:lint",
+    "test:levels": "node scripts/test-level-formats.js",
+    "test:study": "node scripts/test-study.js",
+    "test": "npm run test:levels && npm run test:study && npm run test:web && npm run test:research && npm run test:usernames && npm run test:build-regressions && npm run test:dashboard && node scripts/test-choice-and-ui.js && node scripts/test-live-study-backend.js && node scripts/test-dashboard-cache-and-preload.js && node scripts/test-v187-ui.js && node scripts/test-v188-fixes.js && node scripts/test-v189-regressions.js && node scripts/test-v1810-login-errors.js && node scripts/test-v1811-ui-and-conflicts.js && node scripts/test-v1812-ui.js && node scripts/test-v1813-progress-and-data.js && node scripts/test-v1814-stage-management.js && node scripts/test-v1815-archives.js && node scripts/test-v1816-features.js && node scripts/test-v1817-break-and-privacy.js && node scripts/test-v1818-screen-controls.js && node scripts/test-v1819-options-and-layout.js && node scripts/test-v1819-options-types.js && node scripts/test-v1820-study-session-order.js && node scripts/test-v1821-scheduling.js && node scripts/test-v1822-scheduling-ui.js && node scripts/test-v1822-button-types.js && node scripts/test-v1825-repeated-weeks.js && node scripts/test-v1826-drag-and-fixed-continue.js && node scripts/test-v1827-rolling-calendars.js",
+    "build:win": "npm run build && electron-builder --win",
+    "build:mac": "npm run build && electron-builder --mac dmg zip",
+    "build:linux": "npm run build && electron-builder --linux AppImage",
+    "setup:web": "node scripts/setup-web.js",
+    "check:web": "node scripts/check-web-config.js",
+    "admin:create": "node scripts/create-admin.js",
+    "test:web": "node scripts/test-web-deployment.js",
+    "start:guest": "cross-env PIZZICATO_FORCE_GUEST=1 webpack serve --config webpack/webpack.dev.js",
+    "serve:build": "npm run build && serve -l 8080 dist",
+    "admin:prepare": "node scripts/admin-vault.js prepare",
+    "admin:activate": "node scripts/admin-vault.js activate",
+    "account:migrate": "node scripts/migrate-username.js",
+    "test:research": "node scripts/test-research-features.js",
+    "test:usernames": "node scripts/test-usernames.js",
+    "test:build-regressions": "node scripts/test-build-regressions.js",
+    "test:dashboard": "node scripts/test-dashboard-ui.js"
   },
   "license": "MIT",
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.8",
     "file-saver": "^2.0.5",
     "firebase": "^11.2.0",
-    "firebase-admin": "^13.2.0",
-    "json2csv": "^6.0.0-alpha.2",
     "phaser": "^3.60.0",
     "touch-cli": "^0.0.1",
     "workbox-precaching": "^7.0.0"
@@ -43,6 +62,36 @@
     "path": false,
     "os": false
   },
+  "build": {
+    "appId": "io.github.pizzicato.game",
+    "productName": "Pizzicato",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "!dist/data/**",
+      "!dist/levels/**",
+      "src/electron/**",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "src/assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.education"
+    }
+  },
   "devDependencies": {
     "@types/node": "^20.11.19",
     "@typescript-eslint/eslint-plugin": "^6.14.0",
@@ -50,6 +99,9 @@
     "concurrently": "^8.0.1",
     "copy-webpack-plugin": "^10.1.0",
     "cross-env": "^7.0.3",
+    "electron": "^41.2.1",
+    "electron-builder": "^26.8.1",
+    "electron-reload": "^2.0.0-alpha.1",
     "eslint": "^8.55.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.0.1",

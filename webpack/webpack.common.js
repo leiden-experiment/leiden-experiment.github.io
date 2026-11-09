@@ -1,6 +1,8 @@
 const path = require('path');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const webpack = require('webpack');
+const { loadWebConfig } = require('../scripts/web-config');
 
 module.exports = {
   entry: ['./src/ts/core/game.ts'],
@@ -8,10 +10,22 @@ module.exports = {
     path: path.resolve(__dirname, '../dist'),
     filename: '[name].bundle.js',
     chunkFilename: '[name].chunk.js',
+    // Asset paths must remain relative for GitHub Pages /<repository>/ hosting.
+    publicPath: 'auto',
   },
   resolve: {
     extensions: ['.ts', '.tsx', '.js'],
   },
+  // MediaPipe's prebuilt Emscripten bundle contains a runtime-dependent
+  // require() used outside its normal browser path. Webpack cannot statically
+  // resolve it, but this specific diagnostic does not prevent hand tracking.
+  // Do not hide warnings from any other package or module.
+  ignoreWarnings: [
+    {
+      module: /[\\/]@mediapipe[\\/]tasks-vision[\\/]vision_bundle\.mjs$/,
+      message: /Critical dependency: the request of a dependency is an expression/,
+    },
+  ],
   module: {
     rules: [
       {
@@ -34,6 +48,7 @@ module.exports = {
     },
   },
   plugins: [
+    new webpack.DefinePlugin({ __PIZZICATO_WEB_CONFIG__: JSON.stringify(loadWebConfig()) }),
     new HtmlWebpackPlugin({
       gameName: 'My Phaser Game',
       template: 'src/index.html',

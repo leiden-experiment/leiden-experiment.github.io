@@ -164,28 +164,22 @@ export default class Target extends MatterSprite {
         this.scene.hand.removePinchCheck(this.fingerId, this);
       this.off('pointerdown');
 
-      if (this.rotateTween) this.scene.tweens.remove(this.rotateTween);
-      if (this.earlyTween) this.scene.tweens.remove(this.earlyTween);
-      if (this.onTimeTween) this.scene.tweens.remove(this.onTimeTween);
-      if (this.lateTween) this.scene.tweens.remove(this.lateTween);
-      if (this.deathTween) this.scene.tweens.remove(this.deathTween);
-      if (this.glowTween) this.scene.tweens.remove(this.glowTween);
-      if (this.glow) this.glow.destroy();
-      if (this.targetText) this.targetText.destroy();
+      this.rotateTween?.remove();
+      this.earlyTween?.remove();
+      this.onTimeTween?.remove();
+      this.lateTween?.remove();
+      this.deathTween?.remove();
+      this.glowTween?.remove();
+      this.glow?.destroy();
+      this.targetText?.destroy();
 
-      if (this.outerRing) {
-        this.outerRing.destroy();
-      }
-      if (this.sound) {
-        if (this.sound.isPlaying) {
-          this.sound.on('complete', () => {
-            if (this.sound) {
-              this.sound.destroy();
-            }
-          });
-        } else {
-          this.sound.destroy();
-        }
+      this.outerRing?.destroy();
+      if (this.sound?.isPlaying) {
+        this.sound.on('complete', () => {
+          this.sound?.destroy();
+        });
+      } else {
+        this.sound?.destroy();
       }
     });
   }
@@ -274,7 +268,7 @@ export default class Target extends MatterSprite {
         });
       }
       this.onTimeTween.on('complete', () => {
-        if (this.glow) this.glow.destroy();
+        this.glow?.destroy();
         this.lateTween = this.createTween(
           [this, this.outerRing],
           {

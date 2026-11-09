@@ -10,20 +10,16 @@ export function initVariables(): Promise<void> {
 }
 
 export function getAppPath(): string {
-  return '';
+  if (typeof window === 'undefined' || typeof window.location === 'undefined') {
+    return '';
+  }
+
+  return new URL('.', window.location.href).href;
 }
 
 export function isDebugMode(): boolean {
   return debugMode;
 }
-
-// export function storeData(
-//   _filePath: string,
-//   _data: string | NodeJS.ArrayBufferView,
-// ): void {
-//   // fs.mkdirSync(path.dirname(filePath), { recursive: true })
-//   // fs.writeFileSync(filePath, data)
-// }
 
 // function makeRequest(method, url) {
 //   return new Promise(function (resolve, reject) {
@@ -80,15 +76,25 @@ export function absRootPath(
   relPath: string,
   relativeToRootDir: string = '',
 ): string {
-  // Format correct slashes.
-  const path: string = getAppPath().replace(/\\/g, '/') + relativeToRootDir;
-  relPath = relPath.replace(/\\/g, '/');
-  const startsWithSlash: boolean = Array.from(relPath)[0] == '/';
-  // TODO: Add further checks for file path correctness.
-  const absolutePath: string = startsWithSlash
-    ? path + relPath
-    : path + '/' + relPath;
-  return absolutePath;
+  const basePath: string = getAppPath();
+  const normalizedRelPath: string = relPath
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '');
+  const normalizedRootDir: string = relativeToRootDir
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '');
+
+  if (basePath !== '') {
+    const combinedPath: string = [normalizedRootDir, normalizedRelPath]
+      .filter(part => part !== '')
+      .join('/');
+    return new URL(combinedPath, basePath).href;
+  }
+
+  const fallbackRoot: string =
+    normalizedRootDir === '' ? '' : `/${normalizedRootDir}`;
+  return `${fallbackRoot}/${normalizedRelPath}`.replace(/\/+/g, '/');
 }
 
 // Converts relative file paths to absolute ones (relative to src directory) (for executable and hot run to work correctly).

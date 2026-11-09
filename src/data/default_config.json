@@ -22,5 +22,5 @@
   "cameraOpacity": 0.0,
   "postProcessingDisabled": false,
   "displayVisualMetronome": true,
-  "autoSaveCSV": false
+  "autoSaveCSV": true
 }
